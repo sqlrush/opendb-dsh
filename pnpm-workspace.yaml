@@ -1,3 +1,10 @@
 packages:
   - packages/*
   - profiles/*
+
+onlyBuiltDependencies:
+  - node-pty
+  - '@deepseek-ai/dsh-subprocess-local'
+  - koffi
+  - protobufjs
+  - '@google/genai'

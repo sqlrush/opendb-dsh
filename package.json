@@ -8,9 +8,6 @@
     "test": "pnpm -r --filter './packages/**' run test",
     "dsh": "dsh"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": ["node-pty", "@deepseek-ai/dsh-subprocess-local", "koffi", "protobufjs", "@google/genai"]
-  },
   "devDependencies": {
     "@deepseek-ai/dsh": "0.1.0-rc.6",
     "@types/node": "^22.15.0",
