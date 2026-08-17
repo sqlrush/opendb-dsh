@@ -8,7 +8,7 @@ API=${API:-http://127.0.0.1:3080/api}
 ORIGIN=${ORIGIN:-http://127.0.0.1:3080}
 DSH_HOME="${DSH_HOME:-$PWD/.dsh-home}"
 sql() { docker exec -i opendb-dsh-pg psql -U dsh -d dsh -tAc "$1"; }
-rpc() { curl -s -X POST "$API/$1" -H 'content-type: application/json' -H "origin: $ORIGIN" -d "$2"; }
+rpc() { curl -s -X POST "$API/$1" -H "content-type: application/json" -H "origin: $ORIGIN" -d "{\"type\":\"client-request\",\"rpcId\":\"e2e-$RANDOM\",\"method\":\"$1\",\"payload\":$2}"; }
 
 SID=$(rpc session.create '{}' | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
 [ -n "$SID" ] || { echo "session.create failed"; exit 1; }
