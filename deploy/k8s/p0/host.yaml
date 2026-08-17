@@ -10,7 +10,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: host
-          image: opendb-dsh:p0
+          image: host.orb.internal:5050/opendb-dsh:p0
           imagePullPolicy: IfNotPresent
           args: ["--profile", "host"]
           env:
