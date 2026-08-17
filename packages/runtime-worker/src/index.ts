@@ -24,6 +24,7 @@ interface AgentHandleLike {
   agent: {
     followup(message: unknown): void;
     session: unknown;
+    session: unknown;
     whenIdle(): Promise<void>;
     cancel(cause: unknown, options?: unknown): void;
   };
@@ -113,7 +114,7 @@ export default class RuntimeWorker extends Service {
       try {
         agent.followup(createUserMessage({ content: payload.content as any, source: payload.source as any } as any));
         await agent.whenIdle();
-        await (anyCtx.sessions?.flush?.(agent.session) ?? Promise.resolve());   // durability checkpoint: last batch (turn/end) hits PG before release
+        await (anyCtx.sessions?.flush?.(agent.session) ?? Promise.resolve());   // durability checkpoint: the last write-behind batch (turn/end) reaches PG before release
       } finally {
         clearInterval(interruptPoll);
       }

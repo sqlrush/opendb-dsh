@@ -24,6 +24,7 @@ export class ProxyAgent {
   private tailTimer: NodeJS.Timeout | undefined;
   private readonly questionsInFlight = new Set<string>();
   private lastTailError = 0;
+  private idleEmptyTicks = 0;
 
   private readonly pool: pg.Pool;
   private readonly tailMs: number;
@@ -90,11 +91,19 @@ export class ProxyAgent {
         const st = await threadStatus(this.pool, this.id);
         const pending = await pendingQueue(this.pool, this.id);
         if (st !== 'running' && pending === 0) {
-          process.stderr.write(`[agent-loop-dispatch] tail stop ${String(this.id)} status=${st} seq=${this.session.seq}\n`);
-          await mirrorOnce(this.persistence, this.session);
-          this.setStatus('idle');
-          this.tailTimer = undefined;
-          return;
+          // The Runtime releases the thread right after its last write-behind batch is scheduled; keep
+          // mirroring until two consecutive idle ticks bring nothing new, then stop.
+          const more = await mirrorOnce(this.persistence, this.session);
+          this.idleEmptyTicks = more > 0 ? 0 : this.idleEmptyTicks + 1;
+          if (this.idleEmptyTicks >= 2) {
+            process.stderr.write(`[agent-loop-dispatch] tail stop ${String(this.id)} status=${st} seq=${this.session.seq}\n`);
+            this.idleEmptyTicks = 0;
+            this.setStatus('idle');
+            this.tailTimer = undefined;
+            return;
+          }
+        } else {
+          this.idleEmptyTicks = 0;
         }
       } catch (err) {
         // transient PG/validation error: log (rate-limited) and retry next tick
