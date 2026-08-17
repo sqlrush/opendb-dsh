@@ -6,4 +6,5 @@ export DSH_HOME="${DSH_HOME:-$PWD/.dsh-home}"; mkdir -p "$DSH_HOME/profiles"
 ln -sfn "$PWD/profiles/host" "$DSH_HOME/profiles/host"
 export OPENDB_PG_URL="${OPENDB_PG_URL:-postgres://dsh:dsh@127.0.0.1:5434/dsh}"
 export DSH_TELEMETRY_DISABLED=1 DSH_PERMISSION_MODE="${DSH_PERMISSION_MODE:-read-only}" OPENDB_DEBUG_LOG="${OPENDB_DEBUG_LOG:-/tmp/opendb-dispatch.log}"
+export OPENDB_HOST_PORT="${OPENDB_HOST_PORT:-3090}"   # 3080 is often taken by a personal dsh web on the dev machine
 exec pnpm exec dsh --profile host "$@"
