@@ -1,6 +1,6 @@
-# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.4
+# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.5
 
-> 类型：架构设计（v0.4，2026-08-17；v0.3 评审稿 + user 对 §14 的回复 + 产品模型 §3.6 + 关闭项展开 §3.7；P0 已获准，进入实施计划）
+> 类型：架构设计（v0.5，2026-08-17；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
 > 依据：
 > - dsh 本地安装源码 `~/.dsh/profiles/node_modules/@deepseek-ai/*`（**v0.1.0-rc.6**，195 包，逐包 README/patch/package.json 核对）
 > - dsh 插件机制分析 `~/airush/docs/deepseek-harness-plugin-analysis.md`（rc.5 @ 47f9438；rc.6 未见结构性变化）
@@ -248,7 +248,7 @@ ctx.tasks.registerType({
 |---|---|---|
 | D1 | agent = 逻辑身份（PG 一行），pod = 无差别扮演者 | 每 agent 固定 pod |
 | D2 | Runtime 池按 runtime class 分池；同 class 的 agent 共享；大 agent 可独占 class | 单一全局池 / 每 agent 一池 |
-| D3 | PG 唯一真相源；S3 大对象；Redis 可选可丢 | 消息中间件 |
+| D3 | PG 唯一真相源；S3 大对象；Redis 只做可丢缓存（不承担正确性）；图/向量库是 PG 之上可重建的派生索引 | 消息中间件 / 多真相源 |
 | D4 | 跨 pod 协调 = PG 行状态机（claim + heartbeat + stale 扫描） | leader election / 分布式锁 |
 | D5 | Runtime 零本地执行：主机 → `exec-ssh`，数据库 → `tool-pg`；动作类过审批 | 本地 `danger-full-access` |
 | D6 | 审批三件套从旁介入：`tools/pre-execute` waterfall → `ctx.approval` → 一次性令牌 → provider 内白名单；无只读标注 fail-closed | 改 agent-loop |
@@ -261,6 +261,8 @@ ctx.tasks.registerType({
 | D13 | 平台能力默认进程内插件；只有重型/隔离/非 TS 才出 MCP pod | 默认出 pod |
 | D14 | Host 水平扩 = 按用户 cookie 粘性 + PG 共享注册表 + `NOTIFY` 桥接（自动，按用户摊）；租户分池 = 人工治理决策 | 自动搬迁租户 |
 | D15 | 借用优先：dsh 有的原样用（含 `credentials-local` env 层、`settings-file` + initContainer 拷贝、`agent-presets` 文件源），不重写 | 全部替换 |
+| D16 | **镜像装全部 195 个 dsh 包**，profile/preset 决定加载哪些行；"原样"是处理策略不等于加载（约 100 个 A+B 档实际加载，30 个按 class/阶段开，10 个不用） | 按需裁剪镜像 |
+| D17 | 记忆/知识借鉴 airush 四分法：PG = 真相（rollout/Episode/指令）；Redis = 可丢热缓存；图库 = 逻辑知识（时序事实）；向量 = 语义知识（MVP pgvector，图谱向量随图走，不设统一向量库）；dsh 有 seam 的直接用（persistence/checkpoint/projection-cache/storage/system-prompt/skill），没有的新增（memory/knowledge/embeddings 三个 seam + provider） | 自研整套 / 全放 PG |
 
 ---
 
@@ -276,6 +278,8 @@ ctx.tasks.registerType({
 | **postgres**（+pgvector） | StatefulSet 或云托管 | 固定 | PVC Retain | — | 唯一真相源；本地部署走 CloudNativePG 主备 |
 | **minio / S3** | StatefulSet 或云 | 固定 | PVC | — | attachments、spill、大 payload、冷归档 |
 | **otel-collector**（可选） | Deployment | 1 | 无 | — | 脱敏 processor |
+| **redis** | Deployment | 1 | 无 PVC（可丢） | — | 投影缓存/检索缓存（`storage-redis`）；不承担正确性；P2 默认 |
+| **graph-db**（P3） | StatefulSet 或云托管 | 固定 | PVC | — | 逻辑知识（Entity/Relation/时序事实），`memory-graph` provider；PG 原文可重建 |
 
 命名空间：`dsh-system`（host）、`dsh-runtime`（各池）、`dsh-skills`（可选）、`dsh-data`。
 
@@ -451,7 +455,7 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | 替换（写 provider） | 13 | `agent-loop`(H)、`session-persistence-jsonl`、`storage-json`、`attachment-local`、`spill-local`、`session-query-sqlite`(P2)、`fs-local`+`bash-local`+`subprocess-local`（合为 `exec-ssh`）、`agent-instructions`、`client-connection`、`directory-picker-*`、`client-ui-workspace` |
 | 改造 | 1 | `tool-fs-search`（远端 rg） |
 | 禁用 | ~20 | 沙箱全家、pwsh、terminal/PTY、code-runtime、cordis runner、directory-picker 后端、client-hmr、anonymous-user-id、skill-badge、landlock |
-| 新增（自研） | ~20 | 见 §11 |
+| 新增（自研） | ~35 | 见 §11（含记忆/知识族 ~15 个） |
 
 ---
 
@@ -507,9 +511,66 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 
 `attachments/v1/<sha256>`、`spill/<tenant>/<thread>/<name>`、`rollout/<tenant>/<thread>/<seq>`、`archive/`；S3 生命周期策略 GC。
 
-### 8.3 记忆写入路径
+### 8.3 记忆与知识子系统（借鉴 airush：PG 真相 + Redis 可丢缓存 + 图 = 逻辑知识 + 向量 = 语义知识）
 
-1. `agent/turn-stopping` 监听器抽取候选 → `memory_episodes`；2. 摄入任务做实体抽取/去重/失效 → `memory_facts`；3. 下一 turn `system-prompt/assemble` 前 `ctx.memory.search({entity, query})` → 注入 section。
+**dsh 本身没有记忆管理/知识库插件**：它把"记忆"外包给工作目录里的 markdown（`agent-instructions` 读、`tool-fs` 写）和追加式会话日志（persistence + compaction + spill + `@` 引用 + 全文检索）。这些机制**全部保留**，只在"读文件"的接口处换成读 PG，并新增一套按 dsh seam 方式设计的记忆/知识插件族。
+
+**airush 记忆设计 → dsh 对应 → 我们的处理**：
+
+| airush 设计 | 目的 | dsh 是否已有 | 处理 |
+|---|---|---|---|
+| rollout 事件流落 PG（SSOT，pod 宕机不丢） | 持久化上下文 | ✅ seam：`dsh-session-persistence` + `session-checkpoint-policy` | provider → `session-persistence-pg`（P0）；checkpoint 原样；宕机 → PG 行状态机标 interrupted → 任意 Runtime `resume` |
+| Redis 热缓存（装配好的上下文、检索缓存；**可丢，RPO=∞**） | 换 pod 不必从头重放/重检索 | ✅ seam：`dsh-session-projection-cache`（每会话投影检查点，write-behind，走 `storage`）+ `dsh-storage` `kv` facet | 新增 `storage-redis`（`kv` backend），投影缓存/检索缓存指向它；PG 仍是真相；P1 可选、P2 默认 |
+| Redis 幂等键 / 会话锁 | 防重、单写者 | dsh 无 | **不用 Redis 承担正确性**：会话锁 = PG 行状态机（claim/heartbeat）；幂等 = `(thread_id, seq)` 唯一约束 |
+| 常驻指令层（agent/租户 markdown 存 PG，每 turn 注入） | 确定性记忆 | ✅ 对应物 `dsh-agent-instructions`（读文件） | 替换 → `instructions-pg`（`agents.instruction_doc` + `instruction_version`） |
+| 图数据库（Neo4j + Graphiti：Entity/Relation/Episode，`valid_at/invalid_at`；**逻辑知识**） | 结构化、带时间的事实；矛盾不删只失效 | ❌ 无 | 新增 `memory` Definition + `memory-graph` provider（经 Graphiti 写入管道：去重、实体合并、时序失效；业务代码禁止绕过直写图库） |
+| 向量：图谱内 embedding 跟图走（Neo4j 向量索引），文档 embedding 走 pgvector；**不设统一向量库**；**语义知识** | 语义检索 | ❌ 无 | `memory-pg`（pgvector：episode 向量 + FTS，MVP）、`knowledge-pg`（文档 chunk 向量）；P3 图谱向量随 `memory-graph` 进图库；`knowledge-vector`（Qdrant 等）仅在 pgvector 不够时替换 |
+| Episode 原文即 SSOT；LLM 只在摄入侧；检索三路混合（向量 + BM25 + 图）RRF | 质量 + 成本 | ❌ 无 | `memory-ingest`（Runtime 侧抽取）+ `memory-context`（每 turn `systemPrompt.section('memory')`）+ `embeddings` seam |
+| 记忆按租户 + 实体归属，不按 agent | agent 重划分零搬迁 | — | D7 |
+| 租户记忆 → 平台知识：脱敏 → 泛化 → 审核，禁止自动流动 | 合规 | — | `knowledge-ingest` 审核流（P2） |
+
+**插件族（seam 形态）**：
+
+```
+                 ┌──────────────── Definition（seam，进程内抽象类）────────────────────────┐
+                 │ ctx.memory      情景/事实记忆：remember(episode) · facts(entity) ·        │
+                 │                 search(query,{entity,kinds,k}) · invalidate(fact)        │
+                 │ ctx.knowledge   知识库：addDocument · chunks · search(query,{ns,k})       │
+                 │ ctx.embeddings  向量化：embed(texts) → float[][]（模型可换）             │
+                 └──────────┬───────────────────────┬──────────────────────┬────────────────┘
+   Providers（可换）        │                       │                      │
+   ┌──────────────────┐ ┌──▼──────────────┐ ┌──────▼─────────┐ ┌──────────▼───────────┐
+   │ memory-pg (MVP)  │ │ memory-graph    │ │ knowledge-pg   │ │ embeddings-openai-   │
+   │ episodes/facts   │ │ Neo4j/Graphiti  │ │ (MVP) 文档+chunk│ │ compat / -local      │
+   │ + pgvector + FTS │ │ 实体/关系/时序   │ │ + pgvector      │ │ (bge via vLLM/Ollama)│
+   └──────────────────┘ └─────────────────┘ └────────────────┘ └──────────────────────┘
+   缓存：storage-redis（kv backend）← session-projection-cache / 检索缓存（可丢）
+   Consumers（不随后端变）：
+   memory-context   每 turn systemPrompt.section('memory')：按 thread 绑定节点/组 + 当前问题做混合检索注入
+   tool-memory      memory_search / memory_note / knowledge_search（模型可见工具）
+   memory-ingest    Runtime：agent/turn-stopping + task 结果 → 抽取候选事实（LLM）→ ctx.memory.remember
+   knowledge-ingest Host：上传/抓取（md/pdf/html/故障报告）→ 分块 → embed → ctx.knowledge.addDocument；审核流
+   ui-memory / ui-knowledge  slots 页：按节点/集群看记忆时间线；知识库上传/标签/命名空间/审核
+```
+
+**数据放哪**（真相源全部在 PG；图与向量是可重建的派生索引；磁盘上不再有记忆文件）：
+
+| 数据 | 后端 |
+|---|---|
+| 常驻指令（agent/租户 markdown，仍是 md 文本） | PG（`agents.instruction_doc`） |
+| Episode 原文（对话摘要、巡检结论、事故报告、人工录入） | PG（SSOT） |
+| Fact / Entity / Relation（`valid_at/invalid_at`） | 图数据库（P3）；MVP 先 PG 表 |
+| Episode / chunk 向量 | MVP pgvector（同一 PG）；上量后专用向量库 |
+| 知识库文档 | 元数据 + 原文 PG，向量在向量库；命名空间 `tenant:{id}` / `platform` |
+| 程序性知识（SOP） | dsh skill（文件；P2 `skill-pg`） |
+| 装配好的上下文 / 检索缓存 | Redis（可丢） |
+| 会话日志（短期记忆） | PG（`session-persistence-pg`） |
+
+**保留不动的 dsh 记忆机制**：会话日志 + `resume`、`compaction-basic`/`tool-result-pruner`（遗忘策略）、`spill`（大结果外置）、`skill`（程序性知识）、`session-reference`（`@` 引用）、`session-query`（全文检索历史会话，P2 → pg）、`fork`。
+
+**分阶段**：P1 = 三个 Definition + `memory-pg` + `knowledge-pg` + `embeddings-openai-compat` + `memory-context` + `tool-memory` + `memory-ingest`（规则/轻量 LLM）+ `instructions-pg`；P2 = `knowledge-ingest` 完整版 + `ui-memory`/`ui-knowledge` + `storage-redis` 默认开 + `skill-pg` + `session-query-pg`；P3 = `memory-graph` + `knowledge-vector`（只换 provider 行）。
+
+**待定**：embedding 模型来源（DeepSeek 无 embedding API → 默认 OpenAI 兼容接口，指向 vLLM/Ollama 的 bge-m3 或云端服务）；图数据库选型（Neo4j vs 其它，P3 前定）。
 
 ---
 
@@ -569,7 +630,12 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `@opendb-dsh/scheduler` | cron → `thread_queue`（按节点/组的巡检） | P1 | H |
 | `@opendb-dsh/approval-platform` | `ctx.approval` provider + PG approvals + 一次性令牌 + `tools/pre-execute` waterfall | P1 | HR |
 | `@opendb-dsh/approval-ui` | 审批中心 slots 页 | P1 | H |
-| `@opendb-dsh/memory` / `memory-pg` | `ctx.memory` Definition / pgvector+FTS provider + section 注入 + 工具 | P1 | R |
+| `@opendb-dsh/memory` / `knowledge` / `embeddings` | 三个 Definition（`ctx.memory` / `ctx.knowledge` / `ctx.embeddings`） | P1 | HR |
+| `@opendb-dsh/memory-pg` / `knowledge-pg` / `embeddings-openai-compat` | pgvector+FTS 记忆 / 文档 chunk 检索 / OpenAI 兼容 embedding provider | P1 | HR |
+| `@opendb-dsh/memory-context` / `tool-memory` / `memory-ingest` | 每 turn section 注入 / `memory_search`+`memory_note`+`knowledge_search` 工具 / turn 结束抽取写入 | P1 | R |
+| `@opendb-dsh/storage-redis` | dsh `storage` `kv` facet 的 Redis backend（投影缓存、检索缓存；可丢） | P2 | HR |
+| `@opendb-dsh/knowledge-ingest` / `ui-memory` / `ui-knowledge` / `skill-pg` | 知识库上传/抓取/审核流；记忆与知识库 slots 页；SOP 从 PG 来 | P2 | H |
+| `@opendb-dsh/memory-graph` / `knowledge-vector` | 图数据库 provider（Neo4j/Graphiti）/ 专用向量库 provider（可选） | P3 | R |
 | `@opendb-dsh/instructions-pg` | 替换 `agent-instructions`：从 PG 注入 instruction_doc | P1 | R |
 | `@opendb-dsh/tool-pg` | libpq 只读诊断/指标/元数据；动作类 SQL 单独工具 | P1 | R |
 | `@opendb-dsh/tasks` | `ctx.tasks` seam：任务类型注册表（Host 半：列表/配置/结果 slots + scheduler 接入；Runtime 半：run = `task:<type>` thread + 结果投影） | P1 | HR |
@@ -620,7 +686,9 @@ CI 门：`dsh --profile <name> --dump-config` 快照；至少一条 e2e 走真�
 | dsh `Agent` 接口面宽，Host 侧代理成本高 | P0 首先验证；备选：交互 thread 在 Host 本进程跑真 loop |
 | Host 单副本：粘性 WS、进程内 session 注册表 | MVP 接受；P3 按 §5.3 扩 |
 | dsh 特权 RPC 硬编码 loopback（settings/credentials/preset 编辑） | settings/credentials 由 ConfigMap/Secret 提供；preset 编辑走 `agent-presets-pg`；`connection-auth` 按角色放行或隐藏 |
-| dsh 工作区 = 目录路径的假设 | `directory-picker-agent` + `registry` 把工作区映射为 agent（虚拟路径 `agent://<id>`）；P0 顺带验证 `workspaceRegistry.resolveByPath` 接受虚拟路径 |
+| dsh 工作区 = 目录路径的假设（源码核实：`workspaceRegistry.create/resolveByPath` 做 `realpath`+`isDirectory`，`session.create` 会 `mkdir -p cwd`；`agent://` 连 `isAbsolute` 都过不了） | 每个 agent 对应一个真实可自动创建的绝对目录 `$DSH_HOME/agents/<agent-id>/`，`directory-picker-agent` 返回该路径；语义不变 |
+| Host 回灌远端事件（源码核实：dsh 无 tail/ingest API；`/api/events.mux` 推的是 in-memory Session 的 `session/event`；构造种子不 emit） | Host tail PG（`loadStoredFrom`）→ 对 Host 进程内 live `Session` 逐条 `session.append(type,data,surfaceOp)` 重放（seq 由本地分配、必须从 0 严格按序）→ UI 自然更新；Host 上的 `session-persistence-pg` 以 `(session_id, seq)` 幂等去重避免双写；`AgentFactory` 仅 `createAgent/resume` 两方法可代理，但代理 Agent 须持有真 `Session` + `Inbox` + `createScope` 并复刻 enter/announce 发布序 |
+| `ask_user` 是纯内存 Promise（不进 session log），跨 pod 答不了 | Runtime 注册把问题写 PG 的 `UserQuestionProvider`；Host 读到后对代理 Agent 调 `ctx.userQuestions.ask()` 让 dsh 原生 UI 弹问，答案写回 PG；`approval` 有持久化事件（`approval/asked`/`decided`）相对好办 |
 | `tool-fs-search` 依赖本机 ripgrep | P2 `tool-fs-search-ssh` |
 | dsh 仍是 rc（rc.6），接口可能变 | `dsh.lock` 钉版；只依赖 README 明示的 Service Definition；conformance 测试 |
 | `PersistenceBackend` 无跨进程写者互斥；Host 读 + Runtime 写 | PG 行状态机保证同一 thread 单写者；`(thread_id, seq)` 唯一约束兜底 |
