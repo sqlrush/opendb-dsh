@@ -38,7 +38,7 @@ export default class DispatchAgentLoop extends Service {
     ctx.effect(() => anyCtx.agents.setFactory(this), 'dispatch.setFactory()');
     this.ready.catch(() => {});
     ctx.effect(() => async () => { await this.ready.catch(() => {}); await this.pool.end(); }, 'dispatch.pool');
-    anyCtx.systemPrompt?.variable?.('cwd', (c: any) => c.agent?.session?.header?.cwd);
+    ctx.get('systemPrompt' as any)?.variable?.('cwd', (c: any) => c.agent?.session?.header?.cwd);   // optional service → ctx.get
   }
 
   async createAgent(ownerCtx: any, options: any) {
