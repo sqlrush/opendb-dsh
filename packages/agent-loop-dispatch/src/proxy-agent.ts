@@ -66,7 +66,7 @@ export class ProxyAgent {
   private async dispatch(message: any): Promise<void> {
     try {
       await this.ctx.sessions.flush(this.session);
-      await enqueue(this.pool, this.id, { content: message.content, source: message.source ?? { kind: 'user' } });
+      await enqueue(this.pool, this.id, { content: message.content, source: message.source ?? { kind: 'user' }, agentOptions: this.options ?? {} });
     } catch (err) {
       trace(`dispatch error ${String(this.id)}: ${String(err)}`);
     }

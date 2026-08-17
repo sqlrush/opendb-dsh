@@ -4,7 +4,7 @@ import type pg from 'pg';
 export interface Claimed {
   queueId: string;
   sessionId: string;
-  payload: { content: unknown[]; source: unknown };
+  payload: { content: unknown[]; source: unknown; agentOptions?: { provider?: string; model?: string; maxTokens?: number } };
 }
 
 /**

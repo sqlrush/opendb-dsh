@@ -101,7 +101,9 @@ export default class RuntimeWorker extends Service {
     const hb = setInterval(() => void heartbeat(this.pool, sessionId, this.config.podName), this.config.heartbeatMs);
     let handle: AgentHandleLike | undefined;
     try {
-      handle = (await anyCtx.agents.resume({ resumeSessionId: sessionId })) as AgentHandleLike;
+      const fallback = anyCtx.get('agentDefaultModel')?.currentSelection?.() ?? {};
+      const agentOptions = payload.agentOptions?.provider && payload.agentOptions?.model ? payload.agentOptions : { provider: fallback.provider, model: fallback.model };
+      handle = (await anyCtx.agents.resume({ resumeSessionId: sessionId, agentOptions })) as AgentHandleLike;
       const agent = handle.agent;
       const interruptPoll = setInterval(() => {
         void pendingInterrupts(this.pool, sessionId).then((n) => { if (n > 0) agent.cancel({ kind: 'user' }); });
