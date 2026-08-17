@@ -1,6 +1,6 @@
-# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.5
+# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.6
 
-> 类型：架构设计（v0.5，2026-08-17；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
+> 类型：架构设计（v0.6，2026-08-17；v0.5 + §8.4 时序与数据字典（TimescaleDB 同栈、collector class）+ D18；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
 > 依据：
 > - dsh 本地安装源码 `~/.dsh/profiles/node_modules/@deepseek-ai/*`（**v0.1.0-rc.6**，195 包，逐包 README/patch/package.json 核对）
 > - dsh 插件机制分析 `~/airush/docs/deepseek-harness-plugin-analysis.md`（rc.5 @ 47f9438；rc.6 未见结构性变化）
@@ -263,6 +263,7 @@ ctx.tasks.registerType({
 | D15 | 借用优先：dsh 有的原样用（含 `credentials-local` env 层、`settings-file` + initContainer 拷贝、`agent-presets` 文件源），不重写 | 全部替换 |
 | D16 | **镜像装全部 195 个 dsh 包**，profile/preset 决定加载哪些行；"原样"是处理策略不等于加载（约 100 个 A+B 档实际加载，30 个按 class/阶段开，10 个不用） | 按需裁剪镜像 |
 | D17 | 记忆/知识借鉴 airush 四分法：PG = 真相（rollout/Episode/指令）；Redis = 可丢热缓存；图库 = 逻辑知识（时序事实）；向量 = 语义知识（MVP pgvector，图谱向量随图走，不设统一向量库）；dsh 有 seam 的直接用（persistence/checkpoint/projection-cache/storage/system-prompt/skill），没有的新增（memory/knowledge/embeddings 三个 seam + provider） | 自研整套 / 全放 PG |
+| D18 | 时序与字典：TimescaleDB 扩展装同一 PG（同备份域/RLS，预加载、钉版）；`ctx.metrics`/`ctx.dictionary` seam；采集器 = 无 LLM 的 `collector` runtime class 按节点数伸缩；字典用版本化快照 + 变更事件 | 独立时序库 / 采集塞进 agent 池 |
 
 ---
 
@@ -274,8 +275,9 @@ ctx.tasks.registerType({
 |---|---|---|---|---|---|
 | **host** | StatefulSet（MVP 1 副本） | HPA 按 WS 连接数（P3） | 无持久状态（`$DSH_HOME` emptyDir） | `host` | 统一 Web 入口：dsh 原生 UI + 平台 slots 页；注册表、排程、审批、`agent-loop-dispatch`；Ingress + oauth2-proxy 前置 |
 | **runtime-\<class\>** | Deployment ×每 class | KEDA | 无 | `pg-ops` / `pg-rac` / `assistant` | 队列 worker + 真 agent-loop；`exec-ssh`、`tool-pg`、`memory-pg` |
+| **collector** | Deployment | KEDA 按被管节点数 | 无 | `collector`（无 agent-loop、不接 LLM） | 采集 `pg_stat_*`/主机指标/数据字典 → TimescaleDB；异常 → incident |
 | **skill-\<name\>**（可选） | Deployment / Job | 0→N | 无 | — | 仅重型/隔离技能（MCP） |
-| **postgres**（+pgvector） | StatefulSet 或云托管 | 固定 | PVC Retain | — | 唯一真相源；本地部署走 CloudNativePG 主备 |
+| **postgres**（+pgvector +timescaledb） | StatefulSet 或云托管 | 固定 | PVC Retain | — | 唯一真相源 + 时序（hypertable）；`shared_preload_libraries=timescaledb,pg_stat_statements`；本地部署走 CloudNativePG 主备 |
 | **minio / S3** | StatefulSet 或云 | 固定 | PVC | — | attachments、spill、大 payload、冷归档 |
 | **otel-collector**（可选） | Deployment | 1 | 无 | — | 脱敏 processor |
 | **redis** | Deployment | 1 | 无 PVC（可丢） | — | 投影缓存/检索缓存（`storage-redis`）；不承担正确性；P2 默认 |
@@ -455,7 +457,7 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | 替换（写 provider） | 13 | `agent-loop`(H)、`session-persistence-jsonl`、`storage-json`、`attachment-local`、`spill-local`、`session-query-sqlite`(P2)、`fs-local`+`bash-local`+`subprocess-local`（合为 `exec-ssh`）、`agent-instructions`、`client-connection`、`directory-picker-*`、`client-ui-workspace` |
 | 改造 | 1 | `tool-fs-search`（远端 rg） |
 | 禁用 | ~20 | 沙箱全家、pwsh、terminal/PTY、code-runtime、cordis runner、directory-picker 后端、client-hmr、anonymous-user-id、skill-badge、landlock |
-| 新增（自研） | ~35 | 见 §11（含记忆/知识族 ~15 个） |
+| 新增（自研） | ~40 | 见 §11（含记忆/知识族 ~15 个、时序/字典族 6 个） |
 
 ---
 
@@ -574,6 +576,41 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 
 ---
 
+### 8.4 时序与数据字典（借鉴 airush：TimescaleDB 同栈；指标 + 字典变化）
+
+dsh 同样没有指标/字典类插件，按 seam 新增：
+
+```
+                 ┌──────────── Definition（seam）─────────────────────────────────────┐
+                 │ ctx.metrics     write(series[]) · query(node, metric, range, agg)         │
+                 │ ctx.dictionary  snapshot(node) · diff(node, from, to) · history           │
+                 └──────────┬────────────────────────────────┬─────────────────────────┘
+   Providers（可换）        │                                │
+   ┌────────────────────────▼──────┐              ┌──────────▼───────────────────────┐
+   │ metrics-timescale (MVP)       │              │ dictionary-pg (MVP)              │
+   │ 同一 PG 加 timescaledb 扩展    │              │ 版本化快照表 + 变更事件 hypertable │
+   │ hypertable(tenant, node, ts)  │              │ (表/列/索引/参数/扩展/角色…)      │
+   │ 连续聚合 + 压缩 + 分级保留     │              └──────────────────────────────────┘
+   └───────────────────────────────┘   将来：metrics-victoria（>5000 实例时换 provider）
+   Producers：collector（纯代码、不调 LLM；按节点周期拉 pg_stat_* / 系统指标 / 数据字典；异常规则 → task-incident；DDL 变化 → 变更事件）
+   Consumers：tool-metrics（metrics_query / dictionary_diff）· task-monitor-dashboard（读连续聚合）· task-inspection / task-sql-audit（基线）· memory-ingest（异常/字典变化摘要 → Episode）
+```
+
+- **采集器 = `collector` runtime class**：一棵没有 agent-loop、不接 LLM 的 dsh 树（只装 `collector` + `metrics-timescale` + `dictionary-pg` + PG 连接层），Deployment 按被管节点数伸缩；`scheduler` 按节点/组投 `kind=collect` 任务，不占 agent 池与 LLM 配额。
+- **数据放哪**：
+
+| 数据 | 后端 | 说明 |
+|---|---|---|
+| 监控样本（`pg_stat_database/activity/replication/bgwriter`、锁等待、WAL、连接数、慢查询计数、主机 CPU/内存/磁盘） | TimescaleDB hypertable `metrics_samples(tenant_id, node_id, metric, ts, value, labels)` | `(tenant_id, node_id)` 空间分区 + 时间分块；连续聚合 1m/1h；7 天后压缩；原始保留 90 天、聚合 1 年 |
+| 数据字典快照（表/列/索引/约束/序列/函数/扩展/角色/`pg_settings`） | PG 常规表 `dict_snapshots(node_id, taken_at, kind, object_key, definition_hash, definition jsonb)` | 只存变化的对象（hash 去重），首次全量 |
+| 字典变更事件（DDL diff、参数变更） | hypertable `dict_changes(tenant_id, node_id, ts, kind, object_key, change, before_ref, after_ref)` | 供 `dictionary_diff` 与告警 |
+| rollout 引用 | `rollout_events` 只存指针（查询参数 + 结果摘要 + 时间范围） | 控制 rollout 体量 |
+
+- **D18**：MVP 用 TimescaleDB 扩展装在同一 PG 集群（同一备份域、同一 RLS；`shared_preload_libraries=timescaledb,pg_stat_statements` 必须预加载；镜像版本钉死不用 `latest`——三条 airush 踩过的坑）；`ctx.metrics` 留 seam，>5000 实例或写入吃紧换 `metrics-victoria`。字典变化用"版本化快照 + 变更事件"而非指标模型（稀疏、结构化、需 diff）。
+- **阶段**：P1 = `metrics`/`dictionary` Definition + `metrics-timescale` + `dictionary-pg` + `collector`（核心十余指标 + 字典快照）+ `tool-metrics`；P2 = 大盘读连续聚合、异常规则 → incident、DDL 告警；P3 = `metrics-victoria`（可选）。
+
+---
+
 ## 9. Turn 生命周期
 
 ```
@@ -636,6 +673,10 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `@opendb-dsh/storage-redis` | dsh `storage` `kv` facet 的 Redis backend（投影缓存、检索缓存；可丢） | P2 | HR |
 | `@opendb-dsh/knowledge-ingest` / `ui-memory` / `ui-knowledge` / `skill-pg` | 知识库上传/抓取/审核流；记忆与知识库 slots 页；SOP 从 PG 来 | P2 | H |
 | `@opendb-dsh/memory-graph` / `knowledge-vector` | 图数据库 provider（Neo4j/Graphiti）/ 专用向量库 provider（可选） | P3 | R |
+| `@opendb-dsh/metrics` / `dictionary` | 两个 Definition（`ctx.metrics` / `ctx.dictionary`） | P1 | HR |
+| `@opendb-dsh/metrics-timescale` / `dictionary-pg` | TimescaleDB hypertable provider / 版本化字典快照 + 变更事件 | P1 | HR |
+| `@opendb-dsh/collector` / `tool-metrics` | 采集器（`collector` class）/ `metrics_query` + `dictionary_diff` 工具 | P1 | collector / R |
+| `@opendb-dsh/metrics-victoria` | VictoriaMetrics provider（>5000 实例可选） | P3 | — |
 | `@opendb-dsh/instructions-pg` | 替换 `agent-instructions`：从 PG 注入 instruction_doc | P1 | R |
 | `@opendb-dsh/tool-pg` | libpq 只读诊断/指标/元数据；动作类 SQL 单独工具 | P1 | R |
 | `@opendb-dsh/tasks` | `ctx.tasks` seam：任务类型注册表（Host 半：列表/配置/结果 slots + scheduler 接入；Runtime 半：run = `task:<type>` thread + 结果投影） | P1 | HR |
@@ -673,7 +714,7 @@ CI 门：`dsh --profile <name> --dump-config` 快照；至少一条 e2e 走真�
 | 阶段 | 目标 | 交付 | 验收 |
 |---|---|---|---|
 | **P0 可行性验证（~1 周）** | 用最小代码证明"Host 派发 + Runtime 接力"在 dsh 上成立 | `session-persistence-pg` + `agent-loop-dispatch`（最小）+ `runtime-worker`（最小）+ 两个 profile + kind 部署 | 在 dsh 原生 UI 发一条消息，turn 在 Runtime pod A 执行并实时显示；杀掉 A，第二条消息由 B 接力 resume；跨 pod `ask_user` 提问回路可用；`--dump-config` 无 PENDING。若 `Agent` 接口代理不可行，切 §9 备选并记录 |
-| **P1 MVP** | 单租户可用的 PG 巡检/诊断平台 | `registry` + agent 配置页、`ui-agent-workspace`、`tasks` + `task-inspection` + `task-sql-audit`、`scheduler`、`tool-pg`（只读）、`memory-pg`、`approval-platform` + `approval-ui`、`storage-pg/attachment-s3/spill-s3`、`directory-picker-agent`、preset ConfigMap、Helm chart（本地多硬件节点 k8s）、KEDA；**认证/IM 暂不做** | 100 节点 / 5 agent 排程巡检跑通；审批链路端到端；随机杀 runtime pod 不丢会话 |
+| **P1 MVP** | 单租户可用的 PG 巡检/诊断平台 | `registry` + agent 配置页、`ui-agent-workspace`、`tasks` + `task-inspection` + `task-sql-audit`、`scheduler`、`tool-pg`（只读）、`metrics-timescale` + `dictionary-pg` + `collector` + `tool-metrics`、`memory-pg`、`approval-platform` + `approval-ui`、`storage-pg/attachment-s3/spill-s3`、`directory-picker-agent`、preset ConfigMap、Helm chart（本地多硬件节点 k8s）、KEDA；**认证/IM 暂不做** | 100 节点 / 5 agent 排程巡检跑通；审批链路端到端；随机杀 runtime pod 不丢会话 |
 | **P2 执行与扇出** | 经审批的主机/数据库动作；子代理跨 pod；IM 审批 | `exec-ssh`、`tool-fs-search-ssh`、`tool-pg` 动作类、一次性令牌、`approval-im-*`、`subagent-queue`、`workflow-sandbox-job`、`task-monitor-dashboard`、`task-incident`、`agent-presets-pg`、`session-query-pg`、`connection-auth` + Ingress 认证 | 一次经审批的变更在目标 PG 主机执行并全量审计；父 agent 扇出 10 子代理跨 pod |
 | **P3 规模与多租户** | 上千节点；RLS；Host 水平扩；冷归档 | KEDA 调参、rollout 分区归档、RLS FORCE、租户配额、Host 粘性多副本 + `NOTIFY`、`terminal-ssh`、`code-runtime-sandbox-job`、可选 Skill pod 与 `memory-graphiti` | 2000 节点压测；租户越权集成用例全绿 |
 
