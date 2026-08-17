@@ -24,7 +24,6 @@ interface AgentHandleLike {
   agent: {
     followup(message: unknown): void;
     session: unknown;
-    session: unknown;
     whenIdle(): Promise<void>;
     cancel(cause: unknown, options?: unknown): void;
   };
