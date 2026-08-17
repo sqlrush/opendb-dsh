@@ -1,0 +1,12 @@
+{
+  "name": "@opendb-dsh/bundle-runtime",
+  "version": "0.0.1",
+  "description": "opendb-dsh Runtime bundle: patch layer over dsh-base (real agent loop, PostgreSQL persistence, queue worker; zero local tools in P0)",
+  "type": "module",
+  "files": ["cordis.patch.yml"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": {
+    "@opendb-dsh/runtime-worker": "workspace:*",
+    "@opendb-dsh/session-persistence-pg": "workspace:*"
+  }
+}

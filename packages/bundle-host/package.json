@@ -1,0 +1,12 @@
+{
+  "name": "@opendb-dsh/bundle-host",
+  "version": "0.0.1",
+  "description": "opendb-dsh Host bundle: patch layer over dsh-base + dsh-web-app (dispatching agent factory, PostgreSQL persistence, 0.0.0.0 webserver)",
+  "type": "module",
+  "files": ["cordis.patch.yml"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": {
+    "@opendb-dsh/agent-loop-dispatch": "workspace:*",
+    "@opendb-dsh/session-persistence-pg": "workspace:*"
+  }
+}

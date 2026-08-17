@@ -1,0 +1,48 @@
+# opendb-dsh Runtime layer. Applied after dsh-base (no dsh-web-app).
+# P0: the real dsh-agent-loop stays; persistence goes to PostgreSQL; zero local execution
+# tools (design D5) — only ask_user is exposed to the model.
+- id: session-persistence-jsonl
+  disabled: true
+- id: hmr
+  disabled: true
+- id: session-title-llm
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-str-replace-editor
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-ralph
+  disabled: true
+- id: workflow-worker-thread
+  disabled: true
+- id: bash-sandbox
+  disabled: true
+- id: fs-sandbox
+  disabled: true
+- insert:
+    - id: session-persistence-pg
+      name: '@opendb-dsh/session-persistence-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+    - id: runtime-worker
+      name: '@opendb-dsh/runtime-worker'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+        runtimeClass: !!js process.env.OPENDB_RUNTIME_CLASS ?? 'default'
+        podName: !!js process.env.OPENDB_POD_NAME ?? process.env.HOSTNAME ?? 'runtime-local'
+        pollMs: 2000
+        heartbeatMs: 5000
+        staleMs: 30000
+        healthPort: !!js Number(process.env.OPENDB_HEALTH_PORT ?? 9090)

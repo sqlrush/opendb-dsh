@@ -1,0 +1,6 @@
+{
+  "name": "dsh-profile-runtime",
+  "private": true,
+  "dependencies": { "@opendb-dsh/bundle-runtime": "workspace:*" },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@opendb-dsh/bundle-runtime"] } }
+}

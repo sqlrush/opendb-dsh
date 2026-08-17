@@ -1,0 +1,24 @@
+# opendb-dsh Host layer. Applied after dsh-base and dsh-web-app.
+# Patch semantics (dsh): a row is addressed by id and its whole `config` is replaced;
+# `name` is an assertion, not an override — so "replace a row" = disable it + insert ours.
+- id: agent-loop
+  disabled: true
+- id: session-persistence-jsonl
+  disabled: true
+- id: hmr
+  disabled: true
+- id: webserver
+  config:
+    host: '0.0.0.0'
+    port: 3080
+- insert:
+    - id: session-persistence-pg
+      name: '@opendb-dsh/session-persistence-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: agent-loop-dispatch
+      name: '@opendb-dsh/agent-loop-dispatch'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+        runtimeClass: !!js process.env.OPENDB_RUNTIME_CLASS ?? 'default'
+        tailMs: 400
