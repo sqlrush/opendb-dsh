@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: host, namespace: opendb-dsh }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: host } }
+  template:
+    metadata: { labels: { app: host } }
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: host
+          image: opendb-dsh:p0
+          imagePullPolicy: IfNotPresent
+          args: ["--profile", "host"]
+          env:
+            - { name: OPENDB_PG_URL, value: "postgres://dsh:dsh@postgres:5432/dsh" }
+            - { name: DEEPSEEK_API_KEY, valueFrom: { secretKeyRef: { name: opendb-dsh-llm, key: DEEPSEEK_API_KEY } } }
+          ports: [{ containerPort: 3080 }]
+          readinessProbe: { tcpSocket: { port: 3080 }, initialDelaySeconds: 5, periodSeconds: 5 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: host, namespace: opendb-dsh }
+spec:
+  type: NodePort
+  selector: { app: host }
+  ports: [{ port: 3080, targetPort: 3080, nodePort: 30080 }]

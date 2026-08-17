@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: runtime, namespace: opendb-dsh }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: runtime } }
+  template:
+    metadata: { labels: { app: runtime } }
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: runtime
+          image: opendb-dsh:p0
+          imagePullPolicy: IfNotPresent
+          args: ["--profile", "runtime"]
+          env:
+            - { name: OPENDB_PG_URL, value: "postgres://dsh:dsh@postgres:5432/dsh" }
+            - { name: OPENDB_HEALTH_PORT, value: "9090" }
+            - { name: OPENDB_POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: DEEPSEEK_API_KEY, valueFrom: { secretKeyRef: { name: opendb-dsh-llm, key: DEEPSEEK_API_KEY } } }
+          ports: [{ containerPort: 9090 }]
+          readinessProbe: { httpGet: { path: /, port: 9090 }, initialDelaySeconds: 5, periodSeconds: 5 }
