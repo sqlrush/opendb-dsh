@@ -1,6 +1,6 @@
-# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.3（评审稿）
+# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.4
 
-> 类型：架构设计评审稿（v0.3，2026-08-17；合并 v0.1/v0.2 与 2026-08-16～17 的问答澄清；待 user 评审后进入实施计划）
+> 类型：架构设计（v0.4，2026-08-17；v0.3 评审稿 + user 对 §14 的回复 + 产品模型 §3.6 + 关闭项展开 §3.7；P0 已获准，进入实施计划）
 > 依据：
 > - dsh 本地安装源码 `~/.dsh/profiles/node_modules/@deepseek-ai/*`（**v0.1.0-rc.6**，195 包，逐包 README/patch/package.json 核对）
 > - dsh 插件机制分析 `~/airush/docs/deepseek-harness-plugin-analysis.md`（rc.5 @ 47f9438；rc.6 未见结构性变化）
@@ -166,6 +166,61 @@
 
 推论：新 Host 无需向 Runtime 注册；Host 数与 Runtime 数无比例（各自 HPA/KEDA）；用户换 Host 不影响在跑的 turn；Host 全挂 Runtime 继续跑完手里的活；唯一耦合 = 同一 PG schema 版本 + 同一 `dsh.lock`。延迟：轮询 2s + tail 400ms，上量后加 `LISTEN/NOTIFY`（仍是 PG）。
 
+
+### 3.6 产品模型：工作区 = agent，agent 下两类任务（user 2026-08-17）
+
+opendb-dsh 不面向编码，**没有"文件夹/目录"概念**：dsh 侧栏里原本的"工作区（目录）"在这里就是一个个 **agent**（图标换成 agent）；agent 上配置**使用的插件（preset/class）**和**管理的数据库节点**；agent 下面有两类任务：
+
+```
+▣ agent-A（pg-ops · 12 个节点 · preset: 巡检只读）        ← 工作区 = agent；点开可配插件与节点
+   💬 对话                                                ← 普通对话 thread（用户随时发起）
+      · 2026-08-17 慢查询分析
+      · 主库 WAL 堆积排查
+   ⚙ 任务                                                ← 插件式任务：每类任务由一个"任务插件"支撑
+      · [SQL 审核]   每日 02:00 · 最近一次 ✓ 3 条建议       ← task-sql-audit
+      · [监控大盘]   实时 · 12/12 节点在线                   ← task-monitor-dashboard
+      · [巡检]       每小时 · 最近一次 ⚠ 2 项               ← task-inspection
+```
+
+| 概念 | 落到 dsh 的哪里 | 我们做什么 |
+|---|---|---|
+| **agent 工作区** | dsh `workspaceRegistry`（原样）+ `ctx.directoryPicker` seam | `directory-picker-agent`（Host provider：选 agent 即选工作区，虚拟路径 `agent://<id>`）；`ui-agent-workspace`（客户端插件，替换 `dsh-client-ui-workspace`：agent 图标、agent 名称/节点数/preset 徽标、"配置 agent"入口） |
+| **agent 配置页** | `ctx.slots.register` 挂进 dsh app-shell；表单用 dsh 自带的 `client-schema-form`（schemastery） | `registry` 插件的 slots 页：绑定节点/组、选 class + preset、instruction_doc、模型、启用的任务插件 |
+| **普通对话** | dsh 原生 session（`thread.kind = chat`） | 不改：dsh 对话视图/工具树/计划/子代理 UI 全部照用 |
+| **插件式任务** | `thread.kind = task:<type>`；每类任务是一个 **任务插件**（Cordis 插件，Host 半 + Runtime 半） | 新增 `ctx.tasks` seam（`@opendb-dsh/tasks`）：任务类型注册表；每个任务插件注册一种类型 |
+
+**任务插件（task plugin）契约**：
+
+```ts
+ctx.tasks.registerType({
+  id: 'sql-audit',                       // 任务类型
+  name: 'SQL 审核', icon: '…',
+  configSchema: Schema.object({...}),    // schemastery，Host 用 client-schema-form 直接渲染配置表单
+  trigger: { kind: 'cron' | 'event' | 'continuous', ... },  // 定时 / 事件（告警 webhook）/ 常驻
+  preset: 'sql-audit',                   // Runtime 侧用哪棵 preset 子树（工具集）
+  buildPrompt(config, ctx) {...},        // 每次运行的输入（可引用绑定节点、上次结果）
+  resultProjection: {...},               // 结构化结果落 PG（task_runs / task_results），供大盘与列表用
+  ui: { list: Component, detail: Component, dashboard?: Component },  // 挂进 slots
+})
+```
+
+- **Host 半**：任务列表/配置/结果页（slots）、`scheduler` 按 `trigger` 建 run（= 往 `thread_queue` 投一个 `task:<type>` thread）、事件型任务由告警 webhook 触发、常驻型任务（监控大盘）= 采集器 job + 异常时才拉起 agent 分析；
+- **Runtime 半**：run 就是一个普通 thread，绑定该任务类型的 preset，跑完把结构化结果写 `task_results`（rollout 里存指针）；
+- 任务与对话共享同一套持久化/审批/记忆，任务的一次运行可以"转成对话"继续追问（`fork` 已有 thread）。
+
+首批任务插件（P1 起）：`task-inspection`（巡检，cron）、`task-sql-audit`（SQL 审核，cron）、`task-monitor-dashboard`（监控大盘，continuous，P2）、`task-incident`（告警处置，event，P2）。
+
+### 3.7 P1 关闭项展开：`workflow` / `code-runtime` / `terminal`
+
+| | `dsh-workflow`（+ worker-thread、tool-workflow、tool-ralph） | `dsh-code-runtime`（+ worker-thread、agent-tool-presentation） | `dsh-terminal`（+ terminal-bash、tool-bash-persistent） |
+|---|---|---|---|
+| **是什么** | 模型自己写 JS 编排脚本，`agent()` 桥接到 `ctx.subagents`，做多子代理编排；`tool-ralph` 在其上跑 Ralph 循环 | Code Mode：把全部工具暴露成代码运行时，模型写一段代码一次调很多工具 | 持久 PTY seam：给 agent 一个跨多轮存活的交互 shell；后端 node-pty（本地原生模块） |
+| **执行在哪** | Runtime pod 内 worker thread（`env: {}`、`execArgv: []`，dsh 明说不是安全边界） | 同上 | Runtime pod 本地进程 |
+| **P1 关的原因** | ① 模型写的 JS 在 worker thread 里仍能 `require('fs')`/`net`，而 Runtime pod 持有 PG DSN / SSH 私钥——真实越权面；② 依赖 `ctx.subagents`，P1 只有进程内 spawn/fork；③ 平台的插件式任务不需要模型写脚本 | 同 ①；P1 工具少，省往返收益不明显 | ① node-pty 只能开在 Runtime 本地，而 Runtime 零本地执行；② 持久 PTY 会把 thread 钉在 pod 上，与"任意 pod 领任意 thread"冲突 |
+| **回来的方式** | **P2**：`subagent-queue` 后编排才有意义；引擎换进程外 provider `workflow-sandbox-job`（dsh workflow seam 明示可换引擎不改工具）：脚本投 sandbox Job pod，`agent()` 经队列回 Runtime 池，无凭据、限时限资源 | **P3**：`ctx.codeRuntime` 描述符已预留 `isolation: 'container'` → `code-runtime-sandbox-job` provider，同一 sandbox Job pod，工具调用经受控回程通道 | **P3**：`terminal-ssh` provider 实现 `ctx.terminals`（ssh2 shell channel = 远端 PTY），`tool-bash-persistent` 一行不改即得目标 PG 主机上跨轮存活的 `psql` 会话；配套：thread 有打开终端时 `ClaimTurn` 对 `running_pod` 软亲和（原 pod 不在才换并关终端、写事件告知模型）；排水先关终端 |
+| **与插件式任务的关系** | 无依赖；是"高级 agent 临场编排多子代理"的加分能力 | 无依赖；P3 后适合"对 200 个节点各查一遍"类批量任务优化 | 无依赖；P3 后监控类任务可借远端 PTY 做 `\watch` 式持续采集（可选） |
+
+一句话：三者 P1 关都因为"在持有凭据的 Runtime 进程里跑模型写的代码 / 开本地进程"与 D5 冲突；回来的方式都是 dsh 已给的 seam——换进程外/远端 provider，工具层不动。
 **业界对照**：① Kubernetes 自己（scheduler 写 etcd、kubelet watch，互不调用）；② "PG 当队列"流派（Graphile Worker、pg-boss、River、Oban、GoodJob、Procrastinate，`SKIP LOCKED` + `LISTEN/NOTIFY`）；③ Temporal/Cadence（事件历史为真相源，任意 worker replay 接力）；④ LangGraph Platform（PG checkpoint + worker 池）。边界：PG 队列在每秒数千消息以上才吃亏，我们是每分钟几十个 turn。
 
 ---
@@ -379,7 +434,8 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `dsh-client-web` `dsh-client-web-react` `dsh-client-runtime` `dsh-client-modules` `dsh-client-locale` `dsh-client-schema-form` | Web 壳内核、React 胶水、Slot 注册/会话运行时、模块系统、中英文、设置表单模型 | 原样 |
 | `dsh-client-hmr` | 开发热重载 | 禁用 |
 | `dsh-client-ui-slots` `dsh-client-ui-layout` `dsh-client-ui-primitives` `dsh-client-ui-theme` | 插槽核心 / 三栏布局 / 原子组件 / 主题 | 原样（平台页面用 `ctx.slots.register` 挂进同一 app-shell） |
-| `dsh-client-ui-sidebar` `dsh-client-ui-workspace` | 会话树侧栏 / 工作区选择 | 原样（工作区 = agent） |
+| `dsh-client-ui-sidebar` | 会话树侧栏（多级树/分组/搜索） | 原样；分组改为"agent → 对话 / 任务"（配置或小改造，P1 验证） |
+| `dsh-client-ui-workspace` | 工作区（目录）选择器 | 替换 → `@opendb-dsh/ui-agent-workspace`（agent 图标、名称/节点数/preset 徽标、配置入口） |
 | `dsh-client-ui-conversation` `dsh-client-ui-tool` `dsh-client-ui-trajectory` `dsh-client-ui-plan` `dsh-client-ui-goal` `dsh-client-ui-jobs` `dsh-client-ui-subagent` `dsh-client-ui-skill` `dsh-client-ui-workflow-run` `dsh-client-ui-deliverables` `dsh-client-ui-attachment` `dsh-client-ui-user-questions` `dsh-client-ui-message-feedback` | 对话、工具调用树、轨迹、计划、目标、任务、子代理、技能、工作流、产出文件、附件、提问、评分 | 原样（远端 turn 事件回灌后全部照常渲染） |
 | `dsh-client-ui-commands` `dsh-client-ui-input-trigger` `dsh-client-ui-model-selection` `dsh-client-ui-permission-presets` `dsh-client-ui-agent-preset` | 命令面板、`/` `@` 触发、模型选择、权限预设、preset 编辑 | 原样（preset 编辑 P2 接 `agent-presets-pg`） |
 | `dsh-client-ui-settings` `-general` `-models` `-plugins` `-plugin-inventory` | 设置域 | 原样（settings/credentials 页在远程浏览器受 dsh loopback 限制——由 `connection-auth` 按管理员角色放行或隐藏） |
@@ -392,7 +448,7 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 |---|---|---|
 | 原样 | ~150 | 含全部内核、全部策略插件、全部 UI、Host 宿主、LLM、技能、子代理 |
 | 配置 | ~10 | `hmr`、`webserver` host、`agent-tool-presentation`、`persona`、`time-context`、`session-title-llm`（R 关）、`telemetry`、`session-query-sqlite openAt`、`agent-default-model` |
-| 替换（写 provider） | 12 | `agent-loop`(H)、`session-persistence-jsonl`、`storage-json`、`attachment-local`、`spill-local`、`session-query-sqlite`(P2)、`fs-local`+`bash-local`+`subprocess-local`（合为 `exec-ssh`）、`agent-instructions`、`client-connection`、`directory-picker-*` |
+| 替换（写 provider） | 13 | `agent-loop`(H)、`session-persistence-jsonl`、`storage-json`、`attachment-local`、`spill-local`、`session-query-sqlite`(P2)、`fs-local`+`bash-local`+`subprocess-local`（合为 `exec-ssh`）、`agent-instructions`、`client-connection`、`directory-picker-*`、`client-ui-workspace` |
 | 改造 | 1 | `tool-fs-search`（远端 rg） |
 | 禁用 | ~20 | 沙箱全家、pwsh、terminal/PTY、code-runtime、cordis runner、directory-picker 后端、client-hmr、anonymous-user-id、skill-badge、landlock |
 | 新增（自研） | ~20 | 见 §11 |
@@ -516,6 +572,13 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `@opendb-dsh/memory` / `memory-pg` | `ctx.memory` Definition / pgvector+FTS provider + section 注入 + 工具 | P1 | R |
 | `@opendb-dsh/instructions-pg` | 替换 `agent-instructions`：从 PG 注入 instruction_doc | P1 | R |
 | `@opendb-dsh/tool-pg` | libpq 只读诊断/指标/元数据；动作类 SQL 单独工具 | P1 | R |
+| `@opendb-dsh/tasks` | `ctx.tasks` seam：任务类型注册表（Host 半：列表/配置/结果 slots + scheduler 接入；Runtime 半：run = `task:<type>` thread + 结果投影） | P1 | HR |
+| `@opendb-dsh/task-inspection` / `task-sql-audit` | 首批任务插件：巡检（cron）、SQL 审核（cron） | P1 | HR |
+| `@opendb-dsh/ui-agent-workspace` | 客户端插件，替换 `dsh-client-ui-workspace`：agent 图标/徽标/配置入口；侧栏分组"对话 / 任务" | P1 | H |
+| `@opendb-dsh/task-monitor-dashboard` / `task-incident` | 监控大盘（continuous：采集器 + 异常拉起 agent）、告警处置（event） | P2 | HR |
+| `@opendb-dsh/workflow-sandbox-job` | `ctx.workflowEngine` 进程外 provider（sandbox Job pod） | P2 | R |
+| `@opendb-dsh/terminal-ssh` | `ctx.terminals` 远端 PTY provider（ssh2 shell channel）+ claim 软亲和 | P3 | R |
+| `@opendb-dsh/code-runtime-sandbox-job` | `ctx.codeRuntime` `isolation: container` provider | P3 | R |
 | `@opendb-dsh/exec-ssh` | `ctx.fs`+`ctx.shell`+`ctx.subprocess` 同世界 SSH provider | P2 | R |
 | `@opendb-dsh/tool-fs-search-ssh` | 远端 rg/grep | P2 | R |
 | `@opendb-dsh/approval-im-feishu` / `-dingtalk` | webhook 路由 + 出站通知 | P2 | H |
@@ -544,9 +607,9 @@ CI 门：`dsh --profile <name> --dump-config` 快照；至少一条 e2e 走真�
 | 阶段 | 目标 | 交付 | 验收 |
 |---|---|---|---|
 | **P0 可行性验证（~1 周）** | 用最小代码证明"Host 派发 + Runtime 接力"在 dsh 上成立 | `session-persistence-pg` + `agent-loop-dispatch`（最小）+ `runtime-worker`（最小）+ 两个 profile + kind 部署 | 在 dsh 原生 UI 发一条消息，turn 在 Runtime pod A 执行并实时显示；杀掉 A，第二条消息由 B 接力 resume；跨 pod `ask_user` 提问回路可用；`--dump-config` 无 PENDING。若 `Agent` 接口代理不可行，切 §9 备选并记录 |
-| **P1 MVP** | 单租户可用的 PG 巡检/诊断平台 | `registry` + slots 页面、`scheduler`、`tool-pg`（只读）、`memory-pg`、`approval-platform` + `approval-ui`、`storage-pg/attachment-s3/spill-s3`、`connection-auth` + Ingress 认证、`directory-picker-agent`、preset ConfigMap、Helm chart、KEDA | 100 节点 / 5 agent 排程巡检跑通；审批链路端到端；随机杀 runtime pod 不丢会话 |
-| **P2 执行与扇出** | 经审批的主机/数据库动作；子代理跨 pod；IM 审批 | `exec-ssh`、`tool-fs-search-ssh`、`tool-pg` 动作类、一次性令牌、`approval-im-*`、`subagent-queue`、`agent-presets-pg`、`session-query-pg` | 一次经审批的变更在目标 PG 主机执行并全量审计；父 agent 扇出 10 子代理跨 pod |
-| **P3 规模与多租户** | 上千节点；RLS；Host 水平扩；冷归档 | KEDA 调参、rollout 分区归档、RLS FORCE、租户配额、Host 粘性多副本 + `NOTIFY`、可选 Skill pod 与 `memory-graphiti` | 2000 节点压测；租户越权集成用例全绿 |
+| **P1 MVP** | 单租户可用的 PG 巡检/诊断平台 | `registry` + agent 配置页、`ui-agent-workspace`、`tasks` + `task-inspection` + `task-sql-audit`、`scheduler`、`tool-pg`（只读）、`memory-pg`、`approval-platform` + `approval-ui`、`storage-pg/attachment-s3/spill-s3`、`directory-picker-agent`、preset ConfigMap、Helm chart（本地多硬件节点 k8s）、KEDA；**认证/IM 暂不做** | 100 节点 / 5 agent 排程巡检跑通；审批链路端到端；随机杀 runtime pod 不丢会话 |
+| **P2 执行与扇出** | 经审批的主机/数据库动作；子代理跨 pod；IM 审批 | `exec-ssh`、`tool-fs-search-ssh`、`tool-pg` 动作类、一次性令牌、`approval-im-*`、`subagent-queue`、`workflow-sandbox-job`、`task-monitor-dashboard`、`task-incident`、`agent-presets-pg`、`session-query-pg`、`connection-auth` + Ingress 认证 | 一次经审批的变更在目标 PG 主机执行并全量审计；父 agent 扇出 10 子代理跨 pod |
+| **P3 规模与多租户** | 上千节点；RLS；Host 水平扩；冷归档 | KEDA 调参、rollout 分区归档、RLS FORCE、租户配额、Host 粘性多副本 + `NOTIFY`、`terminal-ssh`、`code-runtime-sandbox-job`、可选 Skill pod 与 `memory-graphiti` | 2000 节点压测；租户越权集成用例全绿 |
 
 ---
 
@@ -569,10 +632,14 @@ CI 门：`dsh --profile <name> --dump-config` 快照；至少一条 e2e 走真�
 
 ---
 
-## 14. 剩余待确认项
+## 14. 待确认项与 user 回复（2026-08-17）
 
-1. **Host 认证方式**：Ingress + oauth2-proxy 接企业 IdP（推荐），还是先做用户名/密码插件？
-2. **SSH 账号策略**：平台专用账号 + 受限 sudo 是否可接受？还是节点上已有统一运维账号？
-3. **IM 优先级**：先飞书还是钉钉？
-4. **§6 插件清单**：是否同意"原样 ~150 / 配置 ~10 / 替换 12 / 改造 1 / 禁用 ~20"的处理？特别是：`settings-file` 保留（不做 settings-pg）、`credentials-local` 保留（env）、`workflow`/`code-runtime`/`terminal` P1 关闭。
-5. **P0 是否现在开始**（约一周最小验证：Host 派发 + Runtime 接力 resume + 跨 pod 提问回路）。
+| # | 问题 | user 回复 | 落地 |
+|---|---|---|---|
+| 1 | Host 认证方式 | **MVP 暂不考虑**；先做一个本地多个硬件节点部署的 k8s 服务 | `connection-auth` + Ingress 认证移到 P2；MVP 内网使用；Helm chart 以本地多节点 k8s 为目标形态 |
+| 2 | SSH 账号 / 测试环境 | **在 mac 上部署 k8s 测试环境**：`ssh admin@192.168.128.1` | P0/P1 的目标集群与被管 PG 测试节点都在这台 mac 上；SSH 账号策略随测试环境定 |
+| 3 | IM 优先级 | **MVP 暂不考虑** | `approval-im-*` 移到 P2 |
+| 4 | §6 插件清单处理 | user 待审 | 清单保持 v0.3 分类；§3.7 已展开 workflow/code-runtime/terminal 的关闭理由与回归路径 |
+| 5 | 是否开始 P0 | **可以做 P0 验证** | 进入实施计划（P0：Host 派发 + Runtime 接力 resume + 跨 pod `ask_user` 回路 + `agent://` 虚拟工作区） |
+
+**产品模型补充（user 2026-08-17，已入 §3.6）**：工作区 = agent（图标换 agent，无文件夹概念）；agent 上配置插件与被管节点；agent 下两类任务——普通对话、插件式任务（如定期 SQL 审核、实时监控大盘），每类任务由一个任务插件支撑。
