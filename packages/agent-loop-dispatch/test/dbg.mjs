@@ -1,0 +1,28 @@
+import { Context } from '@deepseek-ai/cordis';
+import { SessionStore } from '@deepseek-ai/dsh-session';
+import { AgentRegistry } from '@deepseek-ai/dsh-agent';
+import { UserQuestionService } from '@deepseek-ai/dsh-user-questions';
+import PgSessionPersistence, { createPool, runMigrations } from '@opendb-dsh/session-persistence-pg';
+import DispatchAgentLoop from '../lib/index.js';
+const PG_URL = process.env.PG_URL; const ctx = new Context();
+const pool = createPool(PG_URL); await runMigrations(pool);
+await pool.query('TRUNCATE dsh_questions, dsh_thread_queue, dsh_threads, dsh_session_events, dsh_sessions');
+await ctx.plugin(SessionStore); await ctx.plugin(AgentRegistry); await ctx.plugin(UserQuestionService);
+await ctx.plugin(PgSessionPersistence, { connectionString: PG_URL, writeBatchMaxDelayMs: 1 });
+await ctx.plugin(DispatchAgentLoop, { connectionString: PG_URL, tailMs: 50 });
+const seen = []; ctx.on('session/event', (_s, e) => seen.push(e.type));
+try {
+  const handle = await ctx.agents.create({ sessionId: 'p0-1', meta: { cwd: '/tmp/opendb-dsh-test' } });
+  console.log('created; session.seq=', handle.agent.session.seq, 'status=', handle.agent.status);
+  handle.agent.followup({ id: 'm1', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'hello' }] });
+  await new Promise(r => setTimeout(r, 200));
+  console.log('queue:', (await pool.query("SELECT kind, payload FROM dsh_thread_queue WHERE session_id='p0-1'")).rows);
+  console.log('threads:', (await pool.query("SELECT * FROM dsh_threads WHERE session_id='p0-1'")).rows);
+  await pool.query(`INSERT INTO dsh_session_events (session_id, seq, type, time, data) VALUES ('p0-1', 0, 'turn/start', 1, '{"turn":1}'), ('p0-1', 1, 'turn/end', 2, '{"turn":1,"reason":{"kind":"completed"}}')`);
+  await pool.query("UPDATE dsh_thread_queue SET admitted_at = now(), admitted_by = 'sim' WHERE session_id = 'p0-1'");
+  await pool.query("UPDATE dsh_threads SET status = 'idle' WHERE session_id = 'p0-1'");
+  await Promise.race([handle.agent.whenIdle(), new Promise((_, rej) => setTimeout(() => rej(new Error('whenIdle timeout')), 5000))]);
+  console.log('idle; seen=', seen, 'seq=', handle.agent.session.seq);
+  await handle.dispose();
+} catch (e) { console.error('FAILED:', e); }
+await ctx.root.fiber.dispose(); await pool.end();

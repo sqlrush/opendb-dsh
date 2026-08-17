@@ -26,6 +26,7 @@ export default class DispatchAgentLoop extends Service {
 
   private readonly pool: pg.Pool;
   private readonly ready: Promise<void>;
+  private readonly live = new Set<ProxyAgent>();
 
   private readonly config: DispatchConfig;
 
@@ -37,7 +38,12 @@ export default class DispatchAgentLoop extends Service {
     this.ready = runMigrations(this.pool);
     ctx.effect(() => anyCtx.agents.setFactory(this), 'dispatch.setFactory()');
     this.ready.catch(() => {});
-    ctx.effect(() => async () => { await this.ready.catch(() => {}); await this.pool.end(); }, 'dispatch.pool');
+    ctx.effect(() => async () => {
+      for (const a of this.live) a.stopTail();
+      this.live.clear();
+      await this.ready.catch(() => {});
+      await this.pool.end();
+    }, 'dispatch.pool');
     ctx.get('systemPrompt' as any)?.variable?.('cwd', (c: any) => c.agent?.session?.header?.cwd);   // optional service → ctx.get
   }
 
@@ -72,10 +78,11 @@ export default class DispatchAgentLoop extends Service {
     anyCtx.agents.announce(agent);
     commit?.commit?.();
     emitAgentEvent(this.ctx, agent as any, 'agent/session-start' as any, { source } as any);
+    this.live.add(agent);
     if (source === 'resume') agent.startTail();     // a Runtime may already be executing this session
     return {
       agent,
-      dispose: async () => { agent.stopTail(); detachAgent(); detachSession(); },
+      dispose: async () => { agent.stopTail(); this.live.delete(agent); detachAgent(); detachSession(); },
     };
   }
 }
