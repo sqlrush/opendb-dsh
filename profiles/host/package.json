@@ -1,6 +1,10 @@
 {
   "name": "dsh-profile-host",
   "private": true,
-  "dependencies": { "@opendb-dsh/bundle-host": "workspace:*" },
+  "dependencies": {
+    "@opendb-dsh/bundle-host": "workspace:*",
+    "@opendb-dsh/agent-loop-dispatch": "workspace:*",
+    "@opendb-dsh/session-persistence-pg": "workspace:*"
+  },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@opendb-dsh/bundle-host"] } }
 }
