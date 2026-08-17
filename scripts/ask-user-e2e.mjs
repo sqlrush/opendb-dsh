@@ -1,8 +1,9 @@
 // P0 acceptance ③: cross-process ask_user. Connects to the Host mux stream, prompts the agent to ask a
 // question, auto-answers the first question/requested frame, and waits for the assistant's final message.
 const PORT = process.env.OPENDB_HOST_PORT ?? '3090';
-const API = `http://127.0.0.1:${PORT}/api`;
-const ORIGIN = `http://127.0.0.1:${PORT}`;
+const HOSTNAME = process.env.OPENDB_HOST ?? '127.0.0.1';
+const API = `http://${HOSTNAME}:${PORT}/api`;
+const ORIGIN = `http://${HOSTNAME}:${PORT}`;
 const rpc = async (method, payload) => {
   const r = await fetch(`${API}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json', origin: ORIGIN },
     body: JSON.stringify({ type: 'client-request', rpcId: `q-${Math.random().toString(36).slice(2)}`, method, payload }) });
@@ -11,7 +12,7 @@ const rpc = async (method, payload) => {
 const created = await rpc('session.create', {});
 const sessionId = created.result.value.sessionId;
 console.log('session', sessionId);
-const ws = new WebSocket(`ws://127.0.0.1:${PORT}/api/events.mux`, { headers: { origin: ORIGIN } });
+const ws = new WebSocket(`ws://${HOSTNAME}:${PORT}/api/events.mux`, { headers: { origin: ORIGIN } });
 let answered = false, done = false;
 const finish = (msg) => { console.log(msg); done = true; ws.close(); };
 ws.addEventListener('open', async () => {
