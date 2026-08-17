@@ -13,12 +13,14 @@ await ctx.plugin(DispatchAgentLoop, { connectionString: PG_URL, tailMs: 50 });
 const seen = []; ctx.on('session/event', (_s, e) => seen.push(e.type));
 try {
   const handle = await ctx.agents.create({ sessionId: 'p0-1', meta: { cwd: '/tmp/opendb-dsh-test' } });
-  console.log('created; session.seq=', handle.agent.session.seq, 'status=', handle.agent.status);
+  console.log('created; session.seq=', handle.agent.session.seq, 'status=', handle.agent.status, 'events=', handle.agent.session.events.map(e => e.type));
   handle.agent.followup({ id: 'm1', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'hello' }] });
   await new Promise(r => setTimeout(r, 200));
   console.log('queue:', (await pool.query("SELECT kind, payload FROM dsh_thread_queue WHERE session_id='p0-1'")).rows);
   console.log('threads:', (await pool.query("SELECT * FROM dsh_threads WHERE session_id='p0-1'")).rows);
-  await pool.query(`INSERT INTO dsh_session_events (session_id, seq, type, time, data) VALUES ('p0-1', 0, 'turn/start', 1, '{"turn":1}'), ('p0-1', 1, 'turn/end', 2, '{"turn":1,"reason":{"kind":"completed"}}')`);
+  const base = handle.agent.session.seq;
+  console.log('stored max seq:', (await pool.query("SELECT max(seq) FROM dsh_session_events WHERE session_id='p0-1'")).rows[0].max, 'local seq:', base);
+  await pool.query(`INSERT INTO dsh_session_events (session_id, seq, type, time, data) VALUES ('p0-1', ${base}, 'turn/start', 1, '{"turn":1}'), ('p0-1', ${base+1}, 'turn/end', 2, '{"turn":1,"reason":{"kind":"completed"}}')`);
   await pool.query("UPDATE dsh_thread_queue SET admitted_at = now(), admitted_by = 'sim' WHERE session_id = 'p0-1'");
   await pool.query("UPDATE dsh_threads SET status = 'idle' WHERE session_id = 'p0-1'");
   await Promise.race([handle.agent.whenIdle(), new Promise((_, rej) => setTimeout(() => rej(new Error('whenIdle timeout')), 5000))]);

@@ -57,8 +57,17 @@ export class ProxyAgent {
 
   /** Host never appends locally: enqueue and tail. Runtime assigns seq; Host mirrors. */
   send(message: any, _target: unknown, _wakeup: boolean): void {
-    void enqueue(this.pool, this.id, { content: message.content, source: message.source ?? { kind: 'user' } });
     this.setStatus('running');
+    void this.dispatch(message);
+  }
+  /** Flush the Host-side log first so the Runtime resumes from a prefix that includes every local event. */
+  private async dispatch(message: any): Promise<void> {
+    try {
+      await this.ctx.sessions.flush(this.session);
+      await enqueue(this.pool, this.id, { content: message.content, source: message.source ?? { kind: 'user' } });
+    } catch (err) {
+      console.warn(`[agent-loop-dispatch] dispatch ${String(this.id)}: ${String(err)}`);
+    }
     this.startTail();
   }
   followup(m: any) { this.send(m, 'next-turn', true); }
