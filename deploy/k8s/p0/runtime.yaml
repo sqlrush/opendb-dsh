@@ -11,7 +11,7 @@ spec:
       containers:
         - name: runtime
           image: host.orb.internal:5050/opendb-dsh:p0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           args: ["--profile", "runtime"]
           env:
             - { name: OPENDB_PG_URL, value: "postgres://dsh:dsh@postgres:5432/dsh" }

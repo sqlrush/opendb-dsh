@@ -11,7 +11,7 @@ spec:
       containers:
         - name: host
           image: host.orb.internal:5050/opendb-dsh:p0
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           args: ["--profile", "host"]
           env:
             - { name: OPENDB_TRUSTED_HOSTS, value: "192.168.139.164:30080,192.168.139.181:30080,192.168.139.40:30080,192.168.139.41:30080,192.168.128.1:30080" }
