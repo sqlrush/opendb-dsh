@@ -29,6 +29,9 @@
   disabled: true
 - id: fs-sandbox
   disabled: true
+# permission presets bundle sandbox mode + approval policy and inject the shell service — no shell in Runtime
+- id: permission
+  disabled: true
 - insert:
     - id: session-persistence-pg
       name: '@opendb-dsh/session-persistence-pg'
