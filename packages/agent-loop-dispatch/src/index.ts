@@ -28,12 +28,18 @@ export default class DispatchAgentLoop extends Service {
   private readonly pool: pg.Pool;
   private readonly ready: Promise<void>;
   private readonly live = new Set<ProxyAgent>();
+  /** Our own plugin ctx + injected services, captured at construction: calls arriving via ctx.agents.create() are re-traced to the caller's ctx. */
+  private readonly loopCtx: any;
+  private readonly svc: { sessions: any; agents: any; sessionPersistence: any };
 
   private readonly config: DispatchConfig;
 
   constructor(ctx: Context, config: DispatchConfig) {
     super(ctx, 'agentLoop');
     this.config = config;
+    const c = ctx as any;
+    this.loopCtx = c;
+    this.svc = { sessions: c.sessions, agents: c.agents, sessionPersistence: c.sessionPersistence };
     const anyCtx = ctx as any;
     this.pool = createPool(config.connectionString);
     this.ready = runMigrations(this.pool);
@@ -52,9 +58,8 @@ export default class DispatchAgentLoop extends Service {
   async createAgent(ownerCtx: any, options: any) {
     trace(`createAgent ${String(options.sessionId)}`);
     await this.ready;
-    const anyCtx = this.ctx as any;
-    const session = anyCtx.sessions.prepare(options.sessionId, { meta: { ...options.meta }, seed: options.seed ?? [], seedSource: 'construction' });
-    await anyCtx.sessionPersistence.create(session.header);          // header first: Runtime resumes an empty session
+    const session = this.svc.sessions.prepare(options.sessionId, { meta: { ...options.meta }, seed: options.seed ?? [], seedSource: 'construction' });
+    await this.svc.sessionPersistence.create(session.header);          // header first: Runtime resumes an empty session
     await ensureThread(this.pool, session.id, this.config.runtimeClass);
     return this.publish(ownerCtx, session, options, 'startup');
   }
@@ -62,8 +67,7 @@ export default class DispatchAgentLoop extends Service {
   async resume(ownerCtx: any, options: any) {
     trace(`resume ${String(options.resumeSessionId)}`);
     await this.ready;
-    const anyCtx = this.ctx as any;
-    const preparation = await anyCtx.sessionPersistence.prepare(options.resumeSessionId, options.signal);
+    const preparation = await this.svc.sessionPersistence.prepare(options.resumeSessionId, options.signal);
     try {
       await ensureThread(this.pool, options.resumeSessionId, this.config.runtimeClass);
       return await this.publish(ownerCtx, preparation.session, options, 'resume');
@@ -73,15 +77,14 @@ export default class DispatchAgentLoop extends Service {
   }
 
   private async publish(ownerCtx: any, session: any, options: any, source: 'startup' | 'resume') {
-    const anyCtx = this.ctx as any;
-    const agent = new ProxyAgent(this.ctx, session, options.agentOptions ?? {}, this.pool, this.config.tailMs, anyCtx.sessionPersistence);
+    const agent = new ProxyAgent(this.loopCtx, session, options.agentOptions ?? {}, this.pool, this.config.tailMs, this.svc.sessionPersistence);
     const commit = await options.setup?.(agent.ctx);
     const detachSession = agent.ctx.sessions.enter(session);
-    const detachAgent = anyCtx.agents.enter(agent, ownerCtx?.agent);
+    const detachAgent = this.svc.agents.enter(agent, ownerCtx?.agent);
     agent.ctx.sessions.announce(session);
-    anyCtx.agents.announce(agent);
+    this.svc.agents.announce(agent);
     commit?.commit?.();
-    emitAgentEvent(this.ctx, agent as any, 'agent/session-start' as any, { source } as any);
+    emitAgentEvent(this.loopCtx, agent as any, 'agent/session-start' as any, { source } as any);
     this.live.add(agent);
     if (source === 'resume') agent.startTail();     // a Runtime may already be executing this session
     return {
