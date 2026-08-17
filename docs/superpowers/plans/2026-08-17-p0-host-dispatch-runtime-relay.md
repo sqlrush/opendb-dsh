@@ -84,7 +84,7 @@ opendb-dsh/                                   （本地目录仍是 ~/dsh-k8s，
 - Create: `scripts/dev-pg.sh`
 
 **Interfaces:**
-- Produces: workspace 根 `pnpm build`（递归 tsc）、`pnpm test`（递归 `node --test`）、`pnpm dsh`（= `dsh` bin）；`PG_URL` 约定 `postgres://dsh:dsh@127.0.0.1:5433/dsh`。
+- Produces: workspace 根 `pnpm build`（递归 tsc）、`pnpm test`（递归 `node --test`）、`pnpm dsh`（= `dsh` bin）；`PG_URL` 约定 `postgres://dsh:dsh@127.0.0.1:5434/dsh`。
 
 - [ ] **Step 1: 授权 SSH 公钥并确认 mac 工具链**
 
@@ -166,9 +166,9 @@ profiles/*/node_modules/
 #!/usr/bin/env bash
 set -euo pipefail
 docker rm -f opendb-dsh-pg 2>/dev/null || true
-docker run -d --name opendb-dsh-pg -e POSTGRES_USER=dsh -e POSTGRES_PASSWORD=dsh -e POSTGRES_DB=dsh -p 5433:5432 postgres:16
+docker run -d --name opendb-dsh-pg -e POSTGRES_USER=dsh -e POSTGRES_PASSWORD=dsh -e POSTGRES_DB=dsh -p 5434:5432 postgres:16
 for i in $(seq 1 30); do docker exec opendb-dsh-pg pg_isready -U dsh >/dev/null 2>&1 && break; sleep 1; done
-echo "PG_URL=postgres://dsh:dsh@127.0.0.1:5433/dsh"
+echo "PG_URL=postgres://dsh:dsh@127.0.0.1:5434/dsh"
 ```
 
 - [ ] **Step 4: 安装并验证 dsh 可用**
@@ -366,7 +366,7 @@ test('list returns headers of materialized sessions; revision changes on append'
 
 - [ ] **Step 3: 跑测试确认失败**
 
-Run: `PG_URL=postgres://dsh:dsh@127.0.0.1:5433/dsh pnpm --filter @opendb-dsh/session-persistence-pg test`
+Run: `PG_URL=postgres://dsh:dsh@127.0.0.1:5434/dsh pnpm --filter @opendb-dsh/session-persistence-pg test`
 Expected: FAIL（`Cannot find module '../src/index.ts'`）。
 
 - [ ] **Step 4: 实现 pool / schema**
@@ -549,7 +549,7 @@ export const apply = (ctx: any) => Promise.resolve(ctx.invariants.register(PACKA
 
 - [ ] **Step 6: 构建 + 跑测试**
 
-Run: `pnpm --filter @opendb-dsh/session-persistence-pg build && PG_URL=postgres://dsh:dsh@127.0.0.1:5433/dsh pnpm --filter @opendb-dsh/session-persistence-pg test`
+Run: `pnpm --filter @opendb-dsh/session-persistence-pg build && PG_URL=postgres://dsh:dsh@127.0.0.1:5434/dsh pnpm --filter @opendb-dsh/session-persistence-pg test`
 Expected: 4 tests PASS。若 `Session`/`SessionHeader` 校验拒绝测试里的最小 header（例如要求 `delegationDepth`），按报错补齐字段（对照 `dsh-session/lib/types/types.d.ts:40-78`），不要放宽实现。
 
 - [ ] **Step 7: Commit**
@@ -1095,7 +1095,7 @@ export { DispatchAgentLoop, ProxyAgent };
 set -euo pipefail
 export DSH_HOME="${DSH_HOME:-$PWD/.dsh-home}"; mkdir -p "$DSH_HOME/profiles"
 ln -sfn "$PWD/profiles/host" "$DSH_HOME/profiles/host"
-export OPENDB_PG_URL="${OPENDB_PG_URL:-postgres://dsh:dsh@127.0.0.1:5433/dsh}"
+export OPENDB_PG_URL="${OPENDB_PG_URL:-postgres://dsh:dsh@127.0.0.1:5434/dsh}"
 export DSH_TELEMETRY_DISABLED=1 DSH_PERMISSION_MODE=read-only
 exec pnpm exec dsh --profile host "$@"
 ```
@@ -1135,7 +1135,7 @@ Expected：Runtime 终端出现 claim 日志；UI 里出现助手回复；PG `ds
 #!/usr/bin/env bash
 # 前置：dev-pg 已起；host 已起在 :3080；runtime A、B 已起（OPENDB_POD_NAME=A / B, 端口 9090/9091）。
 set -euo pipefail
-API=${API:-http://127.0.0.1:3080/api}; PG=${OPENDB_PG_URL:-postgres://dsh:dsh@127.0.0.1:5433/dsh}
+API=${API:-http://127.0.0.1:3080/api}; PG=${OPENDB_PG_URL:-postgres://dsh:dsh@127.0.0.1:5434/dsh}
 sql() { docker exec -i opendb-dsh-pg psql -U dsh -d dsh -tAc "$1"; }
 SID=$(curl -s -X POST "$API/session.create" -H 'content-type: application/json' -H "origin: http://127.0.0.1:3080" -d '{}' | sed -n 's/.*"sessionId":"\([^"]*\)".*/\1/p')
 echo "session=$SID"
