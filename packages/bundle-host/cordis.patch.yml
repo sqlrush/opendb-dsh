@@ -22,3 +22,8 @@
         connectionString: !!js process.env.OPENDB_PG_URL
         runtimeClass: !!js process.env.OPENDB_RUNTIME_CLASS ?? 'default'
         tailMs: 400
+# Trust fence: keep dsh's derived LAN literals and add deployment authorities (NodePort / Ingress hosts)
+# via OPENDB_TRUSTED_HOSTS="host:port,host:port". `inject: [webRuntime]` is inherited from the web-app row.
+- id: connection
+  config:
+    trustedHosts: !!js "[...(process.env.OPENDB_TRUSTED_HOSTS ?? '').split(',').map(s => s.trim()).filter(Boolean), ...ctx.webRuntime.trustedHosts]"

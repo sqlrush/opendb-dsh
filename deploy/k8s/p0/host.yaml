@@ -14,6 +14,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args: ["--profile", "host"]
           env:
+            - { name: OPENDB_TRUSTED_HOSTS, value: "192.168.139.164:30080,192.168.139.181:30080,192.168.139.40:30080,192.168.139.41:30080,192.168.128.1:30080" }
             - { name: OPENDB_PG_URL, value: "postgres://dsh:dsh@postgres:5432/dsh" }
             - { name: DEEPSEEK_API_KEY, valueFrom: { secretKeyRef: { name: opendb-dsh-llm, key: DEEPSEEK_API_KEY } } }
           ports: [{ containerPort: 3080 }]
