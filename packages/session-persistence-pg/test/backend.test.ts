@@ -32,7 +32,7 @@ test('append then load round-trips events with contiguous seq and surfaceOp', { 
   await persistence.create(header(id) as any);
   await persistence.append(id as any, [
     turnStart(0) as any,
-    { type: 'user/message', seq: 1, time: 2, data: { message: { role: 'user', content: [{ type: 'text', text: 'hi' }] } }, surfaceOp: 'append' } as any,
+    { type: 'user/message', seq: 1, time: 2, data: { message: { id: 'm-1', role: 'user', content: [{ type: 'text', text: 'hi' }] } }, surfaceOp: 'append' } as any,
   ]);
   const loaded = await persistence.load(id as any);
   assert.equal(loaded.events.length, 2);
@@ -53,8 +53,8 @@ test('duplicate (session_id, seq) inserts are ignored (idempotent mirror)', { sk
   const events = [turnStart(0)] as any;
   await persistence.appendBatch(header(id) as any, events, false);
   await persistence.appendBatch(header(id) as any, events, true);
-  const loaded = await persistence.load(id as any);
-  assert.equal(loaded.events.length, 1);
+  const stored = await persistence.loadStored(id as any);   // raw backend read: no repair closers
+  assert.equal(stored?.events.length, 1);
 });
 
 test('list returns headers; revision changes on append', { skip: !PG_URL }, async () => {
