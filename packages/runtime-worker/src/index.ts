@@ -77,12 +77,12 @@ export default class RuntimeWorker extends Service {
             this.inFlight.add(p);
           }
         } catch (err) {
-          anyCtx.logger?.warn?.('runtime-worker tick failed: %s', String(err));
+          process.stderr.write(`[runtime-worker] tick failed: ${String(err)}\n`);
         }
         if (!this.stopping) timer = setTimeout(tick, this.config.pollMs);
       };
       this.ready = runMigrations(this.pool);
-      this.ready.then(tick).catch((err) => anyCtx.logger?.error?.('runtime-worker migrations failed: %s', String(err)));
+      this.ready.then(tick).catch((err) => process.stderr.write(`[runtime-worker] migrations failed: ${String(err)}\n`));
       return async () => {
         // drain: stop claiming, wait for in-flight turns, then close resources
         this.stopping = true;
@@ -104,6 +104,7 @@ export default class RuntimeWorker extends Service {
       const fallback = anyCtx.get('agentDefaultModel')?.currentSelection?.() ?? {};
       const agentOptions = payload.agentOptions?.provider && payload.agentOptions?.model ? payload.agentOptions : { provider: fallback.provider, model: fallback.model };
       handle = (await anyCtx.agents.resume({ resumeSessionId: sessionId, agentOptions })) as AgentHandleLike;
+      process.stderr.write(`[runtime-worker] claimed ${sessionId} (queue ${claimed.queueId}) on ${this.config.podName}\n`);
       const agent = handle.agent;
       const interruptPoll = setInterval(() => {
         void pendingInterrupts(this.pool, sessionId).then((n) => { if (n > 0) agent.cancel({ kind: 'user' }); });
@@ -115,8 +116,9 @@ export default class RuntimeWorker extends Service {
         clearInterval(interruptPoll);
       }
       await release(this.pool, sessionId, this.config.podName, 'idle');
+      process.stderr.write(`[runtime-worker] released ${sessionId} idle\n`);
     } catch (err) {
-      anyCtx.logger?.error?.('runtime-worker run failed for %s: %s', sessionId, String(err));
+      process.stderr.write(`[runtime-worker] run failed for ${sessionId}: ${String(err)}\n`);
       await release(this.pool, sessionId, this.config.podName, 'interrupted');
     } finally {
       clearInterval(hb);
