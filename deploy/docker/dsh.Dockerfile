@@ -2,7 +2,7 @@
 FROM node:22-bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN corepack enable && corepack prepare pnpm@11 --activate
 WORKDIR /src
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm build
