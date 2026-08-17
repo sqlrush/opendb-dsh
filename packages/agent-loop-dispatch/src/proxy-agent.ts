@@ -90,6 +90,7 @@ export class ProxyAgent {
         const st = await threadStatus(this.pool, this.id);
         const pending = await pendingQueue(this.pool, this.id);
         if (st !== 'running' && pending === 0) {
+          process.stderr.write(`[agent-loop-dispatch] tail stop ${String(this.id)} status=${st} seq=${this.session.seq}\n`);
           await mirrorOnce(this.persistence, this.session);
           this.setStatus('idle');
           this.tailTimer = undefined;
@@ -98,7 +99,7 @@ export class ProxyAgent {
       } catch (err) {
         // transient PG/validation error: log (rate-limited) and retry next tick
         const now = Date.now();
-        if (now - this.lastTailError > 5000) { this.lastTailError = now; console.warn(`[agent-loop-dispatch] tail ${String(this.id)}: ${String(err)}`); }
+        if (now - this.lastTailError > 5000) { this.lastTailError = now; process.stderr.write(`[agent-loop-dispatch] tail error ${String(this.id)}: ${String(err)}\n`); }
       }
       this.tailTimer = setTimeout(tick, this.tailMs);
     };

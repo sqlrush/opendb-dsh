@@ -23,6 +23,7 @@ export interface RuntimeWorkerConfig {
 interface AgentHandleLike {
   agent: {
     followup(message: unknown): void;
+    session: unknown;
     whenIdle(): Promise<void>;
     cancel(cause: unknown, options?: unknown): void;
   };
@@ -35,7 +36,7 @@ interface AgentHandleLike {
  * wait for idle, release. Heartbeats while running; marks stale threads; drains on dispose.
  */
 export default class RuntimeWorker extends Service {
-  static inject = ['agents', 'sessionPersistence', 'userQuestions'];
+  static inject = ['agents', 'sessions', 'sessionPersistence', 'userQuestions'];
   static Config = z.object({
     connectionString: z.string().required(),
     runtimeClass: z.string().default('default'),
@@ -112,6 +113,7 @@ export default class RuntimeWorker extends Service {
       try {
         agent.followup(createUserMessage({ content: payload.content as any, source: payload.source as any } as any));
         await agent.whenIdle();
+        await (anyCtx.sessions?.flush?.(agent.session) ?? Promise.resolve());   // durability checkpoint: last batch (turn/end) hits PG before release
       } finally {
         clearInterval(interruptPoll);
       }
