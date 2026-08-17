@@ -23,7 +23,7 @@ export interface RuntimeWorkerConfig {
 interface AgentHandleLike {
   agent: {
     followup(message: unknown): void;
-    session: unknown;
+    session: { events: ReadonlyArray<{ type: string }> };
     whenIdle(): Promise<void>;
     cancel(cause: unknown, options?: unknown): void;
   };
@@ -113,6 +113,9 @@ export default class RuntimeWorker extends Service {
       try {
         agent.followup(createUserMessage({ content: payload.content as any, source: payload.source as any } as any));
         await agent.whenIdle();
+        // dsh appends turn/end after the (async) agent/turn-stopping hooks, which can be after status→idle: wait for the log to close the turn
+        const t0 = Date.now();
+        while (!turnClosed(agent.session.events) && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 50));
         await (anyCtx.sessions?.flush?.(agent.session) ?? Promise.resolve());   // durability checkpoint: the last write-behind batch (turn/end) reaches PG before release
       } finally {
         clearInterval(interruptPoll);
@@ -130,3 +133,13 @@ export default class RuntimeWorker extends Service {
 }
 
 export { RuntimeWorker };
+
+/** True when the last opened turn in the log has been closed by a turn/end. */
+export function turnClosed(events: ReadonlyArray<{ type: string }>): boolean {
+  let open = false;
+  for (const e of events) {
+    if (e.type === 'turn/start') open = true;
+    else if (e.type === 'turn/end') open = false;
+  }
+  return !open;
+}
