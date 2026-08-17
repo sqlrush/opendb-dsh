@@ -1,6 +1,6 @@
-# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.6
+# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.7
 
-> 类型：架构设计（v0.6，2026-08-17；v0.5 + §8.4 时序与数据字典（TimescaleDB 同栈、collector class）+ D18；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
+> 类型：架构设计（v0.7，2026-08-17；v0.6 + MVP 以 openGauss 为原型（C1 更新、D19 `ctx.db` 方言 seam、`tool-db`）；v0.5 + §8.4 时序与数据字典（TimescaleDB 同栈、collector class）+ D18；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
 > 依据：
 > - dsh 本地安装源码 `~/.dsh/profiles/node_modules/@deepseek-ai/*`（**v0.1.0-rc.6**，195 包，逐包 README/patch/package.json 核对）
 > - dsh 插件机制分析 `~/airush/docs/deepseek-harness-plugin-analysis.md`（rc.5 @ 47f9438；rc.6 未见结构性变化）
@@ -58,7 +58,7 @@
 
 | # | 决策 | 对方案的影响 |
 |---|---|---|
-| C1 | 只管 PostgreSQL | 工具只做 PG；runtime class 首批 `pg-ops`、`pg-rac`、`assistant` |
+| C1 | 只管 PostgreSQL 系；**MVP 以 openGauss（og）为原型，先开发 og 插件**（user 2026-08-17） | 数据库能力层引入方言 seam `ctx.db`：MVP provider `db-opengauss`，P2 `db-postgres`；runtime class 首批 `og-ops`、`assistant`，P2 加 `pg-ops`/`pg-rac`；平台自身存储仍是 PostgreSQL |
 | C2 | 被管节点在 k8s **外**；k8s 只承载 agent 集群本身 | 主机操作走 SSH，数据库操作走 libpq；不引入 connector 网关、sidecar |
 | C3 | 与 airush 不同：**完全基于 dsh 已有代码二次开发** | 控制面 = dsh Host pod 上的插件；不引入 Go 控制面 |
 | C4 | **复用 dsh Web UI** 作为平台统一控制台 | Host pod 跑 dsh-web-app；认证由 Ingress + `connection` 行替换解决；平台页面用 `ctx.slots.register` 挂进同一 app-shell |
@@ -138,7 +138,7 @@
 
 | 差异类型 | 落到哪一层 | 需要新 pod 吗 |
 |---|---|---|
-| 开关/组合不同（要不要 `plan-mode`、只读 `tool-pg` 还是给 `tool-bash`） | **preset**（`.agent-presets/<name>/agent.cordis.yml`） | 不需要，同一个池 |
+| 开关/组合不同（要不要 `plan-mode`、只读 `tool-db` 还是给 `tool-bash`） | **preset**（`.agent-presets/<name>/agent.cordis.yml`） | 不需要，同一个池 |
 | 提示词、模型、挂哪些 skill、管哪些节点 | **数据**（`agents` 表） | 不需要 |
 | 需要**不同的 Provider 包**或**资源/安全隔离** | **class**（一份 profile → 一个池） | 需要，新开一个池 |
 
@@ -250,7 +250,7 @@ ctx.tasks.registerType({
 | D2 | Runtime 池按 runtime class 分池；同 class 的 agent 共享；大 agent 可独占 class | 单一全局池 / 每 agent 一池 |
 | D3 | PG 唯一真相源；S3 大对象；Redis 只做可丢缓存（不承担正确性）；图/向量库是 PG 之上可重建的派生索引 | 消息中间件 / 多真相源 |
 | D4 | 跨 pod 协调 = PG 行状态机（claim + heartbeat + stale 扫描） | leader election / 分布式锁 |
-| D5 | Runtime 零本地执行：主机 → `exec-ssh`，数据库 → `tool-pg`；动作类过审批 | 本地 `danger-full-access` |
+| D5 | Runtime 零本地执行：主机 → `exec-ssh`，数据库 → `tool-db`；动作类过审批 | 本地 `danger-full-access` |
 | D6 | 审批三件套从旁介入：`tools/pre-execute` waterfall → `ctx.approval` → 一次性令牌 → provider 内白名单；无只读标注 fail-closed | 改 agent-loop |
 | D7 | 记忆双层、按租户+实体归属；`ctx.memory` seam，MVP `memory-pg` | per-agent 命名空间 |
 | D8 | 控制面 = dsh Host pod 上的插件；统一 Web = dsh 原生 UI + slots | Go 控制面 / 自建前端 |
@@ -264,6 +264,7 @@ ctx.tasks.registerType({
 | D16 | **镜像装全部 195 个 dsh 包**，profile/preset 决定加载哪些行；"原样"是处理策略不等于加载（约 100 个 A+B 档实际加载，30 个按 class/阶段开，10 个不用） | 按需裁剪镜像 |
 | D17 | 记忆/知识借鉴 airush 四分法：PG = 真相（rollout/Episode/指令）；Redis = 可丢热缓存；图库 = 逻辑知识（时序事实）；向量 = 语义知识（MVP pgvector，图谱向量随图走，不设统一向量库）；dsh 有 seam 的直接用（persistence/checkpoint/projection-cache/storage/system-prompt/skill），没有的新增（memory/knowledge/embeddings 三个 seam + provider） | 自研整套 / 全放 PG |
 | D18 | 时序与字典：TimescaleDB 扩展装同一 PG（同备份域/RLS，预加载、钉版）；`ctx.metrics`/`ctx.dictionary` seam；采集器 = 无 LLM 的 `collector` runtime class 按节点数伸缩；字典用版本化快照 + 变更事件 | 独立时序库 / 采集塞进 agent 池 |
+| D19 | 数据库能力层方言化：`ctx.db` seam（连接 + 方言元数据 + 目录/性能视图查询）；provider `db-opengauss`（MVP：`dbe_perf.*`/`gs_*` 视图、SHA256 认证适配、`gsql`/`gs_ctl` 工具链）→ `db-postgres`（P2）；`tool-db`/`collector`/`dictionary-pg`/任务插件只经 `ctx.db`，不直接依赖某一方言 | 每种数据库各写一套工具 |
 
 ---
 
@@ -274,7 +275,7 @@ ctx.tasks.registerType({
 | 组件 | Workload | 副本/伸缩 | 状态 | profile | 说明 |
 |---|---|---|---|---|---|
 | **host** | StatefulSet（MVP 1 副本） | HPA 按 WS 连接数（P3） | 无持久状态（`$DSH_HOME` emptyDir） | `host` | 统一 Web 入口：dsh 原生 UI + 平台 slots 页；注册表、排程、审批、`agent-loop-dispatch`；Ingress + oauth2-proxy 前置 |
-| **runtime-\<class\>** | Deployment ×每 class | KEDA | 无 | `pg-ops` / `pg-rac` / `assistant` | 队列 worker + 真 agent-loop；`exec-ssh`、`tool-pg`、`memory-pg` |
+| **runtime-\<class\>** | Deployment ×每 class | KEDA | 无 | `og-ops` / `assistant`（P2 加 `pg-ops` / `pg-rac`） | 队列 worker + 真 agent-loop；`exec-ssh`、`tool-db`、`memory-pg` |
 | **collector** | Deployment | KEDA 按被管节点数 | 无 | `collector`（无 agent-loop、不接 LLM） | 采集 `pg_stat_*`/主机指标/数据字典 → TimescaleDB；异常 → incident |
 | **skill-\<name\>**（可选） | Deployment / Job | 0→N | 无 | — | 仅重型/隔离技能（MCP） |
 | **postgres**（+pgvector +timescaledb） | StatefulSet 或云托管 | 固定 | PVC Retain | — | 唯一真相源 + 时序（hypertable）；`shared_preload_libraries=timescaledb,pg_stat_statements`；本地部署走 CloudNativePG 主备 |
@@ -481,10 +482,10 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 |---|---|---|
 | 保留 | `agent-loop`（原包）、全部策略插件、`llm-*`、`jobs-local`、`credentials-local`、`schedule`、`skill-filesystem` | 真执行 |
 | 替换 | 持久化五件套 → PG/S3；`spill-local` → `spill-s3` | — |
-| 替换 | `subprocess`/`bash-sandbox`/`fs-sandbox`/`shell-env` 相关 → `@opendb-dsh/exec-ssh`（P2；P1 无执行 provider，工具集只含 `tool-pg`） | 同一执行世界 |
+| 替换 | `subprocess`/`bash-sandbox`/`fs-sandbox`/`shell-env` 相关 → `@opendb-dsh/exec-ssh`（P2；P1 无执行 provider，工具集只含 `tool-db`） | 同一执行世界 |
 | 替换 | `agent-instructions` → `instructions-pg`；`tool-fs-search` → `tool-fs-search-ssh`（P2） | — |
 | 禁用 | `sandbox`/`sandbox-policy`/`sandbox-local`、`hmr`、`session-title-llm`、`web`（除 assistant class）、`terminal*`、`code-runtime*` | — |
-| 插入 | `runtime-worker`（sweeper/claim/heartbeat/drain/healthz）、`tenant-context`、`approval-platform`（`tools/pre-execute` 半边）、`memory` + `memory-pg`、`instructions-pg`、`tool-pg`、`subagent-queue`(P2) | — |
+| 插入 | `runtime-worker`（sweeper/claim/heartbeat/drain/healthz）、`tenant-context`、`approval-platform`（`tools/pre-execute` 半边）、`memory` + `memory-pg`、`instructions-pg`、`tool-db`、`subagent-queue`(P2) | — |
 | preset | `.agent-presets/<preset>/agent.cordis.yml` 定义模型可见行；`isolate: {planMode: true}`；P1 ConfigMap → P2 `agent-presets-pg` | — |
 
 **环境面**：`DSH_HOME=/var/lib/dsh`（emptyDir，镜像预烘焙 `profiles/node_modules`）、`DSH_PERMISSION_MODE=read-only`、`DSH_TELEMETRY_MODE=DISABLED`、`DEEPSEEK_API_KEY` / `PG_DSN` / `S3_*` / `SSH_KEY_PATH` 由 Secret；`terminationGracePeriodSeconds: 330`。
@@ -505,7 +506,7 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `kv_store` | `(tenant_id, domain, key) PK, value jsonb` | dsh `storage` kv facet 后端（含 workspace 注册表、投影缓存） |
 | `memory_episodes` / `memory_facts` | `entity_type, entity_id, text, embedding vector, valid_at, invalid_at, source_thread, tsv` | pgvector + FTS；RRF 混合检索 |
 | `presets` / `skills` | preset yaml + version；`skill_id → endpoint/read_only` | P2 |
-| `metrics.*` | `tenant_id, node_id, ts, …`（可选 timescaledb） | `tool-pg` 采集；rollout 只存指针 |
+| `metrics.*` | `tenant_id, node_id, ts, …`（可选 timescaledb） | `tool-db` 采集；rollout 只存指针 |
 
 租户隔离：全部业务表带 `tenant_id`，P1 建 RLS 策略不 FORCE；`tenant-context` 保证访问在 `InTenantTx` 内；P3 FORCE。
 
@@ -630,7 +631,7 @@ dsh 同样没有指标/字典类插件，按 seam 新增：
 孤儿: 任一 worker 周期性 MarkStaleRunningInterrupted(heartbeat < now-2×间隔) → 可被重新领取
 ```
 
-**P0 备选**：若 dsh `Agent` 接口面太宽、代理成本高，则 Host 对**交互式 chat thread 在本进程跑真 loop**（Host 也装 `exec-ssh`/`tool-pg`），只有排程/批量 thread 走 Runtime 池；UI 完全不变。
+**P0 备选**：若 dsh `Agent` 接口面太宽、代理成本高，则 Host 对**交互式 chat thread 在本进程跑真 loop**（Host 也装 `exec-ssh`/`tool-db`），只有排程/批量 thread 走 Runtime 池；UI 完全不变。
 
 ---
 
@@ -641,7 +642,7 @@ dsh 同样没有指标/字典类插件，按 seam 新增：
 | Host 认证 | Ingress + oauth2-proxy（或企业 IdP）→ 身份头 → `connection-auth` 建立用户/租户上下文；未认证在 Ingress 层即拒 |
 | Runtime 零本地执行 | 不装本地 shell/fs/sandbox；`DSH_PERMISSION_MODE=read-only`；`readOnlyRootFilesystem`、drop ALL、nonroot |
 | 主机操作 | `exec-ssh` → 每节点 `ssh_target`；平台专用账号、密钥在 Secret、`authorized_keys` 加 `command=`/`from=` 限制；动作类命令需一次性令牌 + 命令白名单（provider 内校验） |
-| 数据库操作 | `tool-pg`：只读工具（`readOnly: true`）直放；动作类 SQL 单独工具，过审批 + 令牌 + SQL 类型白名单 |
+| 数据库操作 | `tool-db`：只读工具（`readOnly: true`）直放；动作类 SQL 单独工具，过审批 + 令牌 + SQL 类型白名单 |
 | 审批 | `tools/pre-execute` waterfall → `ctx.approval`（PG approvals）→ 控制台（slots）或 IM（webhook 回调）决策 → 一次性令牌（32B/TTL/哈希落库）→ 执行 → 全量审计（rollout 事件） |
 | 凭据 | PG 连接串/SSH 密钥只在 Runtime pod Secret；LLM key 经 env；不落 `$DSH_HOME` |
 | 网络 | NetworkPolicy：Runtime 只允许到 PG/S3/LLM 出口/PG 主机网段；Host 只允许到 PG/S3/IM 出口 |
@@ -678,7 +679,8 @@ dsh 同样没有指标/字典类插件，按 seam 新增：
 | `@opendb-dsh/collector` / `tool-metrics` | 采集器（`collector` class）/ `metrics_query` + `dictionary_diff` 工具 | P1 | collector / R |
 | `@opendb-dsh/metrics-victoria` | VictoriaMetrics provider（>5000 实例可选） | P3 | — |
 | `@opendb-dsh/instructions-pg` | 替换 `agent-instructions`：从 PG 注入 instruction_doc | P1 | R |
-| `@opendb-dsh/tool-pg` | libpq 只读诊断/指标/元数据；动作类 SQL 单独工具 | P1 | R |
+| `@opendb-dsh/db` / `db-opengauss` | `ctx.db` 方言 seam / openGauss provider（MVP）；`db-postgres` P2 | P1 | HR |
+| `@opendb-dsh/tool-db` | 只读诊断/指标/元数据（经 `ctx.db`）；动作类 SQL 单独工具（P2） | P1 | R |
 | `@opendb-dsh/tasks` | `ctx.tasks` seam：任务类型注册表（Host 半：列表/配置/结果 slots + scheduler 接入；Runtime 半：run = `task:<type>` thread + 结果投影） | P1 | HR |
 | `@opendb-dsh/task-inspection` / `task-sql-audit` | 首批任务插件：巡检（cron）、SQL 审核（cron） | P1 | HR |
 | `@opendb-dsh/ui-agent-workspace` | 客户端插件，替换 `dsh-client-ui-workspace`：agent 图标/徽标/配置入口；侧栏分组"对话 / 任务" | P1 | H |
@@ -714,8 +716,8 @@ CI 门：`dsh --profile <name> --dump-config` 快照；至少一条 e2e 走真�
 | 阶段 | 目标 | 交付 | 验收 |
 |---|---|---|---|
 | **P0 可行性验证（~1 周）** | 用最小代码证明"Host 派发 + Runtime 接力"在 dsh 上成立 | `session-persistence-pg` + `agent-loop-dispatch`（最小）+ `runtime-worker`（最小）+ 两个 profile + kind 部署 | 在 dsh 原生 UI 发一条消息，turn 在 Runtime pod A 执行并实时显示；杀掉 A，第二条消息由 B 接力 resume；跨 pod `ask_user` 提问回路可用；`--dump-config` 无 PENDING。若 `Agent` 接口代理不可行，切 §9 备选并记录 |
-| **P1 MVP** | 单租户可用的 PG 巡检/诊断平台 | `registry` + agent 配置页、`ui-agent-workspace`、`tasks` + `task-inspection` + `task-sql-audit`、`scheduler`、`tool-pg`（只读）、`metrics-timescale` + `dictionary-pg` + `collector` + `tool-metrics`、`memory-pg`、`approval-platform` + `approval-ui`、`storage-pg/attachment-s3/spill-s3`、`directory-picker-agent`、preset ConfigMap、Helm chart（本地多硬件节点 k8s）、KEDA；**认证/IM 暂不做** | 100 节点 / 5 agent 排程巡检跑通；审批链路端到端；随机杀 runtime pod 不丢会话 |
-| **P2 执行与扇出** | 经审批的主机/数据库动作；子代理跨 pod；IM 审批 | `exec-ssh`、`tool-fs-search-ssh`、`tool-pg` 动作类、一次性令牌、`approval-im-*`、`subagent-queue`、`workflow-sandbox-job`、`task-monitor-dashboard`、`task-incident`、`agent-presets-pg`、`session-query-pg`、`connection-auth` + Ingress 认证 | 一次经审批的变更在目标 PG 主机执行并全量审计；父 agent 扇出 10 子代理跨 pod |
+| **P1 MVP** | 单租户可用的 PG 巡检/诊断平台 | `registry` + agent 配置页、`ui-agent-workspace`、`tasks` + `task-inspection` + `task-sql-audit`、`scheduler`、`tool-db`（只读）、`metrics-timescale` + `dictionary-pg` + `collector` + `tool-metrics`、`memory-pg`、`approval-platform` + `approval-ui`、`storage-pg/attachment-s3/spill-s3`、`directory-picker-agent`、preset ConfigMap、Helm chart（本地多硬件节点 k8s）、KEDA；**认证/IM 暂不做** | 100 节点 / 5 agent 排程巡检跑通；审批链路端到端；随机杀 runtime pod 不丢会话 |
+| **P2 执行与扇出** | 经审批的主机/数据库动作；子代理跨 pod；IM 审批 | `exec-ssh`、`tool-fs-search-ssh`、`tool-db` 动作类、一次性令牌、`approval-im-*`、`subagent-queue`、`workflow-sandbox-job`、`task-monitor-dashboard`、`task-incident`、`agent-presets-pg`、`session-query-pg`、`connection-auth` + Ingress 认证 | 一次经审批的变更在目标 PG 主机执行并全量审计；父 agent 扇出 10 子代理跨 pod |
 | **P3 规模与多租户** | 上千节点；RLS；Host 水平扩；冷归档 | KEDA 调参、rollout 分区归档、RLS FORCE、租户配额、Host 粘性多副本 + `NOTIFY`、`terminal-ssh`、`code-runtime-sandbox-job`、可选 Skill pod 与 `memory-graphiti` | 2000 节点压测；租户越权集成用例全绿 |
 
 ---
