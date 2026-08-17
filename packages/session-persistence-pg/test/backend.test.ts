@@ -32,7 +32,7 @@ test('append then load round-trips events with contiguous seq and surfaceOp', { 
   await persistence.create(header(id) as any);
   await persistence.append(id as any, [
     turnStart(0) as any,
-    { type: 'user/message', seq: 1, time: 2, data: { message: { id: 'm-1', role: 'user', content: [{ type: 'text', text: 'hi' }] } }, surfaceOp: 'append' } as any,
+    { type: 'user/message', seq: 1, time: 2, data: { id: 'm-1', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] }, surfaceOp: 'append' } as any,
   ]);
   const loaded = await persistence.load(id as any);
   assert.equal(loaded.events.length, 2);
