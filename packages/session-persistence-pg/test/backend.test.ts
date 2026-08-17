@@ -33,7 +33,7 @@ test('append then load round-trips events with contiguous seq and surfaceOp', { 
   await persistence.append(id as any, [
     turnStart(0) as any,
     { type: 'user/message', seq: 1, time: 2, data: { id: 'm-1', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] }, surfaceOp: 'append' } as any,
-    { type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: 'completed' } } as any,
+    { type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } } as any,
   ]);
   const loaded = await persistence.load(id as any);
   assert.equal(loaded.events.length, 3);
@@ -62,7 +62,7 @@ test('list returns headers; revision changes on append', { skip: !PG_URL }, asyn
   const id = `s-${Date.now()}-d`;
   await persistence.appendBatch(header(id) as any, [turnStart(0)] as any, false);
   const r1 = await persistence.readStoredRevision(id as any);
-  await persistence.appendBatch(header(id) as any, [{ type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: 'completed' } }] as any, true);
+  await persistence.appendBatch(header(id) as any, [{ type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } }] as any, true);
   const r2 = await persistence.readStoredRevision(id as any);
   assert.notEqual(r1, r2);
   assert.ok((await persistence.list()).some((h) => h.id === id));
@@ -72,7 +72,7 @@ test('commitRepair truncates the torn tail and bumps the revision', { skip: !PG_
   const id = `s-${Date.now()}-e`;
   await persistence.appendBatch(header(id) as any, [turnStart(0), turnStart(1), turnStart(2)] as any, false);
   const before = await persistence.readStoredRevision(id as any);
-  await persistence.commitRepair(header(id) as any, 2, [{ type: 'turn/end', seq: 2, time: 9, data: { turn: 1, reason: 'interrupted' } }] as any);
+  await persistence.commitRepair(header(id) as any, 2, [{ type: 'turn/end', seq: 2, time: 9, data: { turn: 1, reason: { kind: 'completed' } } }] as any);
   const stored = await persistence.loadStored(id as any);
   assert.deepEqual(stored?.events.map((e) => [e.seq, e.type]), [[0, 'turn/start'], [1, 'turn/start'], [2, 'turn/end']]);
   assert.notEqual(before, stored?.revision);

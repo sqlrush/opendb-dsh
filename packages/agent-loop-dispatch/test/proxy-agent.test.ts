@@ -35,7 +35,7 @@ test('followup enqueues; events written by another writer are mirrored into the 
   assert.equal(q.rows[0].payload.content[0].text, 'hello');
   // simulate a Runtime: write events seq 0..1 directly, then mark the thread idle
   await pool.query(`INSERT INTO dsh_session_events (session_id, seq, type, time, data) VALUES
-    ('p0-1', 0, 'turn/start', 1, '{"turn":1}'), ('p0-1', 1, 'turn/end', 2, '{"turn":1,"reason":"completed"}')`);
+    ('p0-1', 0, 'turn/start', 1, '{"turn":1}'), ('p0-1', 1, 'turn/end', 2, '{"turn":1,"reason":{"kind":"completed"}}')`);
   await pool.query("UPDATE dsh_thread_queue SET admitted_at = now(), admitted_by = 'sim' WHERE session_id = 'p0-1'");
   await pool.query("UPDATE dsh_threads SET status = 'idle' WHERE session_id = 'p0-1'");
   await handle.agent.whenIdle();
