@@ -5,6 +5,7 @@ import type pg from 'pg';
 import { createPool, runMigrations } from '@opendb-dsh/session-persistence-pg';
 import { ProxyAgent } from './proxy-agent.ts';
 import { ensureThread } from './queue.ts';
+import { trace } from './debug.ts';
 
 export { ProxyAgent } from './proxy-agent.ts';
 export { ensureThread, enqueue, interrupt, threadStatus, pendingQueue } from './queue.ts';
@@ -36,7 +37,8 @@ export default class DispatchAgentLoop extends Service {
     const anyCtx = ctx as any;
     this.pool = createPool(config.connectionString);
     this.ready = runMigrations(this.pool);
-    ctx.effect(() => anyCtx.agents.setFactory(this), 'dispatch.setFactory()');
+    trace('DispatchAgentLoop constructed');
+    ctx.effect(() => { trace('setFactory'); return anyCtx.agents.setFactory(this); }, 'dispatch.setFactory()');
     this.ready.catch(() => {});
     ctx.effect(() => async () => {
       for (const a of this.live) a.stopTail();
@@ -48,7 +50,7 @@ export default class DispatchAgentLoop extends Service {
   }
 
   async createAgent(ownerCtx: any, options: any) {
-    console.info(`[agent-loop-dispatch] createAgent ${String(options.sessionId)}`);
+    trace(`createAgent ${String(options.sessionId)}`);
     await this.ready;
     const anyCtx = this.ctx as any;
     const session = anyCtx.sessions.prepare(options.sessionId, { meta: { ...options.meta }, seed: options.seed ?? [], seedSource: 'construction' });
@@ -58,7 +60,7 @@ export default class DispatchAgentLoop extends Service {
   }
 
   async resume(ownerCtx: any, options: any) {
-    console.info(`[agent-loop-dispatch] resume ${String(options.resumeSessionId)}`);
+    trace(`resume ${String(options.resumeSessionId)}`);
     await this.ready;
     const anyCtx = this.ctx as any;
     const preparation = await anyCtx.sessionPersistence.prepare(options.resumeSessionId, options.signal);

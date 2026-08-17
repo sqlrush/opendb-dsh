@@ -3,6 +3,7 @@ import { createScope } from '@deepseek-ai/dsh-scope';
 import type pg from 'pg';
 import { enqueue, interrupt, pendingQueue, threadStatus } from './queue.ts';
 import { bridgeQuestionsOnce, mirrorOnce } from './tailer.ts';
+import { trace } from './debug.ts';
 
 type Status = 'idle' | 'running';
 
@@ -57,7 +58,7 @@ export class ProxyAgent {
 
   /** Host never appends locally: enqueue and tail. Runtime assigns seq; Host mirrors. */
   send(message: any, _target: unknown, _wakeup: boolean): void {
-    console.info(`[agent-loop-dispatch] send ${String(this.id)}`);
+    trace(`send ${String(this.id)}`);
     this.setStatus('running');
     void this.dispatch(message);
   }
@@ -67,7 +68,7 @@ export class ProxyAgent {
       await this.ctx.sessions.flush(this.session);
       await enqueue(this.pool, this.id, { content: message.content, source: message.source ?? { kind: 'user' } });
     } catch (err) {
-      console.warn(`[agent-loop-dispatch] dispatch ${String(this.id)}: ${String(err)}`);
+      trace(`dispatch error ${String(this.id)}: ${String(err)}`);
     }
     this.startTail();
   }
