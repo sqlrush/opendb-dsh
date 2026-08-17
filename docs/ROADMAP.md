@@ -1,4 +1,4 @@
-# opendb-dsh Roadmap（v1.1，2026-08-17；MVP 数据库原型 = openGauss；user 已通过，开始 P0）
+# opendb-dsh Roadmap（v1.2，2026-08-17；MVP 数据库原型 = openGauss；**P0 已通过 G0 门，进入 P1**）
 
 > 配套：设计 `docs/2026-08-16-opendb-dsh-platform-design.md`（v0.6）；P0 计划 `docs/superpowers/plans/2026-08-17-p0-host-dispatch-runtime-relay.md`。
 
@@ -18,7 +18,7 @@
 
 ## 1. 阶段与里程碑
 
-### P0 · 可行性验证（~1 周）
+### P0 · 可行性验证 ✅ 已通过（2026-08-17，实际 1 天）
 - 目标：证明"Host 派发 + Runtime 接力"在 dsh rc.6 上成立，不改内核。
 - 交付：`session-persistence-pg`、`agent-loop-dispatch`、`runtime-worker`、`bundle-host/runtime` + 2 个 profile + 一个镜像 + mac k8s 上 postgres/host×1/runtime×2。
 - 验收：① UI 发消息 → Runtime A 执行并实时显示；② 杀 A → B 接力 resume；③ 跨 pod `ask_user`；④ 中断；⑤ `--dump-config` 无 PENDING。

@@ -1,6 +1,6 @@
-# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.7
+# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.8
 
-> 类型：架构设计（v0.7，2026-08-17；v0.6 + MVP 以 openGauss 为原型（C1 更新、D19 `ctx.db` 方言 seam、`tool-db`）；v0.5 + §8.4 时序与数据字典（TimescaleDB 同栈、collector class）+ D18；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
+> 类型：架构设计（v0.8，2026-08-17；P0 已通过（§12、§13.1 经验）；v0.6 + MVP 以 openGauss 为原型（C1 更新、D19 `ctx.db` 方言 seam、`tool-db`）；v0.5 + §8.4 时序与数据字典（TimescaleDB 同栈、collector class）+ D18；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
 > 依据：
 > - dsh 本地安装源码 `~/.dsh/profiles/node_modules/@deepseek-ai/*`（**v0.1.0-rc.6**，195 包，逐包 README/patch/package.json 核对）
 > - dsh 插件机制分析 `~/airush/docs/deepseek-harness-plugin-analysis.md`（rc.5 @ 47f9438；rc.6 未见结构性变化）
@@ -715,7 +715,7 @@ CI 门：`dsh --profile <name> --dump-config` 快照；至少一条 e2e 走真�
 
 | 阶段 | 目标 | 交付 | 验收 |
 |---|---|---|---|
-| **P0 可行性验证（~1 周）** | 用最小代码证明"Host 派发 + Runtime 接力"在 dsh 上成立 | `session-persistence-pg` + `agent-loop-dispatch`（最小）+ `runtime-worker`（最小）+ 两个 profile + kind 部署 | 在 dsh 原生 UI 发一条消息，turn 在 Runtime pod A 执行并实时显示；杀掉 A，第二条消息由 B 接力 resume；跨 pod `ask_user` 提问回路可用；`--dump-config` 无 PENDING。若 `Agent` 接口代理不可行，切 §9 备选并记录 |
+| **P0 可行性验证** ✅ **已通过（2026-08-17，G0 门：代理方案成立，不走备选）** | 证明"Host 派发 + Runtime 接力"在 dsh 上成立 | `session-persistence-pg` / `agent-loop-dispatch` / `runtime-worker` / `bundle-host` / `bundle-runtime` + 两个 profile + 一个镜像；mac 上 OrbStack 4 VM + k3s（1 cp + 3 worker）+ 本地 registry；提交 `04256b8`…| **本地双进程与 4 节点 k3s 均通过**：① UI/API 发消息 → Runtime 真 LLM 执行 → Host 会话实时镜像（Host seq == PG seq）；② 删掉 Runtime pod → 另一 pod 接力（k8s 自动补 pod）；③ 跨 pod `ask_user`（PG 中转 → dsh 原生提问 UI → 作答 → 继续）；④ 中断（`turn/end aborted/user`）；⑤ `--dump-config` 无 PENDING。4 个不确定点全部成立：`sessions.prepare` 可造会话；`session.append` 镜像可行（需带 `surfaceOp`）；Runtime 可 resume 只有 header + `session/end-seed` 的会话；`agents.enter(agent, undefined)` 可用。**踩坑记录见 §13 P0 经验** |
 | **P1 MVP** | 单租户可用的 PG 巡检/诊断平台 | `registry` + agent 配置页、`ui-agent-workspace`、`tasks` + `task-inspection` + `task-sql-audit`、`scheduler`、`tool-db`（只读）、`metrics-timescale` + `dictionary-pg` + `collector` + `tool-metrics`、`memory-pg`、`approval-platform` + `approval-ui`、`storage-pg/attachment-s3/spill-s3`、`directory-picker-agent`、preset ConfigMap、Helm chart（本地多硬件节点 k8s）、KEDA；**认证/IM 暂不做** | 100 节点 / 5 agent 排程巡检跑通；审批链路端到端；随机杀 runtime pod 不丢会话 |
 | **P2 执行与扇出** | 经审批的主机/数据库动作；子代理跨 pod；IM 审批 | `exec-ssh`、`tool-fs-search-ssh`、`tool-db` 动作类、一次性令牌、`approval-im-*`、`subagent-queue`、`workflow-sandbox-job`、`task-monitor-dashboard`、`task-incident`、`agent-presets-pg`、`session-query-pg`、`connection-auth` + Ingress 认证 | 一次经审批的变更在目标 PG 主机执行并全量审计；父 agent 扇出 10 子代理跨 pod |
 | **P3 规模与多租户** | 上千节点；RLS；Host 水平扩；冷归档 | KEDA 调参、rollout 分区归档、RLS FORCE、租户配额、Host 粘性多副本 + `NOTIFY`、`terminal-ssh`、`code-runtime-sandbox-job`、可选 Skill pod 与 `memory-graphiti` | 2000 节点压测；租户越权集成用例全绿 |
@@ -742,6 +742,23 @@ CI 门：`dsh --profile <name> --dump-config` 快照；至少一条 e2e 走真�
 | sweeper 2s 轮询与全表扫描 | 按 `runtime_class` 部分索引；上量后 `LISTEN/NOTIFY` |
 
 ---
+
+### 13.1 P0 经验（2026-08-17，实测得出，P1 起为硬约束）
+
+| 现象 | 根因 | 处置 |
+|---|---|---|
+| Host 侧 `this.ctx.sessionPersistence` 报 "without inject" | `ctx.agents.create()` 会把调用 re-trace 到调用方 ctx | 工厂在构造期捕获自身 ctx 与服务成字段（`loopCtx`/`svc`），方法里只用字段；可选服务一律 `ctx.get` |
+| Runtime 收尾丢 `turn/end`（中断尤甚） | dsh 在 `agent/turn-stopping`（serial、可含 LLM 调用如标题生成）之后才追加 `turn/end`，可能晚于 `whenIdle`；随后 dispose 丢掉写后置批次 | `whenIdle` 后等待日志中本轮 `turn/end`（上限 60s）→ `sessions.flush()` → release/dispose |
+| Host 镜像少最后几十个事件 | Host 看到 idle 立即停 tail，Runtime 最后一批未落库 | idle 后连续两轮空镜像才停 |
+| Host 与 Runtime 写同一会话 seq 分叉 | Host 创建会话本地就有 seq 0（`session/end-seed`） | Host 入队前 `sessions.flush()`；Runtime 从 PG 前缀续写；PG `(session_id, seq)` 幂等 |
+| Runtime 启动 PENDING | `permission`（permission-presets）依赖 `shell` 服务，而 Runtime 无 shell provider | Runtime bundle 禁 `permission` 行；`assertEntriesActivated` 是好门神 |
+| 多 pod 同时建表报 `pg_type_typname_nsp_index` | `CREATE TABLE IF NOT EXISTS` 并发竞态 | 迁移用 `pg_advisory_lock` 串行 |
+| 同 tag 重推镜像不生效 | `imagePullPolicy: IfNotPresent` | 迭代期 `Always`；正式按 git sha 打 tag |
+| NodePort `/api` 403 | dsh trust fence 只认 loopback / 绑定 LAN 字面量 / `trustedHosts` | `connection.trustedHosts` 经 `OPENDB_TRUSTED_HOSTS` 追加节点/Service/Ingress 权威 |
+| mac→NodePort 的 mux WebSocket 帧滞后 | OrbStack/k3s NodePort 长连接问题（集群内 mux 完整） | 浏览器走 Ingress/traefik 或 `kubectl port-forward`；不是平台问题 |
+| 测试互相污染 | 各包测试并发 + 与本地 host/runtime 共库 | 测试串行（`--workspace-concurrency=1`）+ 独立 `dsh_test` 库 |
+| 开发机 3080 端口 | mac 上跑着个人 `dsh web` | Host 端口经 `OPENDB_HOST_PORT`（本地默认 3090） |
+| dsh 事件 data 形状 | `user/message` data 即 UserMessage（需 `id/role/source/content`）；`turn/end.reason` 是 `{kind}` 对象 | conformance 测试按此构造 |
 
 ## 14. 待确认项与 user 回复（2026-08-17）
 
