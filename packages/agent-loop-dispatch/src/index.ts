@@ -48,6 +48,7 @@ export default class DispatchAgentLoop extends Service {
   }
 
   async createAgent(ownerCtx: any, options: any) {
+    console.info(`[agent-loop-dispatch] createAgent ${String(options.sessionId)}`);
     await this.ready;
     const anyCtx = this.ctx as any;
     const session = anyCtx.sessions.prepare(options.sessionId, { meta: { ...options.meta }, seed: options.seed ?? [], seedSource: 'construction' });
@@ -57,6 +58,7 @@ export default class DispatchAgentLoop extends Service {
   }
 
   async resume(ownerCtx: any, options: any) {
+    console.info(`[agent-loop-dispatch] resume ${String(options.resumeSessionId)}`);
     await this.ready;
     const anyCtx = this.ctx as any;
     const preparation = await anyCtx.sessionPersistence.prepare(options.resumeSessionId, options.signal);

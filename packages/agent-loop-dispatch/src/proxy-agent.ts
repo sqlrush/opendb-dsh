@@ -57,6 +57,7 @@ export class ProxyAgent {
 
   /** Host never appends locally: enqueue and tail. Runtime assigns seq; Host mirrors. */
   send(message: any, _target: unknown, _wakeup: boolean): void {
+    console.info(`[agent-loop-dispatch] send ${String(this.id)}`);
     this.setStatus('running');
     void this.dispatch(message);
   }
