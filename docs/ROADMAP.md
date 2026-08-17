@@ -46,7 +46,7 @@
 | W1–2 | 远端执行 | `exec-ssh`（og 工具链 `gsql`/`gs_ctl`/`gs_om` 白名单）、`tool-fs-search-ssh`；`tool-db` 动作类；一次性令牌 + 白名单；preset `变更执行`；`db-postgres` provider（含 pgrac 的 `pg-ops`/`pg-rac` class） |
 | W3 | 扇出与编排 | `subagent-queue`、`workflow-sandbox-job`、KEDA 调参 |
 | W4 | 任务与告警 | `task-monitor-dashboard`、`task-incident`、DDL 告警 |
-| W5 | 平台面 | `connection-auth` + Ingress 认证、`approval-im-feishu`/`-dingtalk`、`agent-presets-pg`、`session-query-pg`、`knowledge-ingest` + `ui-memory`/`ui-knowledge`、`storage-redis` 默认、`skill-pg` |
+| W5 | 平台面 | `connection-auth` + Ingress 认证、`approval-im-feishu`/`-dingtalk`、`agent-presets-pg`、`session-query-pg`、`knowledge-ingest` + `ui-memory`/`ui-knowledge`、`storage-redis` 默认、`skill-pg`、**`mcp-db`**（把 `tool-db` 只读能力以 MCP server 对外暴露，供 Codex/Claude Code 使用；`skill-og` 已可移植） |
 - 验收：经审批变更在目标主机执行并审计；扇出 10 子代理跨 pod；告警→诊断→审批→处置闭环；IM 审批可用。
 - G2：SSH 账号策略；IM 优先级；IdP。
 
