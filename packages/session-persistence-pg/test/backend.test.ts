@@ -21,7 +21,7 @@ before(async () => {
   await runMigrations(pool);
   await pool.query('TRUNCATE dsh_questions, dsh_thread_queue, dsh_threads, dsh_session_events, dsh_sessions');
   await pool.end();
-  ctx.plugin(SessionStore);
+  await ctx.plugin(SessionStore);
   await ctx.plugin(PgSessionPersistence, { connectionString: PG_URL, writeBatchMaxDelayMs: 1 });
   persistence = ctx.get('sessionPersistence') as PgSessionPersistence;
 });

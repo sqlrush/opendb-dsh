@@ -50,6 +50,7 @@ export default class RuntimeWorker extends Service {
   private readonly inFlight = new Set<Promise<void>>();
   private readonly pool: pg.Pool;
   private readonly server: Server;
+  private ready: Promise<void> = Promise.resolve();
 
   constructor(ctx: Context, private readonly config: RuntimeWorkerConfig) {
     super(ctx, 'runtimeWorker');
@@ -77,13 +78,15 @@ export default class RuntimeWorker extends Service {
         }
         if (!this.stopping) timer = setTimeout(tick, this.config.pollMs);
       };
-      void runMigrations(this.pool).then(tick);
+      this.ready = runMigrations(this.pool);
+      this.ready.then(tick).catch((err) => anyCtx.logger?.error?.('runtime-worker migrations failed: %s', String(err)));
       return async () => {
         // drain: stop claiming, wait for in-flight turns, then close resources
         this.stopping = true;
         if (timer) clearTimeout(timer);
         await Promise.allSettled([...this.inFlight]);
         this.server.close();
+        await this.ready.catch(() => {});
         await this.pool.end();
       };
     }, 'runtimeWorker.loop');

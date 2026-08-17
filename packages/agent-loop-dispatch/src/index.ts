@@ -33,7 +33,8 @@ export default class DispatchAgentLoop extends Service {
     this.pool = createPool(config.connectionString);
     this.ready = runMigrations(this.pool);
     ctx.effect(() => anyCtx.agents.setFactory(this), 'dispatch.setFactory()');
-    ctx.effect(() => () => this.pool.end(), 'dispatch.pool');
+    this.ready.catch(() => {});
+    ctx.effect(() => async () => { await this.ready.catch(() => {}); await this.pool.end(); }, 'dispatch.pool');
     anyCtx.systemPrompt?.variable?.('cwd', (c: any) => c.agent?.session?.header?.cwd);
   }
 

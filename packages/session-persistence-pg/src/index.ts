@@ -94,6 +94,7 @@ export default class PgSessionPersistence extends SessionPersistence implements 
       const r = await this.pool.query<{ oid: string }>('SELECT oid::text FROM pg_database WHERE datname = current_database()');
       this.sourceId = `pg:${r.rows[0]?.oid ?? '0'}`;
     });
+    this.ready.catch(() => { /* surfaced by the first awaiting call */ });
     this.coordinator = new PersistenceCoordinator<number>(this.ctx, this, {
       preparedSessionCacheSize: config.preparedSessionCacheSize ?? DEFAULT_PREPARED_SESSION_CACHE_SIZE,
       writeBatchMaxDelayMs: config.writeBatchMaxDelayMs ?? DEFAULT_WRITE_BATCH_MAX_DELAY_MS,
@@ -207,6 +208,7 @@ export default class PgSessionPersistence extends SessionPersistence implements 
   }
 
   async close(): Promise<void> {
+    await this.ready.catch(() => {});
     await this.pool.end();
   }
 }

@@ -16,9 +16,9 @@ before(async () => {
   pool = createPool(PG_URL);
   await runMigrations(pool);
   await pool.query('TRUNCATE dsh_questions, dsh_thread_queue, dsh_threads, dsh_session_events, dsh_sessions');
-  ctx.plugin(SessionStore);
-  ctx.plugin(AgentRegistry);
-  ctx.plugin(UserQuestionService);
+  await ctx.plugin(SessionStore);
+  await ctx.plugin(AgentRegistry);
+  await ctx.plugin(UserQuestionService);
   await ctx.plugin(PgSessionPersistence, { connectionString: PG_URL, writeBatchMaxDelayMs: 1 });
   await ctx.plugin(DispatchAgentLoop, { connectionString: PG_URL, tailMs: 50 });
 });
