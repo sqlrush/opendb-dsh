@@ -22,6 +22,7 @@ export class ProxyAgent {
   private idleWaiters: Array<() => void> = [];
   private tailTimer: NodeJS.Timeout | undefined;
   private readonly questionsInFlight = new Set<string>();
+  private lastTailError = 0;
 
   private readonly pool: pg.Pool;
   private readonly tailMs: number;
@@ -83,8 +84,10 @@ export class ProxyAgent {
           this.tailTimer = undefined;
           return;
         }
-      } catch {
-        // transient PG error: retry next tick
+      } catch (err) {
+        // transient PG/validation error: log (rate-limited) and retry next tick
+        const now = Date.now();
+        if (now - this.lastTailError > 5000) { this.lastTailError = now; console.warn(`[agent-loop-dispatch] tail ${String(this.id)}: ${String(err)}`); }
       }
       this.tailTimer = setTimeout(tick, this.tailMs);
     };

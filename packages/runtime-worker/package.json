@@ -12,7 +12,7 @@
   "files": ["lib"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --experimental-strip-types --test --test-concurrency=1 test/*.test.ts"
+    "test": "node --experimental-strip-types --test --test-concurrency=1 --test-timeout=60000 test/*.test.ts"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
