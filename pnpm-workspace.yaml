@@ -2,9 +2,10 @@ packages:
   - packages/*
   - profiles/*
 
-onlyBuiltDependencies:
-  - node-pty
-  - '@deepseek-ai/dsh-subprocess-local'
-  - koffi
-  - protobufjs
-  - '@google/genai'
+# pnpm 11: native build scripts must be explicitly allowed
+allowBuilds:
+  '@deepseek-ai/dsh-subprocess-local': true
+  '@google/genai': false
+  koffi: true
+  node-pty: true
+  protobufjs: false
