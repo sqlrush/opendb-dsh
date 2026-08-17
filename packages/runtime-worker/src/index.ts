@@ -115,7 +115,8 @@ export default class RuntimeWorker extends Service {
         await agent.whenIdle();
         // dsh appends turn/end after the (async) agent/turn-stopping hooks, which can be after status→idle: wait for the log to close the turn
         const t0 = Date.now();
-        while (!turnClosed(agent.session.events) && Date.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 50));
+        while (!turnClosed(agent.session.events) && Date.now() - t0 < 60000) await new Promise((r) => setTimeout(r, 50));
+        if (!turnClosed(agent.session.events)) process.stderr.write(`[runtime-worker] WARN turn still open after 60s for ${sessionId}; releasing anyway\n`);
         await (anyCtx.sessions?.flush?.(agent.session) ?? Promise.resolve());   // durability checkpoint: the last write-behind batch (turn/end) reaches PG before release
       } finally {
         clearInterval(interruptPoll);
