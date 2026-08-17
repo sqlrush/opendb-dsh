@@ -7,7 +7,9 @@ import type pg from 'pg';
  * ProxyAgent picks the row up and shows it through dsh's native question UI.
  */
 export class PgUserQuestionProvider {
-  constructor(private readonly pool: pg.Pool, private readonly pollMs = 500) {}
+  private readonly pool: pg.Pool;
+  private readonly pollMs: number;
+  constructor(pool: pg.Pool, pollMs = 500) { this.pool = pool; this.pollMs = pollMs; }
 
   async ask(request: { questions: unknown[]; agent?: { id: string }; signal?: AbortSignal }): Promise<unknown> {
     const sessionId = request.agent?.id;

@@ -52,8 +52,11 @@ export default class RuntimeWorker extends Service {
   private readonly server: Server;
   private ready: Promise<void> = Promise.resolve();
 
-  constructor(ctx: Context, private readonly config: RuntimeWorkerConfig) {
+  private readonly config: RuntimeWorkerConfig;
+
+  constructor(ctx: Context, config: RuntimeWorkerConfig) {
     super(ctx, 'runtimeWorker');
+    this.config = config;
     this.pool = createPool(config.connectionString);
     const anyCtx = ctx as any;
     ctx.effect(() => anyCtx.userQuestions.registerProvider(new PgUserQuestionProvider(this.pool)), 'runtimeWorker.questions');

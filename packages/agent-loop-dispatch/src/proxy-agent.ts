@@ -23,14 +23,14 @@ export class ProxyAgent {
   private tailTimer: NodeJS.Timeout | undefined;
   private readonly questionsInFlight = new Set<string>();
 
-  constructor(
-    loopCtx: any,
-    session: any,
-    options: any,
-    private readonly pool: pg.Pool,
-    private readonly tailMs: number,
-    private readonly persistence: any,
-  ) {
+  private readonly pool: pg.Pool;
+  private readonly tailMs: number;
+  private readonly persistence: any;
+
+  constructor(loopCtx: any, session: any, options: any, pool: pg.Pool, tailMs: number, persistence: any) {
+    this.pool = pool;
+    this.tailMs = tailMs;
+    this.persistence = persistence;
     this.id = session.id;
     this.session = session;
     this.options = options;

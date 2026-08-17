@@ -27,8 +27,11 @@ export default class DispatchAgentLoop extends Service {
   private readonly pool: pg.Pool;
   private readonly ready: Promise<void>;
 
-  constructor(ctx: Context, private readonly config: DispatchConfig) {
+  private readonly config: DispatchConfig;
+
+  constructor(ctx: Context, config: DispatchConfig) {
     super(ctx, 'agentLoop');
+    this.config = config;
     const anyCtx = ctx as any;
     this.pool = createPool(config.connectionString);
     this.ready = runMigrations(this.pool);
