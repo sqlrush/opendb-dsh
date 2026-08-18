@@ -1,6 +1,6 @@
-# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.8
+# opendb-dsh：基于 DeepSeek Harness 二次开发的 PostgreSQL 集群自动化管理平台 —— 方案 v0.9
 
-> 类型：架构设计（v0.8，2026-08-17；P0 已通过（§12、§13.1 经验）；v0.6 + MVP 以 openGauss 为原型（C1 更新、D19 `ctx.db` 方言 seam、`tool-db`）；v0.5 + §8.4 时序与数据字典（TimescaleDB 同栈、collector class）+ D18；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
+> 类型：架构设计（v0.9，2026-08-19：§8.5 任务插件契约 G1 冻结；v0.8，2026-08-17；P0 已通过（§12、§13.1 经验）；v0.6 + MVP 以 openGauss 为原型（C1 更新、D19 `ctx.db` 方言 seam、`tool-db`）；v0.5 + §8.4 时序与数据字典（TimescaleDB 同栈、collector class）+ D18；v0.4 + 记忆/知识子系统 §8.3（借鉴 airush：PG 真相 + Redis 缓存 + 图 + 向量）+ D16 镜像全量/按需加载 + D17 + 源码核实的三条修正（§13）；P0 已获准，进入实施计划）
 > 依据：
 > - dsh 本地安装源码 `~/.dsh/profiles/node_modules/@deepseek-ai/*`（**v0.1.0-rc.6**，195 包，逐包 README/patch/package.json 核对）
 > - dsh 插件机制分析 `~/airush/docs/deepseek-harness-plugin-analysis.md`（rc.5 @ 47f9438；rc.6 未见结构性变化）
@@ -609,6 +609,18 @@ dsh 同样没有指标/字典类插件，按 seam 新增：
 
 - **D18**：MVP 用 TimescaleDB 扩展装在同一 PG 集群（同一备份域、同一 RLS；`shared_preload_libraries=timescaledb,pg_stat_statements` 必须预加载；镜像版本钉死不用 `latest`——三条 airush 踩过的坑）；`ctx.metrics` 留 seam，>5000 实例或写入吃紧换 `metrics-victoria`。字典变化用"版本化快照 + 变更事件"而非指标模型（稀疏、结构化、需 diff）。
 - **阶段**：P1 = `metrics`/`dictionary` Definition + `metrics-timescale` + `dictionary-pg` + `collector`（核心十余指标 + 字典快照）+ `tool-metrics`；P2 = 大盘读连续聚合、异常规则 → incident、DDL 告警；P3 = `metrics-victoria`（可选）。
+
+### 8.5 任务插件契约（**G1 已冻结**，2026-08-19，user 三点全数同意）
+
+> 任务 = 绑定在 agent 上的、可调度的"会话模板"：引擎到点开新会话注入任务提示词，agent 用现有工具正常干活，结束前经 `task_report` 工具提交结构化报告。任务插件只定义三件事：**配什么（configSchema）、说什么（buildPrompt）、交什么（reportSchema）**。
+
+- **TaskType 接口（冻结）**：`{ key, title, runMode: 'session'（预留 'service' 给 P2 监控大盘）, configSchema: Schema, defaultCron?, report: 'required'|'optional'|'none', buildPrompt(task, run, ctx), reportSchema }`；注册 `ctx.opendbTasks.register(type)`（effect，返回 dispose，同 dialect 模式）。
+- **报告经 `task_report` 工具提交（决策 3）**：`{severity: ok|warn|critical, summary, data:<reportSchema 校验>}`；校验失败→工具报错→模型自动修正重交（dsh 工具循环原生重试）；回合结束无报告：`required` → run failed('未提交报告')，`optional` → succeeded。run 定位：`exec.agent.id == sessionId`（P0 约定）→ dsh_task_runs.session_id。
+- **数据模型（冻结）**：`dsh_tasks`（tenant+name 唯一，config jsonb，cron 可空=仅手动，requires_approval，timeout_ms）、`dsh_task_runs`（trigger cron|manual|P2:event；status queued→running→succeeded|failed|timeout 无回退）、`dsh_task_reports`（run_id 唯一）、`dsh_approvals`（kind：P1 report-ack / P2 action；status pending→approved|rejected|expired）。
+- **引擎保证**：每 cron 槽至多一次（CAS last_fired_at）；会话经 Host 自身 /api 创建（与手发无差别）；超时扫描→timeout 终态；requires_approval 的报告落库后由 Host 引擎（单写者）建 report-ack 审批单。
+- **审批 seam（决策 2）**：P1 语义 = 报告签收（真实 DBA 值班工作流：签收/驳回+意见/超时 expired；驳回=质量标记+手动重跑，不撤销报告）；`ApprovalProvider.notify(request)`：P1 console=no-op（UI 轮询），P2 插 feishu/dingtalk 推卡片；**决定唯一写入口在平台 decide()**，IM 只是通知回传通道。
+- **dsh_schedules 收编（决策 1）**：内置任务类型 `prompt`（config={prompt}，report:'optional'）取代裸定时；scheduler 包的 cron/CAS 逻辑并入任务引擎；迁移 006 搬数据后 drop dsh_schedules，杜绝双轨。
+- **MVP 任务类型**：`task-inspection`（config {nodes:'all'|名单, focus?}；巡检经 db_overview/metrics_recent/dict_changes；data=findings[{node,item,level,detail}]）、`task-sql-audit`（config {topN, minTotalTimeMs}；审 dbe_perf.statement 真实 Top SQL 反模式；data=findings[{sql,issue,suggestion,evidence}]）。
 
 ---
 
