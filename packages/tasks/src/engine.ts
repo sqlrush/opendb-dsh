@@ -139,7 +139,7 @@ export class TaskEngine {
       const created = await this.api('session.create', { workspaceId: ws.workspaceId });
       if (typeof created.sessionId !== 'string') throw new Error('session.create 未返回 sessionId');
       await this.d.pool.query(
-        `UPDATE dsh_task_runs SET session_id = $2, status = 'running' WHERE id = $1 AND status = 'queued'`,
+        `UPDATE dsh_task_runs SET session_id = $2, status = 'running', fired_at = now() WHERE id = $1 AND status = 'queued'`,   // fired_at=实际开跑：排队等待不计入超时
         [run.id, created.sessionId],
       );
       await this.api('session.prompt', { sessionId: created.sessionId, mode: 'queue', content: [{ type: 'text', text }] });
