@@ -40,9 +40,9 @@ export interface TaskType<C = any> {
   /** required: 无报告 = run failed；optional: 交了就存；none: task_report 拒收。 */
   report: ReportMode;
   /** schemastery schema —— UI 表单与校验同源。 */
-  configSchema: (value: unknown) => C;
+  configSchema: (value?: any) => C;
   /** task_report.data 的校验 schema；校验失败工具报错让模型修正重交。 */
-  reportSchema: (value: unknown) => unknown;
+  reportSchema: (value?: any) => unknown;
   defaultCron?: string;
   buildPrompt(task: TaskRecord<C>, run: TaskRunRecord, ctx: TaskBuildContext): Promise<string>;
 }
