@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCron, nextFire, isDue } from '../src/index.ts';
+import { parseCron, nextFire, isDue } from '../src/cron.ts';
 
 const at = (s: string) => new Date(s);
 
@@ -41,4 +41,11 @@ test('isDue: never-fired anchors to 10min lookback; fired waits for next slot', 
   assert.equal(isDue('15 8 * * *', undefined, now), true);          // 08:15 within lookback
   assert.equal(isDue('*/5 * * * *', at('2026-08-18T08:20:00Z'), now), false);
   assert.equal(isDue('*/5 * * * *', at('2026-08-18T08:15:00Z'), now), true);
+});
+
+test('tzOffsetMinutes: 0 8 * * * with +480 fires at 00:00 UTC (08:00 Beijing)', () => {
+  const daily8 = parseCron('0 8 * * *');
+  assert.equal(nextFire(daily8, at('2026-08-18T22:00:00Z'), 480)?.toISOString(), '2026-08-19T00:00:00.000Z');
+  assert.equal(isDue('0 8 * * *', undefined, at('2026-08-19T00:05:00Z'), 480), true);
+  assert.equal(isDue('0 8 * * *', undefined, at('2026-08-19T08:05:00Z'), 480), false);
 });

@@ -57,23 +57,28 @@ function matches(spec: CronSpec, d: Date): boolean {
   return spec.min.has(d.getUTCMinutes()) && spec.hour.has(d.getUTCHours()) && spec.mon.has(d.getUTCMonth() + 1) && dayOk;
 }
 
-/** First fire time strictly after `after` (UTC minute resolution; scans ≤ 366 days). */
-export function nextFire(spec: CronSpec, after: Date): Date | undefined {
+/**
+ * First fire time strictly after `after` (minute resolution; scans ≤ 366 days).
+ * `tzOffsetMinutes` shifts the wall clock the expression is written in (480 = Asia/Shanghai:
+ * '0 8 * * *' fires at 08:00 北京时间); the returned Date is real UTC.
+ */
+export function nextFire(spec: CronSpec, after: Date, tzOffsetMinutes = 0): Date | undefined {
   const t = new Date(after);
   t.setUTCSeconds(0, 0);
   t.setUTCMinutes(t.getUTCMinutes() + 1);
+  const off = tzOffsetMinutes * 60_000;
   for (let i = 0; i < 366 * 24 * 60; i += 1) {
-    if (matches(spec, t)) return new Date(t);
+    if (matches(spec, new Date(t.getTime() + off))) return new Date(t);
     t.setUTCMinutes(t.getUTCMinutes() + 1);
   }
   return undefined;
 }
 
 /** Whether a schedule with the given cron and last-fire time is due at `now`. */
-export function isDue(expr: string, lastFiredAt: Date | undefined, now: Date): boolean {
+export function isDue(expr: string, lastFiredAt: Date | undefined, now: Date, tzOffsetMinutes = 0): boolean {
   const spec = parseCron(expr);
   // never fired: due if any fire slot occurred in the last 10 minutes (avoid replaying history)
   const anchor = lastFiredAt ?? new Date(now.getTime() - 10 * 60_000);
-  const next = nextFire(spec, anchor);
+  const next = nextFire(spec, anchor, tzOffsetMinutes);
   return next !== undefined && next.getTime() <= now.getTime();
 }

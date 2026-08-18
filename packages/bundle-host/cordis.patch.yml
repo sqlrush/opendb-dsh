@@ -60,10 +60,28 @@
 - insert:
     - id: ui-opendb
       name: '@opendb-dsh/ui-opendb'
-# ── P1 W3 批次3: 定时任务（cron → 新会话入队）─────────────────────────────────
+# ── P1 W4: 任务插件契约（G1 冻结 §8.5）：引擎 + 审批（Host 侧）────────────────
 - insert:
-    - id: opendb-scheduler
-      name: '@opendb-dsh/scheduler'
+    - id: metrics-timescale
+      name: '@opendb-dsh/metrics-timescale'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+    - id: dictionary-pg
+      name: '@opendb-dsh/dictionary-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: opendb-approvals
+      name: '@opendb-dsh/approvals'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: opendb-tasks
+      name: '@opendb-dsh/tasks'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+        engine: true
         tickMs: 30000
+- insert:
+    - id: task-inspection
+      name: '@opendb-dsh/task-inspection'
+    - id: task-sql-audit
+      name: '@opendb-dsh/task-sql-audit'
