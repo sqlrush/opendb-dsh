@@ -14,7 +14,7 @@ import {
   type StoredSuffix,
 } from '@deepseek-ai/dsh-session-persistence';
 import type pg from 'pg';
-import { createPool } from './pool.ts';
+import { createPool, rollbackAndRelease } from './pool.ts';
 import { runMigrations } from './schema.ts';
 
 export { createPool } from './pool.ts';
@@ -133,17 +133,16 @@ export default class PgSessionPersistence extends SessionPersistence implements 
     try {
       await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       const s = await client.query<{ header: SessionHeader; repair_gen: number }>('SELECT header, repair_gen FROM dsh_sessions WHERE id = $1', [id]);
-      if (s.rowCount === 0) { await client.query('COMMIT'); return undefined; }
+      if (s.rowCount === 0) { await client.query('COMMIT'); client.release(); return undefined; }
       const e = await client.query<EventRow>(`${SELECT_EVENTS} ORDER BY seq`, [id]);
       await client.query('COMMIT');
+      client.release();
       const events = e.rows.map(rowToEvent);
       const maxSeq = events.length > 0 ? events[events.length - 1].seq : null;
       return { meta: s.rows[0].header, events, revision: this.revision(id, maxSeq, s.rows[0].repair_gen) };
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      await rollbackAndRelease(client);
       throw err;
-    } finally {
-      client.release();
     }
   }
 
@@ -177,11 +176,10 @@ export default class PgSessionPersistence extends SessionPersistence implements 
       await client.query('UPDATE dsh_sessions SET updated_at = now() WHERE id = $1', [meta.id]);
       await client.query('COMMIT');
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      await rollbackAndRelease(client);
       throw err;
-    } finally {
-      client.release();
     }
+    client.release();
   }
 
   async commitRepair(meta: SessionHeader, tornMarker: number | undefined, closers: readonly SessionEvent[]): Promise<void> {
@@ -194,11 +192,10 @@ export default class PgSessionPersistence extends SessionPersistence implements 
       await client.query('UPDATE dsh_sessions SET repair_gen = repair_gen + 1, updated_at = now() WHERE id = $1', [meta.id]);
       await client.query('COMMIT');
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => {});
+      await rollbackAndRelease(client);
       throw err;
-    } finally {
-      client.release();
     }
+    client.release();
   }
 
   async list(): Promise<SessionHeader[]> {

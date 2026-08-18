@@ -5,7 +5,7 @@ import type pg from 'pg';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPool } from '@opendb-dsh/session-persistence-pg';
+import { createPool, rollbackAndRelease } from '@opendb-dsh/session-persistence-pg';
 import { PgKvUnit, type KvUnitDescriptor } from './unit.ts';
 
 export { PgKvUnit } from './unit.ts';
@@ -58,9 +58,10 @@ export class PgStorageBackend {
       }
       await c.query('COMMIT');
     } catch (err) {
-      await c.query('ROLLBACK').catch(() => {});
+      await rollbackAndRelease(c);
       throw err;
-    } finally { c.release(); }
+    }
+    c.release();
     if (this.closed) throw new StorageError('closed', 'pg backend is closed');
     const unit = new PgKvUnit(this.pool, descriptor, () => this.open.delete(descriptor.name));
     this.open.set(descriptor.name, unit);

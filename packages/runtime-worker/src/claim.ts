@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import { rollbackAndRelease } from '@opendb-dsh/session-persistence-pg';
 
 /** One admitted queue item plus the session it belongs to. */
 export interface Claimed {
@@ -25,7 +26,7 @@ export async function claimNext(pool: pg.Pool, runtimeClass: string, podName: st
         FOR UPDATE OF q, t SKIP LOCKED`,
       [runtimeClass],
     );
-    if (q.rowCount === 0) { await c.query('COMMIT'); return undefined; }
+    if (q.rowCount === 0) { await c.query('COMMIT'); c.release(); return undefined; }
     const row = q.rows[0];
     await c.query(
       `UPDATE dsh_threads SET status = 'running', running_pod = $2, heartbeat_at = now(), updated_at = now() WHERE session_id = $1`,
@@ -33,12 +34,11 @@ export async function claimNext(pool: pg.Pool, runtimeClass: string, podName: st
     );
     await c.query(`UPDATE dsh_thread_queue SET admitted_at = now(), admitted_by = $2 WHERE id = $1`, [row.id, podName]);
     await c.query('COMMIT');
+    c.release();
     return { queueId: row.id, sessionId: row.session_id, payload: row.payload };
   } catch (e) {
-    await c.query('ROLLBACK').catch(() => {});
+    await rollbackAndRelease(c);
     throw e;
-  } finally {
-    c.release();
   }
 }
 

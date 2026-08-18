@@ -19,8 +19,19 @@ export async function runMigrations(pool: pg.Pool): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+    await client.query("SET lock_timeout = '5s'");
     try {
-      for (const f of files) await client.query(await readFile(join(SQL_DIR, f), 'utf8'));
+      for (const f of files) {
+        const sql = await readFile(join(SQL_DIR, f), 'utf8');
+        for (let attempt = 1; ; attempt++) {
+          try { await client.query(sql); break; }
+          catch (err: unknown) {
+            const code = (err as { code?: string }).code;
+            if (code !== '55P03' || attempt >= 30) throw err;   // lock_not_available → retry (runtime claim churn)
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+      }
     } finally {
       await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY]);
     }
