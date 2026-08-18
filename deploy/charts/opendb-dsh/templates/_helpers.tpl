@@ -43,3 +43,8 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 - name: DSH_PERMISSION_MODE
   value: read-only
 {{- end -}}
+{{- define "opendb.waitForPg" -}}
+- name: wait-for-pg
+  image: busybox:1.36
+  command: ["sh", "-c", "until nc -z {{ .Release.Name }}-postgres 5432; do echo waiting for postgres; sleep 2; done"]
+{{- end -}}

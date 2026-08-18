@@ -10,6 +10,10 @@ spec:
     metadata: { labels: { app: {{ .Release.Name }}-host } }
     spec:
       terminationGracePeriodSeconds: 30
+      {{- if .Values.postgres.builtin }}
+      initContainers:
+        {{- include "opendb.waitForPg" . | nindent 8 }}
+      {{- end }}
       containers:
         - name: host
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

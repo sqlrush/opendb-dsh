@@ -12,6 +12,10 @@ spec:
     metadata: { labels: { app: {{ $.Release.Name }}-runtime, opendb.runtimeClass: {{ .name }} } }
     spec:
       terminationGracePeriodSeconds: {{ $.Values.runtime.terminationGracePeriodSeconds }}
+      {{- if $.Values.postgres.builtin }}
+      initContainers:
+        {{- include "opendb.waitForPg" $ | nindent 8 }}
+      {{- end }}
       containers:
         - name: runtime
           image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
