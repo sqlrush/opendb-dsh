@@ -23,7 +23,9 @@ export function parseEmbeddings(body: EmbedResponseLike, expectCount: number, ex
     }
     out[idx] = vec as number[];
   }
-  if (out.some((v) => v === undefined)) throw new Error('embeddings 响应 index 不连续');
+  for (let i = 0; i < expectCount; i += 1) {
+    if (out[i] === undefined) throw new Error('embeddings 响应 index 不连续');   // 注意稀疏数组的 some 会跳过空槽
+  }
   return out;
 }
 
