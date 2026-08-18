@@ -27,7 +27,8 @@ function reportRow(r: any): TaskReportRecord {
  * CRUD + 触发引擎（engine:true，仅 Host）+ task_report 工具（有 tools 注册表处，即 Runtime）。
  */
 export default class TasksService extends Service {
-  static inject = ['opendbRegistry'];
+  // metrics/dictionary 供 TaskBuildContext；直接列 inject（构造器内探测未注入服务会被 cordis 拒绝，P0 已踩过）
+  static inject = ['opendbRegistry', 'opendbMetrics', 'opendbDictionary', 'opendbApprovals'];
   static Config = z.object({
     connectionString: z.string().required(),
     engine: z.boolean().default(false),
@@ -57,15 +58,15 @@ export default class TasksService extends Service {
     if (config.engine === true) {
       const buildCtx: TaskBuildContext = {
         nodesOf: (agentId: string) => this.registry.listNodes({ agentId }),
-        metricsLatest: anyCtx.opendbMetrics !== undefined ? (nodeId: string) => anyCtx.opendbMetrics.latest(nodeId) : undefined,
-        dictChanges: anyCtx.opendbDictionary !== undefined ? (nodeId: string, sinceHours: number) => anyCtx.opendbDictionary.changes({ nodeId, sinceHours }) : undefined,
+        metricsLatest: (nodeId: string) => anyCtx.opendbMetrics.latest(nodeId),
+        dictChanges: (nodeId: string, sinceHours: number) => anyCtx.opendbDictionary.changes({ nodeId, sinceHours }),
       };
       this.engine = new TaskEngine({
         pool: this.pool,
         registry: this.registry,
         types: this.types,
         buildCtx,
-        approvals: () => anyCtx.opendbApprovals,
+        approvals: () => anyCtx.opendbApprovals,   // 已在 inject 内，读取安全
         baseUrl: (config.baseUrl ?? '') !== '' ? config.baseUrl! : `http://127.0.0.1:${process.env.OPENDB_HOST_PORT ?? '3080'}`,
         tenant: this.tenant,
         tzOffsetMinutes: config.tzOffsetMinutes ?? 480,

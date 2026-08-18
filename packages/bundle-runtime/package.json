@@ -21,6 +21,7 @@
     "@opendb-dsh/tool-metrics": "workspace:*",
     "@opendb-dsh/tasks": "workspace:*",
     "@opendb-dsh/task-inspection": "workspace:*",
-    "@opendb-dsh/task-sql-audit": "workspace:*"
+    "@opendb-dsh/task-sql-audit": "workspace:*",
+    "@opendb-dsh/approvals": "workspace:*"
   }
 }

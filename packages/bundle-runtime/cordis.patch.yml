@@ -105,3 +105,8 @@
       name: '@opendb-dsh/task-inspection'
     - id: task-sql-audit
       name: '@opendb-dsh/task-sql-audit'
+- insert:
+    - id: opendb-approvals
+      name: '@opendb-dsh/approvals'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
