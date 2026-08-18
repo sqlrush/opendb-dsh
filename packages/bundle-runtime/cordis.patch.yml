@@ -113,3 +113,6 @@
 - insert:
     - id: tool-task-report
       name: '@opendb-dsh/tool-task-report'
+- insert:
+    - id: tool-read-spill
+      name: '@opendb-dsh/tool-read-spill'

@@ -20,7 +20,8 @@
     "@opendb-dsh/task-inspection": "workspace:*",
     "@opendb-dsh/task-sql-audit": "workspace:*",
     "@opendb-dsh/approvals": "workspace:*",
-    "@opendb-dsh/tool-task-report": "workspace:*"
+    "@opendb-dsh/tool-task-report": "workspace:*",
+    "@opendb-dsh/tool-read-spill": "workspace:*"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@opendb-dsh/bundle-runtime"] } }
 }

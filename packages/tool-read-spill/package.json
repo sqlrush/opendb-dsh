@@ -1,0 +1,14 @@
+{
+  "name": "@opendb-dsh/tool-read-spill",
+  "version": "0.0.1",
+  "description": "Registers the read_spill tool into the Runtime tools registry (function plugin; in-Service registration silently fails to activate)",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./package.json": "./package.json" },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "echo no tests" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6", "@deepseek-ai/dsh-spill": "^0.1.0-rc.6" },
+  "dependencies": { "@opendb-dsh/spill-s3": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6", "@deepseek-ai/dsh-spill": "^0.1.0-rc.6" }
+}

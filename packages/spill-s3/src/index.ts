@@ -36,11 +36,13 @@ export default class S3SpillStore extends SpillStore {
     this.bucket = settings.bucket;
     this.prefix = (config.prefix ?? 'spill').replace(/\/+$/, '');
     this.maxReadBytes = config.maxReadBytes ?? 20000;
-    // register the retrieval tool wherever a tools registry exists (Runtime); Host simply has no consumer
-    const anyCtx = ctx as any;
-    anyCtx.inject(['tools'], (c: any) => {
-      c.effect(() => c.tools.register(defineReadSpillTool({ s3: this.s3, bucket: this.bucket, prefix: this.prefix, maxReadBytes: this.maxReadBytes })), 'spill-s3.read_spill');
-    });
+    // read_spill 工具注册在 @opendb-dsh/tool-read-spill（function plugin）——
+    // Service 构造器内 anyCtx.inject(['tools']) 的注册静默不生效（W4 tool-task-report 同款事故）。
+  }
+
+  /** Deps for the read_spill tool plugin (@opendb-dsh/tool-read-spill). */
+  readerDeps() {
+    return { s3: this.s3, bucket: this.bucket, prefix: this.prefix, maxReadBytes: this.maxReadBytes };
   }
 
   async saveText(input: any): Promise<any> {
