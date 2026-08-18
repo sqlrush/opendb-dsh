@@ -1,0 +1,18 @@
+{
+  "name": "@opendb-dsh/instructions-pg",
+  "version": "0.0.1",
+  "description": "Standing instruction injection from the opendb-dsh registry (replaces dsh-agent-instructions' file scan): the agent's instruction_doc becomes an authority context message on step 1 and whenever its version changes",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./package.json": "./package.json" },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "node --experimental-strip-types --test --test-concurrency=1 --test-timeout=60000 test/*.test.ts" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6"
+  },
+  "dependencies": { "@deepseek-ai/schemastery": "^3.18.1", "@opendb-dsh/registry": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-agent": "^0.1.0-rc.6", "@deepseek-ai/dsh-llm": "^0.1.0-rc.6" }
+}
