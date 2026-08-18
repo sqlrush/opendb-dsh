@@ -19,7 +19,7 @@ export function defineTaskReportTool(deps: TaskReportToolDeps) {
     parameters: {
       severity: { type: 'string', required: true, description: '总体结论级别：ok（正常）| warn（需关注）| critical（需立即处理）。' },
       summary: { type: 'string', required: true, description: '一句话结论（将展示在任务列表与审批卡片上）。' },
-      data: { type: 'object', required: true, description: '结构化明细，字段结构以任务提示词中的要求为准。' },
+      data: { type: 'object', required: true, additionalProperties: true, description: '结构化明细，字段结构以任务提示词中的要求为准。' },
     },
     output: {
       schema: {
