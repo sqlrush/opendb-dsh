@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
-import type { Dialect } from '@opendb-dsh/db';
+import { BASELINE_METRICS, BASELINE_DICTIONARY, type Dialect } from '@opendb-dsh/db';
 
 export const name = 'db-opengauss';
 export const inject = ['opendbDb'];
@@ -20,6 +20,12 @@ export const OPENGAUSS_DIALECT: Dialect = {
     { key: 'db_size', title: '库大小', sql: 'SELECT datname, pg_size_pretty(pg_database_size(datname)) AS size FROM pg_database WHERE NOT datistemplate ORDER BY pg_database_size(datname) DESC' },
     { key: 'replication', title: '复制状态', sql: 'SELECT client_addr, state, sync_state FROM pg_stat_replication' },
   ],
+  metrics: [
+    ...BASELINE_METRICS,
+    { key: 'instance_time', title: '实例时间分布', sql: "SELECT 'db.instance_time.' || lower(stat_name) AS metric, value::float8 AS value FROM dbe_perf.instance_time" },
+    { key: 'wait_total', title: '等待事件总量', sql: "SELECT 'db.wait_events_total' AS metric, coalesce(sum(total_wait_time), 0)::float8 AS value FROM dbe_perf.wait_events" },
+  ],
+  dictionary: BASELINE_DICTIONARY,
 };
 
 /** Register the openGauss dialect; disposal restores whatever was there before. */

@@ -1,0 +1,20 @@
+{
+  "name": "@opendb-dsh/collector",
+  "version": "0.0.1",
+  "description": "opendb-dsh collector runtime class: periodic metric scrapes and data-dictionary snapshots over all registry nodes via the db seam dialects",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./package.json": "./package.json" },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "node --experimental-strip-types --test --test-concurrency=1 --test-timeout=60000 test/*.test.ts" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@opendb-dsh/db": "workspace:*",
+    "@opendb-dsh/registry": "workspace:*",
+    "@opendb-dsh/metrics-timescale": "workspace:*",
+    "@opendb-dsh/dictionary-pg": "workspace:*"
+  },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1" }
+}

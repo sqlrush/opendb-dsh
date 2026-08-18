@@ -1,23 +1,18 @@
 {
-  "name": "@opendb-dsh/bundle-runtime",
+  "name": "@opendb-dsh/bundle-collector",
   "version": "0.0.1",
-  "description": "opendb-dsh Runtime bundle: patch layer over dsh-base (real agent loop, PostgreSQL persistence, queue worker; zero local tools in P0)",
+  "description": "opendb-dsh Collector bundle: patch layer over dsh-base (no agent loop; db seam scrapes into metrics/dictionary storage)",
   "type": "module",
   "files": ["cordis.patch.yml"],
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
-    "@opendb-dsh/runtime-worker": "workspace:*",
     "@opendb-dsh/session-persistence-pg": "workspace:*",
-    "@opendb-dsh/attachment-s3": "workspace:*",
-    "@opendb-dsh/spill-s3": "workspace:*",
     "@opendb-dsh/tenant-context": "workspace:*",
     "@opendb-dsh/registry": "workspace:*",
-    "@opendb-dsh/instructions-pg": "workspace:*",
     "@opendb-dsh/db": "workspace:*",
     "@opendb-dsh/db-opengauss": "workspace:*",
-    "@opendb-dsh/tool-db": "workspace:*",
     "@opendb-dsh/metrics-timescale": "workspace:*",
     "@opendb-dsh/dictionary-pg": "workspace:*",
-    "@opendb-dsh/tool-metrics": "workspace:*"
+    "@opendb-dsh/collector": "workspace:*"
   }
 }

@@ -27,10 +27,10 @@ spec:
             - { name: POSTGRES_USER, value: {{ .Values.postgres.user | quote }} }
             - { name: POSTGRES_PASSWORD, value: {{ .Values.postgres.password | quote }} }
             - { name: POSTGRES_DB, value: {{ .Values.postgres.database | quote }} }
-            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+            - { name: PGDATA, value: {{ .Values.postgres.pgdata | quote }} }
           ports: [{ containerPort: 5432 }]
           readinessProbe: { exec: { command: ["pg_isready", "-U", {{ .Values.postgres.user | quote }}] }, initialDelaySeconds: 5, periodSeconds: 5 }
-          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+          volumeMounts: [{ name: data, mountPath: {{ .Values.postgres.mountPath | quote }} }]
   volumeClaimTemplates:
     - metadata: { name: data }
       spec:

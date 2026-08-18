@@ -81,3 +81,15 @@
       name: '@opendb-dsh/db-opengauss'
     - id: tool-db
       name: '@opendb-dsh/tool-db'
+# ── P1 W3 批次2: 指标/数据字典读工具 ─────────────────────────────────────────
+- insert:
+    - id: metrics-timescale
+      name: '@opendb-dsh/metrics-timescale'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: dictionary-pg
+      name: '@opendb-dsh/dictionary-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: tool-metrics
+      name: '@opendb-dsh/tool-metrics'

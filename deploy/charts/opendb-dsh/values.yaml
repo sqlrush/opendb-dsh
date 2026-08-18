@@ -10,7 +10,11 @@ llm:
 
 postgres:
   builtin: true
-  image: postgres:16              # W3: switch to timescale/timescaledb-ha (pinned) for timescaledb+pgvector
+  # W3: timescaledb-ha = debian/glibc + timescaledb + pgvector（W5 记忆层直接用）。
+  # 换镜像 = 换数据目录布局：dump → 删 PVC → 新镜像 initdb → restore（见 CLUSTER.md W3 批次2）。
+  image: timescale/timescaledb-ha:pg16
+  mountPath: /home/postgres/pgdata          # timescaledb-ha 约定挂载点；postgres:16 用 /var/lib/postgresql/data
+  pgdata: /home/postgres/pgdata/data
   user: dsh
   password: dsh                   # dev only; use existingSecret in real environments
   database: dsh
@@ -42,6 +46,10 @@ runtime:
       profile: runtime            # dsh profile dir under /app/profiles
       replicas: 2
       resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
+    - name: collector             # W3: 采集池（无 agent loop；指标每分钟、字典每 10 分钟）
+      profile: collector
+      replicas: 1
+      resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 1Gi } }
   healthPort: 9090
   # 节点凭据 Secret（W3）：kubectl -n <ns> create secret generic opendb-db-credentials \
   #   --from-literal=credentials.json='{"og5":{"username":"opendb_ro","password":"<pw>"}}'

@@ -16,8 +16,10 @@ COPY --from=build /src /app
 RUN mkdir -p $DSH_HOME/profiles \
  && ln -s /app/profiles/host $DSH_HOME/profiles/host \
  && ln -s /app/profiles/runtime $DSH_HOME/profiles/runtime \
+ && ln -s /app/profiles/collector $DSH_HOME/profiles/collector \
  && OPENDB_PG_URL=x node_modules/.bin/dsh --profile host --dump-config >/dev/null \
  && OPENDB_PG_URL=x node_modules/.bin/dsh --profile runtime --dump-config >/dev/null \
+ && OPENDB_PG_URL=x node_modules/.bin/dsh --profile collector --dump-config >/dev/null \
  && chown -R node:node /app $DSH_HOME
 USER node
 ENV DSH_TELEMETRY_DISABLED=1 DSH_PERMISSION_MODE=read-only

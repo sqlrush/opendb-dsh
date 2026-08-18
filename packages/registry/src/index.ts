@@ -128,6 +128,12 @@ export default class Registry extends Service {
       : await this.pool.query('SELECT * FROM dsh_db_nodes WHERE tenant_id = $1 ORDER BY name', [this.tenant]);
     return r.rows.map(nodeRow);
   }
+  /** Collector heartbeat: online/offline/degraded as observed by the last scrape. */
+  async updateNodeStatus(nodeId: string, status: 'unknown' | 'online' | 'offline' | 'degraded'): Promise<void> {
+    await this.ready;
+    await this.pool.query('UPDATE dsh_db_nodes SET status = $2, updated_at = now() WHERE id = $1', [nodeId, status]);
+  }
+
   async assignNode(nodeId: string, agentId: string | null): Promise<void> {
     await this.ready;
     await this.pool.query('UPDATE dsh_db_nodes SET agent_id = $2, updated_at = now() WHERE id = $1', [nodeId, agentId]);

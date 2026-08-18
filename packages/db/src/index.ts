@@ -5,7 +5,7 @@ import type { DbNodeRecord } from '@opendb-dsh/registry';
 import { POSTGRESQL_DIALECT, type Dialect, type DialectQuery } from './dialect.ts';
 
 export { validateReadOnlySql, stripComments, type GuardResult } from './guard.ts';
-export { POSTGRESQL_DIALECT, type Dialect, type DialectQuery } from './dialect.ts';
+export { POSTGRESQL_DIALECT, BASELINE_METRICS, BASELINE_DICTIONARY, type Dialect, type DialectQuery } from './dialect.ts';
 
 export interface DbCredential { username?: string; password?: string }
 export interface QueryOptions { maxRows?: number; timeoutMs?: number }
@@ -94,7 +94,7 @@ export default class DbService extends Service {
 
   /** Run one (already-validated) read-only statement on a node. Rows beyond maxRows are dropped and flagged. */
   async query(node: DbNodeRecord, sql: string, options: QueryOptions = {}): Promise<QueryResult> {
-    const maxRows = Math.min(options.maxRows ?? this.cfg.maxRows, this.cfg.maxRows);
+    const maxRows = options.maxRows ?? this.cfg.maxRows;   // callers (tool-db) clamp model-facing requests themselves; collector needs larger scans
     const pool = this.poolFor(node);
     const started = Date.now();
     const result = await pool.query(sql);

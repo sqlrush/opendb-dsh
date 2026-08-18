@@ -12,7 +12,10 @@
     "@opendb-dsh/instructions-pg": "workspace:*",
     "@opendb-dsh/db": "workspace:*",
     "@opendb-dsh/db-opengauss": "workspace:*",
-    "@opendb-dsh/tool-db": "workspace:*"
+    "@opendb-dsh/tool-db": "workspace:*",
+    "@opendb-dsh/metrics-timescale": "workspace:*",
+    "@opendb-dsh/dictionary-pg": "workspace:*",
+    "@opendb-dsh/tool-metrics": "workspace:*"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@opendb-dsh/bundle-runtime"] } }
 }

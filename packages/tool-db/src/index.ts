@@ -5,6 +5,9 @@ import { validateReadOnlySql, type QueryResult } from '@opendb-dsh/db';
 import { resolvePlatformAgent } from './agent.ts';
 import { renderTable, clampText } from './render.ts';
 
+export { resolvePlatformAgent } from './agent.ts';
+export { renderTable, clampText, cell } from './render.ts';
+
 export const name = 'tool-db';
 export const inject = ['opendbDb', 'opendbRegistry'];
 export const Config = z.object({
@@ -14,13 +17,13 @@ export const Config = z.object({
 
 interface ToolDeps { db: any; registry: any; maxRows: number; maxContentBytes: number }
 
-class ToolInputError extends Error {}
+export class ToolInputError extends Error {}
 
 /** The node a call targets: must be bound to the calling agent; default = the agent's only node. */
-async function pickNode(deps: ToolDeps, exec: any, nodeRef: string | undefined) {
-  const agent = await resolvePlatformAgent(deps.registry, exec?.agent);
+export async function pickNode(registry: any, exec: any, nodeRef: string | undefined) {
+  const agent = await resolvePlatformAgent(registry, exec?.agent);
   if (agent === undefined) throw new ToolInputError('无法确定当前会话所属的平台 agent（会话没有绑定工作区）');
-  const nodes = await deps.registry.listNodes({ agentId: agent.id });
+  const nodes = await registry.listNodes({ agentId: agent.id });
   if (nodes.length === 0) throw new ToolInputError(`agent「${agent.name}」还没有绑定任何数据库节点（请在 设置 → OpenDB 里绑定）`);
   if (nodeRef === undefined || nodeRef === '') {
     if (nodes.length === 1) return { agent, node: nodes[0] };
@@ -72,7 +75,7 @@ function defineDbQueryTool(deps: ToolDeps) {
     },
     output: TEXT_OUTPUT,
     async execute(args: any, exec: any) {
-      const { node } = await pickNode(deps, exec, args.node);
+      const { node } = await pickNode(deps.registry, exec, args.node);
       const gate = validateReadOnlySql(String(args.sql ?? ''));
       if (gate.ok === false) throw new ToolInputError(`SQL 被只读门拒绝：${gate.reason}`);
       const r = await deps.db.query(node, gate.sql, { maxRows: Math.min(Number(args.max_rows ?? deps.maxRows), deps.maxRows) });
@@ -90,7 +93,7 @@ function defineDbOverviewTool(deps: ToolDeps) {
     },
     output: TEXT_OUTPUT,
     async execute(args: any, exec: any) {
-      const { node } = await pickNode(deps, exec, args.node);
+      const { node } = await pickNode(deps.registry, exec, args.node);
       const sections = await deps.db.overview(node);
       const parts: string[] = [`# ${node.name} (${node.engine} ${node.host}:${node.port}/${node.dbname}) 健康总览`];
       for (const s of sections) {

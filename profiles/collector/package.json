@@ -1,0 +1,16 @@
+{
+  "name": "dsh-profile-collector",
+  "private": true,
+  "dependencies": {
+    "@opendb-dsh/bundle-collector": "workspace:*",
+    "@opendb-dsh/session-persistence-pg": "workspace:*",
+    "@opendb-dsh/tenant-context": "workspace:*",
+    "@opendb-dsh/registry": "workspace:*",
+    "@opendb-dsh/db": "workspace:*",
+    "@opendb-dsh/db-opengauss": "workspace:*",
+    "@opendb-dsh/metrics-timescale": "workspace:*",
+    "@opendb-dsh/dictionary-pg": "workspace:*",
+    "@opendb-dsh/collector": "workspace:*"
+  },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@opendb-dsh/bundle-collector"] } }
+}
