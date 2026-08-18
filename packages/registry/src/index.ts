@@ -78,6 +78,11 @@ export default class Registry extends Service {
     const r = await this.pool.query('SELECT * FROM dsh_agents WHERE id = $1', [id]);
     return r.rows[0] ? agentRow(r.rows[0]) : undefined;
   }
+  async getAgentByName(name: string): Promise<AgentRecord | undefined> {
+    await this.ready;
+    const r = await this.pool.query('SELECT * FROM dsh_agents WHERE tenant_id = $1 AND name = $2', [this.tenant, name]);
+    return r.rows[0] ? agentRow(r.rows[0]) : undefined;
+  }
   async getAgentByWorkspace(workspaceId: string): Promise<AgentRecord | undefined> {
     await this.ready;
     const r = await this.pool.query('SELECT * FROM dsh_agents WHERE workspace_id = $1', [workspaceId]);
