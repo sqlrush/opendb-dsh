@@ -4,7 +4,10 @@
   "dependencies": {
     "@opendb-dsh/bundle-runtime": "workspace:*",
     "@opendb-dsh/runtime-worker": "workspace:*",
-    "@opendb-dsh/session-persistence-pg": "workspace:*"
+    "@opendb-dsh/session-persistence-pg": "workspace:*",
+    "@opendb-dsh/attachment-s3": "workspace:*",
+    "@opendb-dsh/spill-s3": "workspace:*",
+    "@opendb-dsh/tenant-context": "workspace:*"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@opendb-dsh/bundle-runtime"] } }
 }

@@ -7,6 +7,9 @@
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
   "dependencies": {
     "@opendb-dsh/runtime-worker": "workspace:*",
-    "@opendb-dsh/session-persistence-pg": "workspace:*"
+    "@opendb-dsh/session-persistence-pg": "workspace:*",
+    "@opendb-dsh/attachment-s3": "workspace:*",
+    "@opendb-dsh/spill-s3": "workspace:*",
+    "@opendb-dsh/tenant-context": "workspace:*"
   }
 }

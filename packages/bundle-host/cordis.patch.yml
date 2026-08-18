@@ -27,3 +27,20 @@
 - id: connection
   config:
     trustedHosts: !!js "[...(process.env.OPENDB_TRUSTED_HOSTS ?? '').split(',').map(s => s.trim()).filter(Boolean), ...ctx.webRuntime.trustedHosts]"
+# ── P1 W1 data plane: zero local persistent state ────────────────────────────
+- id: storage-json
+  disabled: true
+- id: storage-domain
+  config:
+    backend: pg
+- id: attachment-local
+  disabled: true
+- insert:
+    - id: storage-pg
+      name: '@opendb-dsh/storage-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: attachment-s3
+      name: '@opendb-dsh/attachment-s3'
+    - id: tenant-context
+      name: '@opendb-dsh/tenant-context'

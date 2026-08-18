@@ -49,3 +49,15 @@
         heartbeatMs: 5000
         staleMs: 30000
         healthPort: !!js Number(process.env.OPENDB_HEALTH_PORT ?? 9090)
+# ── P1 W1 data plane ─────────────────────────────────────────────────────────
+- id: attachment-local
+  disabled: true
+- id: spill-local
+  disabled: true
+- insert:
+    - id: attachment-s3
+      name: '@opendb-dsh/attachment-s3'
+    - id: spill-s3
+      name: '@opendb-dsh/spill-s3'
+    - id: tenant-context
+      name: '@opendb-dsh/tenant-context'
