@@ -42,8 +42,8 @@ export const BASELINE_DICTIONARY: readonly DialectQuery[] = [
        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
        WHERE c.relkind = 'r' AND ${NOT_SYS} GROUP BY 2, 3`,
   },
-  { key: 'indexes', title: '索引', sql: `SELECT 'index' AS kind, schemaname AS sch, indexname AS name, md5(indexdef) AS signature FROM pg_indexes WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
-  { key: 'views', title: '视图', sql: `SELECT 'view' AS kind, schemaname AS sch, viewname AS name, md5(definition) AS signature FROM pg_views WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
+  { key: 'indexes', title: '索引', sql: `SELECT 'index' AS kind, schemaname AS sch, indexname AS name, md5(coalesce(indexdef, '')) AS signature FROM pg_indexes WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
+  { key: 'views', title: '视图', sql: `SELECT 'view' AS kind, schemaname AS sch, viewname AS name, md5(coalesce(definition, '')) AS signature FROM pg_views WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
   {
     key: 'functions', title: '函数',
     sql: `SELECT 'function' AS kind, n.nspname AS sch, p.proname AS name, md5(coalesce(p.prosrc, '')) AS signature
