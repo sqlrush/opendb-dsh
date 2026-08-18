@@ -1,0 +1,42 @@
+{{- if .Values.postgres.builtin }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-postgres
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  selector: { app: {{ .Release.Name }}-postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-postgres
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ .Release.Name }}-postgres
+  replicas: 1
+  selector: { matchLabels: { app: {{ .Release.Name }}-postgres } }
+  template:
+    metadata: { labels: { app: {{ .Release.Name }}-postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          env:
+            - { name: POSTGRES_USER, value: {{ .Values.postgres.user | quote }} }
+            - { name: POSTGRES_PASSWORD, value: {{ .Values.postgres.password | quote }} }
+            - { name: POSTGRES_DB, value: {{ .Values.postgres.database | quote }} }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe: { exec: { command: ["pg_isready", "-U", {{ .Values.postgres.user | quote }}] }, initialDelaySeconds: 5, periodSeconds: 5 }
+          volumeMounts: [{ name: data, mountPath: /var/lib/postgresql/data }]
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.postgres.storageClassName }}
+        storageClassName: {{ .Values.postgres.storageClassName }}
+        {{- end }}
+        resources: { requests: { storage: {{ .Values.postgres.storage }} } }
+{{- end }}

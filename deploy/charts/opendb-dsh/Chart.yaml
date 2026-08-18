@@ -1,0 +1,6 @@
+apiVersion: v2
+name: opendb-dsh
+description: openGauss/PostgreSQL cluster automation platform built on DeepSeek Harness (dsh) — Host + Runtime pools + PostgreSQL + MinIO
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

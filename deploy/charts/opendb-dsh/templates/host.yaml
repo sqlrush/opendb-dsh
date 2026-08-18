@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-host
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.host.replicas }}
+  selector: { matchLabels: { app: {{ .Release.Name }}-host } }
+  template:
+    metadata: { labels: { app: {{ .Release.Name }}-host } }
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: host
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--profile", "host"]
+          env:
+            {{- include "opendb.commonEnv" . | nindent 12 }}
+            - { name: OPENDB_HOST_PORT, value: {{ .Values.host.port | quote }} }
+            - { name: OPENDB_TRUSTED_HOSTS, value: {{ include "opendb.trustedHosts" . | quote }} }
+            {{- if .Values.debug.dispatchTraceLog }}
+            - { name: OPENDB_DEBUG_LOG, value: {{ .Values.debug.dispatchTraceLog | quote }} }
+            {{- end }}
+          ports: [{ containerPort: {{ .Values.host.port }} }]
+          readinessProbe: { tcpSocket: { port: {{ .Values.host.port }} }, initialDelaySeconds: 5, periodSeconds: 5 }
+          resources: {{- toYaml .Values.host.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-host
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  selector: { app: {{ .Release.Name }}-host }
+  ports: [{ port: {{ .Values.host.port }}, targetPort: {{ .Values.host.port }} }]

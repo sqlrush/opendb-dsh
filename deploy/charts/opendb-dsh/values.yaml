@@ -1,0 +1,58 @@
+# opendb-dsh Helm values (defaults target the mac/OrbStack k3s test cluster; override for other environments)
+image:
+  repository: host.orb.internal:5050/opendb-dsh
+  tag: dev
+  pullPolicy: Always            # dev iteration re-pushes the same tag; pin by git sha in real environments
+
+llm:
+  existingSecret: opendb-dsh-llm  # must contain DEEPSEEK_API_KEY (create with deploy/k8s/p0/secret.example.yaml)
+  deepseekBaseUrl: ""             # optional DEEPSEEK_BASE_URL
+
+postgres:
+  builtin: true
+  image: postgres:16              # W3: switch to timescale/timescaledb-ha (pinned) for timescaledb+pgvector
+  user: dsh
+  password: dsh                   # dev only; use existingSecret in real environments
+  database: dsh
+  storage: 10Gi
+  storageClassName: ""            # "" = cluster default (k3s local-path)
+  # external: set builtin=false and give a full URL
+  externalUrl: ""
+
+minio:
+  enabled: true
+  image: quay.io/minio/minio:latest   # pin after first pull (record digest in CLUSTER.md)
+  rootUser: opendb
+  rootPassword: opendb-minio-dev      # dev only
+  bucket: opendb-dsh
+  storage: 20Gi
+  storageClassName: ""
+  consolePort: 9001
+
+host:
+  replicas: 1
+  port: 3080
+  extraTrustedHosts: []           # e.g. ["opendb.local", "192.168.139.164:30080"]; ingress.host is added automatically
+  hostPathPort: 3080
+  resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
+
+runtime:
+  classes:
+    - name: default               # runtime class (== OPENDB_RUNTIME_CLASS); pool = one Deployment per class
+      profile: runtime            # dsh profile dir under /app/profiles
+      replicas: 2
+      resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
+  healthPort: 9090
+  terminationGracePeriodSeconds: 330
+  pollMs: 2000
+  heartbeatMs: 5000
+  staleMs: 30000
+
+ingress:
+  enabled: true
+  className: traefik
+  host: opendb.local
+  tls: false
+
+debug:
+  dispatchTraceLog: ""            # set to a file path to enable agent-loop-dispatch traces

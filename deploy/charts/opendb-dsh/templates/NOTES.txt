@@ -1,0 +1,5 @@
+opendb-dsh deployed.
+- Web UI: http://{{ .Values.ingress.host }}/  (add "<node-ip> {{ .Values.ingress.host }}" to /etc/hosts; nodes serve HTTP via traefik svclb on port 80)
+- Or: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-host 3081:{{ .Values.host.port }}
+- Runtime pools: {{ range .Values.runtime.classes }}{{ .name }}×{{ .replicas }} {{ end }}
+- LLM secret: {{ .Values.llm.existingSecret }} (DEEPSEEK_API_KEY)

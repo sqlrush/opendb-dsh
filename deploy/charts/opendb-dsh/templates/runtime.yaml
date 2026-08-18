@@ -1,0 +1,29 @@
+{{- range .Values.runtime.classes }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-runtime-{{ .name }}
+  labels: {{- include "opendb.labels" $ | nindent 4 }}
+    opendb.runtimeClass: {{ .name }}
+spec:
+  replicas: {{ .replicas }}
+  selector: { matchLabels: { app: {{ $.Release.Name }}-runtime, opendb.runtimeClass: {{ .name }} } }
+  template:
+    metadata: { labels: { app: {{ $.Release.Name }}-runtime, opendb.runtimeClass: {{ .name }} } }
+    spec:
+      terminationGracePeriodSeconds: {{ $.Values.runtime.terminationGracePeriodSeconds }}
+      containers:
+        - name: runtime
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          args: ["--profile", {{ .profile | quote }}]
+          env:
+            {{- include "opendb.commonEnv" $ | nindent 12 }}
+            - { name: OPENDB_RUNTIME_CLASS, value: {{ .name | quote }} }
+            - { name: OPENDB_HEALTH_PORT, value: {{ $.Values.runtime.healthPort | quote }} }
+            - { name: OPENDB_POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+          ports: [{ containerPort: {{ $.Values.runtime.healthPort }} }]
+          readinessProbe: { httpGet: { path: /, port: {{ $.Values.runtime.healthPort }} }, initialDelaySeconds: 5, periodSeconds: 5 }
+          resources: {{- toYaml .resources | nindent 12 }}
+---
+{{- end }}
