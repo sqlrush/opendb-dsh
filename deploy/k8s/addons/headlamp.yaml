@@ -1,0 +1,63 @@
+# Headlamp web dashboard for the opendb-dsh test cluster (http://k8s.opendb.local via traefik).
+# Test-cluster convenience: the service account gets cluster-admin and auth is effectively open
+# (empty token accepted). Do NOT reuse as-is outside the lab.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: headlamp
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: headlamp
+  namespace: headlamp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: headlamp-admin
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin }
+subjects: [{ kind: ServiceAccount, name: headlamp, namespace: headlamp }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: headlamp } }
+  template:
+    metadata: { labels: { app: headlamp } }
+    spec:
+      serviceAccountName: headlamp
+      containers:
+        - name: headlamp
+          image: ghcr.io/headlamp-k8s/headlamp:latest
+          args: ["-in-cluster", "-plugins-dir=/headlamp/plugins"]
+          ports: [{ containerPort: 4466 }]
+          readinessProbe: { httpGet: { path: /, port: 4466 }, initialDelaySeconds: 5, periodSeconds: 5 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  selector: { app: headlamp }
+  ports: [{ port: 80, targetPort: 4466 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: k8s.opendb.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: headlamp, port: { number: 80 } } }
