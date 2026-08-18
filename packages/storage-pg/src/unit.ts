@@ -10,7 +10,10 @@ export interface KvUnitDescriptor { readonly name: string; readonly version: num
  */
 export class PgKvUnit {
   private closed = false;
-  constructor(private readonly pool: pg.Pool, private readonly descriptor: KvUnitDescriptor, private readonly onClose: () => void) {}
+  private readonly pool: pg.Pool;
+  private readonly descriptor: KvUnitDescriptor;
+  private readonly onClose: () => void;
+  constructor(pool: pg.Pool, descriptor: KvUnitDescriptor, onClose: () => void) { this.pool = pool; this.descriptor = descriptor; this.onClose = onClose; }
 
   private assertOpen() { if (this.closed) throw new StorageError('closed', `unit '${this.descriptor.name}' is closed`); }
   private assertTable(table: string) {

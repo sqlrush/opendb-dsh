@@ -20,7 +20,9 @@ export class PgStorageBackend {
   private readonly opening = new Map<string, Promise<PgKvUnit>>();
   private closed = false;
   private readonly ready: Promise<void>;
-  constructor(readonly pool: pg.Pool) {
+  readonly pool: pg.Pool;
+  constructor(pool: pg.Pool) {
+    this.pool = pool;
     this.ready = (async () => {
       const c = await pool.connect();
       try {
