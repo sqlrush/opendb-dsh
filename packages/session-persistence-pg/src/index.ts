@@ -17,7 +17,7 @@ import type pg from 'pg';
 import { createPool, rollbackAndRelease } from './pool.ts';
 import { runMigrations } from './schema.ts';
 
-export { createPool } from './pool.ts';
+export { createPool, rollbackAndRelease } from './pool.ts';
 export { runMigrations, SQL_DIR } from './schema.ts';
 
 interface EventRow {
