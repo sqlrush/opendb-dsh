@@ -18,7 +18,7 @@ export interface DbNodeRecord {
 export interface DbGroupRecord { id: string; tenantId: string; name: string; kind: string }
 
 declare module '@deepseek-ai/cordis' {
-  interface Context { registry: Registry }
+  interface Context { opendbRegistry: Registry }
 }
 
 function agentRow(r: any): AgentRecord {
@@ -49,7 +49,7 @@ export default class Registry extends Service {
   private readonly tenant: string;
 
   constructor(ctx: Context, config: { connectionString: string; defaultTenant?: string }) {
-    super(ctx, 'registry');
+    super(ctx, 'opendbRegistry');
     this.pool = createPool(config.connectionString);
     this.tenant = config.defaultTenant ?? 'default';
     this.ready = runMigrations(this.pool);
