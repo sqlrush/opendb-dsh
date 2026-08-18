@@ -60,3 +60,18 @@
 - `@opendb-dsh/scheduler`（Host 内）：自写 5 字段 cron 解析（* , - / 步长、dom/dow either-match、7=周日），tick 30s；到点 CAS 更新 last_fired_at 防重 → 走 Host 自身 /api（workspace.list→session.create→session.prompt mode=queue）开新会话入队，下游与用户手发完全一致。trust fence 需 127.0.0.1:<port>（chart helper 已加）。
 - 表 dsh_schedules（005 迁移，tenant+name 唯一，last_fired_at/last_session_id）。
 - 验收：插入每分钟巡检 schedule → ~1min 内触发，新会话模型调 db_nodes→db_overview，最终回复【og-lab 运维台】给出真实健康总结（13 会话/0 等待锁/库大小）；测试行已清理。**注意：分钟级 cron 每次触发都烧模型 token，测试后必须 disable/删除。**
+
+## P1 W4（2026-08-19 进行中，任务插件 + 审批）—— 事故复盘三连
+
+**G1 契约已冻结**（设计 §8.5）：任务=可调度会话模板；报告经 task_report 工具（schemastery 校验+工具循环重试）；审批=P1 报告签收（report-ack）；dsh_schedules 收编为 prompt 任务类型（scheduler 包删除）。新包：tasks / approvals / task-inspection / task-sql-audit / tool-task-report / tool-read-spill。
+
+**事故 1：僵尸连接持 session 级 advisory lock 拖死全平台 32 分钟。**
+被杀 pod 的半开 TCP 连接在 PG 侧存活（state=idle，query 停在 002 迁移），session 级 pg_advisory_lock 永不释放 → 六个服务的 runMigrations 全部排队 → 所有 `await ready` 的 RPC 挂死。修复三层：① runMigrations 改 **pg_advisory_xact_lock**（每文件一个事务，连接死/回滚即放锁），SET LOCAL lock_timeout 提前到拿锁前（等锁也有界）；② PG args `idle_in_transaction_session_timeout=5min`（能杀挂死的持锁事务）；③ `tcp_keepalives_idle=60/interval=10/count=6`（10 分钟清半开连接）。**教训：换 PG 镜像时 W1 在旧库设的会话级防线全部丢失——DB 级参数必须进 chart，不能手工 ALTER。**
+
+**事故 2：runNow 在 RPC 上下文内同步自调用 /api 死锁。**
+「立即运行」的 RPC handler 里同步 fetch Host 自身 /api（workspace.list/session.create）→ 与请求处理串行化互等，挂满 curl 超时；cron tick 路径（非 RPC 上下文）从来正常。修复：runNow 只 INSERT queued run 秒回，引擎 tick 异步拾取 fire。**教训：凡是"经 Host /api 开会话"的动作绝不能在 RPC handler 里同步做。**
+
+**事故 3：Service 构造器内 anyCtx.inject(['tools']) 注册的工具从未生效。**
+task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构造器内 inject(['tools'])"模式——模型工具列表里从未出现过这两个工具，静默失败无报错。改成独立 function plugin（tool-db 的已验证模式：顶层 export inject + apply 内 ctx.effect 注册）后错误反而显形：task_report 的 data 参数缺 `additionalProperties: true|false`（defineTool 强制），Runtime boot 崩溃循环 5 次——补上即好。**教训：① 工具注册一律用 function plugin 顶层 inject；② defineTool 的 object 参数必须显式 additionalProperties；③ "静默不生效"比"崩溃"更危险，read_spill 失效两天无人知。**
+
+**辅修**：任务默认超时 10→20 分钟（巡检会话实测 15-25 分钟，deepseek 出现过 15 分钟无输出空洞）；fire 时重置 fired_at=实际开跑（排队不计超时）；task_report 接受 timeout 后迟到报告（救回 succeeded）；快速链路验收法——用 prompt 任务"立即调用 task_report"1 分钟验完整链路，与耗时的巡检内容验收解耦。
