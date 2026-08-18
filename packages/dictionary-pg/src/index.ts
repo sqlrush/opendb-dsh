@@ -70,7 +70,7 @@ export default class DictionaryService extends Service {
       for (const c of changes) counts[c.change] += 1;
       return { ...counts, total: current.length };
     } catch (cause) {
-      if (!released) await rollbackAndRelease(client, cause);
+      if (!released) await rollbackAndRelease(client);
       throw cause;
     }
   }
