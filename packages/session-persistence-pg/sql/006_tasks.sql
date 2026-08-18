@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS dsh_tasks (
   cron              text,                                -- NULL = 仅手动触发
   enabled           boolean NOT NULL DEFAULT true,
   requires_approval boolean NOT NULL DEFAULT false,
-  timeout_ms        integer NOT NULL DEFAULT 600000,
+  timeout_ms        integer NOT NULL DEFAULT 1200000,
   last_fired_at     timestamptz,
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),

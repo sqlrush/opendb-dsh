@@ -34,7 +34,7 @@ export function defineTaskReportTool(deps: TaskReportToolDeps) {
       const r = await deps.pool.query(
         `SELECT r.id AS run_id, r.task_id, t.type, t.name
          FROM dsh_task_runs r JOIN dsh_tasks t ON t.id = r.task_id
-         WHERE r.session_id = $1 AND r.status = 'running'
+         WHERE r.session_id = $1 AND r.status IN ('running','timeout')   -- 迟到报告好过丢失：超时后送达仍接收
          ORDER BY r.fired_at DESC LIMIT 1`,
         [sessionId],
       );
@@ -61,7 +61,7 @@ export function defineTaskReportTool(deps: TaskReportToolDeps) {
         [`rep-${randomUUID().slice(0, 8)}`, run.run_id, run.task_id, severity, summary, JSON.stringify(data ?? {})],
       );
       await deps.pool.query(
-        `UPDATE dsh_task_runs SET status = 'succeeded', finished_at = now() WHERE id = $1 AND status = 'running'`,
+        `UPDATE dsh_task_runs SET status = 'succeeded', finished_at = now(), error = NULL WHERE id = $1 AND status IN ('running','timeout')`,
         [run.run_id],
       );
       return { content: `报告已提交（${severity}）：${summary}` };

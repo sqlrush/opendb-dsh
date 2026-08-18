@@ -112,7 +112,7 @@ export default class TasksService extends Service {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [`task-${randomUUID().slice(0, 8)}`, this.tenant, input.agentId, input.type, input.name,
        JSON.stringify(config ?? {}), input.cron !== '' ? input.cron ?? null : null,
-       input.requiresApproval ?? false, input.timeoutMs ?? 600_000, input.enabled ?? true],
+       input.requiresApproval ?? false, input.timeoutMs ?? 1_200_000, input.enabled ?? true],
     );
     return taskRow(r.rows[0]);
   }
