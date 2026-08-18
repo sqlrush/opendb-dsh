@@ -8,4 +8,5 @@ allowBuilds:
   '@google/genai': false
   koffi: true
   node-pty: true
+  esbuild: true
   protobufjs: false
