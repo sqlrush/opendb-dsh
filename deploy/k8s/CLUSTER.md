@@ -79,3 +79,11 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 **W4 核心链路验收 ✅（2026-08-19）**：`w4-fast.sh` 快任务全链路——tasks/create → runNow 入队秒回 → 引擎 tick 拾取开会话 → 模型调 task_report（severity=ok）→ 报告落库 run=succeeded → 引擎自动建 report-ack 审批单 → RPC 签收（decided_by=console + 意见）→ 重复决定被 CAS 拒（"已是 approved，不能重复决定"）。真实类型（inspection/sql-audit）报告验收在途（`w4-types.sh`）。**新欠账：runtime-worker 的 stale 回收对"死 pod 已认领未开跑"的 queue 行不生效**（P0 只验证了跑到一半的接力），本次手工重置 admitted_by 解决；W6 收口时修。
 
 **W4 真实类型验收 ✅（2026-08-19）**：inspection → severity=ok「会话/锁/连接/指标均无异常」findings=6（含 level=ok 检查记录，reportSchema 全合规）；sql-audit → severity=ok，正确识别 Top 8 全为平台采集器自身查询并按提示词规则跳过（"平台内部管控语句不审"被遵守），findings=1。两单 report-ack 均自动生成；巡检单已签收，SQL 审核单留 pending 供 user 在浏览器审批箱体验。W4 全部收口。
+
+## P1 W5（2026-08-18/19 完成核心，记忆与知识）
+
+- 新组件：chart `ollama.yaml`（Ollama 0.6.8 + PVC + pull Job bge-m3，OLLAMA_KEEP_ALIVE=24h 常驻）、`embeddings-openai-compat`（opendbEmbeddings seam，实测集群内 /v1/embeddings 返回 1024 维）、迁移 007（opendb_memories + pgvector hnsw cosine 索引；embedding 可空=文本真相优先）、`memory-pg`（write/search 向量→ILIKE 回退/recent/hasSource）、`memory-ingest`（Host 扫描报告→kind=report 记忆，source=report:<runId> 幂等）、`memory-context`（Runtime agent/pre-step 注入 recent+语义检索记忆，字节上限）、`tool-memory`（memory_search/memory_save，function plugin 模式）。
+- **验收全过**：3 份任务报告自动入记忆（embedding 全部生成）；新会话问「上次巡检结论」→ 模型答「根据平台记忆库（2026-08-18 的两条巡检记录）…」引用真实结论，**0 次数据库工具调用**（未重新巡检）——P1 目标「次日对话能引用昨日巡检结论」达成；memory_save 存偏好 → 新会话准确回忆（含日期）。
+- 事故复盘补充：迁移锁滞留再现一次，持锁者是 **rollout 被杀旧 pod 的半开连接**（idle in transaction 3:56，5 分钟自动杀线将至，手动提前清）；xact 锁 + idle_in_transaction 超时防线按预期工作，只是清理有分钟级延迟——属可接受行为。注意 chart 的 tcp_keepalives args 对 TCP 连接是否真实生效未验证（psql unix socket 显示 0 属正常）。
+- 计划调整：批次 3 的 KEDA 并入 W6（与「100 节点/5 agent 排程」规模验收强相关，当前单节点无真负载可验）。
+- 已知小坑：JS 稀疏数组 `new Array(n).some()` 跳过空槽（embeddings index 连续性检查踩过）。
