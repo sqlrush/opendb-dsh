@@ -39,3 +39,11 @@
 - `@opendb-dsh/ui-opendb`：宿主半 = `/opendb` RPC 通道（agents/list|update|setInstructions、nodes/list|create|assign，authority trusted-host）；浏览器半 = 设置页「OpenDB」管理段（agent 表格 + 常驻指令编辑 + 节点添加/绑定），esbuild classic-script bundle（banner/footer 包 `__ModuleLoader__.load`，external 十共享模块）。
 - 验收：RPC 端点全通；bundle 进 `__DSH_BOOT__` 且 `/plugins/@opendb-dsh/ui-opendb/client.js` 200。
 - 浏览器入口：http://opendb.local/ → 左下设置 → 「OpenDB」段。
+
+## P1 W3 批次1（2026-08-18 完成，og 数据库能力）
+
+- 前提验证（og5 = enmotech/opengauss-lite:5.0.3，mac 5433）：node pg 驱动 MD5 直连 ✅（og `password_encryption_type=1` + pg_hba md5）；平台账号 `opendb_ro`（MONADMIN + `ALTER USER ... SET default_transaction_read_only=on`）可读 dbe_perf.*，写被 25006 拒绝。og 容器内 gsql：`docker exec -u omm og5 sh -c 'LD_LIBRARY_PATH=/usr/local/opengauss/lib /usr/local/opengauss/bin/gsql -d postgres -c "..."'`。
+- 新包：`@opendb-dsh/db`（`opendbDb` seam：每节点只读池，read-only 走 startup 包 `options: -c default_transaction_read_only=on`——og 接受，无 SET 竞态；方言注册表 + postgresql 基线）、`@opendb-dsh/db-opengauss`（8 条 dbe_perf 诊断查询，og5 实测 8/8）、`@opendb-dsh/tool-db`（db_nodes / db_query / db_overview；只读门=去注释+单语句+词表+危险函数表，**set_config 必须拦**——只读事务不阻止 set_config 改 transaction_read_only）。
+- 凭据不落库：Secret `opendb-db-credentials`（key `credentials.json`，JSON `{"og5":{"username","password"}}`）→ runtime env `OPENDB_DB_CREDENTIALS`。轮换：og 上 `ALTER USER opendb_ro PASSWORD '...'` + 重建 secret + 重启 runtime。
+- **helm 陷阱**：`--reuse-values` 不合并 chart 新增的 values 默认值 → 新模板引用新值时渲染为空报错；本 release 无用户自定义值，直接不带该参升级。
+- 验收（`~/opendb-k8s/w3-accept.sh` / `w3-accept-ro.sh`）：og-lab 会话问 og5 会话数/版本 → 模型自主调 db_nodes→db_overview→db_query×2，答 12 会话 / openGauss-lite 5.0.3 ✅；要求执行 create table → 只读门拒绝 ✅。
