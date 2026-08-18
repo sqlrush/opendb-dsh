@@ -24,7 +24,7 @@
 
 ---
 
-### Task 2: `@opendb-dsh/storage-pg`
+### Task 2: `@opendb-dsh/storage-pg` ✅（3/3 测试通过）
 **Files:** `packages/storage-pg/{package.json,tsconfig.json,src/index.ts,src/unit.ts,sql/001_kv.sql,test/kv.test.ts}`
 **Interfaces（dsh，逐字来自 `dsh-storage/lib/types/backend.d.ts`）:**
 ```ts
@@ -40,27 +40,27 @@ interface KvUnit { loadAll(): Promise<{ tables: Record<string, Record<string, un
 - [ ] 实现 `PgKvUnit`（loadAll: `SELECT tbl,key,value` + `SELECT global`；putRecord: `INSERT … ON CONFLICT (unit,tbl,key) DO UPDATE`；deleteRecord；setGlobal: `UPDATE dsh_kv_units SET global=$2`；open: advisory lock + upsert unit 行 + version 校验）与 `PgStorageBackend`（open 去重表、close）
 - [ ] 测试通过 → commit `feat(storage-pg): dsh storage kv facet 的 PostgreSQL 后端`
 
-### Task 3: `@opendb-dsh/attachment-s3`
+### Task 3: `@opendb-dsh/attachment-s3` ✅（2/2）
 **Files:** `packages/attachment-s3/{package.json,tsconfig.json,src/index.ts,src/s3.ts,test/attachment.test.ts}`
 **Interfaces（dsh）:** `abstract class AttachmentStore extends Service { abstract imageLimits; abstract validateImage(input); abstract saveImage(input): Promise<ImageAttachmentRef>; abstract readImage(ref, signal?): Promise<{ref,data}> }`（服务键 `attachments`）；`SaveImageAttachment{data:Uint8Array, mediaType, name?}`；`ImageAttachmentRef{attachmentId:'sha256:<hex>', mediaType, bytes, width, height, name?}`；从 `@deepseek-ai/dsh-attachment-local` 导入 `validateImageFile(input, limits)`、`detectImage(data, maxPixels)`；从 `@deepseek-ai/dsh-attachment` 导入 `AttachmentStore`、`AttachmentId`、`AttachmentError`（若未导出则自定义同码错误）。
 **Produces:** `export default class S3AttachmentStore extends AttachmentStore`，`static Config = { endpoint, bucket, accessKey, secretKey, region='us-east-1', prefix='attachments/v1', maxImageBytes…同 local }`；对象 key `${prefix}/${sha[0..2]}/${sha}`；`saveImage`：validate → sha256 → `HeadObject`（存在则 `GetObject` 校验摘要）否则 `PutObject`（ContentType=mediaType）；`readImage`：`GetObject` → 摘要校验 → `detectImage` 元数据比对 ref → 不符抛 `ATTACHMENT_CORRUPT`；abort 传 signal。
 - [ ] 失败测试（需 MinIO：`S3_ENDPOINT` env；`scripts/dev-minio.sh` 起 `quay.io/minio/minio` 于 9002/9003 并建桶 `dsh-test`）：save→read 往返（用一张 1×1 PNG 字节）；重复 save 幂等同 ref；坏 ref 抛 `INVALID_ATTACHMENT_REF`；缺对象抛 `ATTACHMENT_NOT_FOUND`
 - [ ] 实现 → 测试通过 → commit
 
-### Task 4: `@opendb-dsh/spill-s3`（含 `read_spill` 工具）
+### Task 4: `@opendb-dsh/spill-s3`（含 `read_spill` 工具）✅（1/1）
 **Files:** `packages/spill-s3/{package.json,tsconfig.json,src/index.ts,src/tool.ts,test/spill.test.ts}`
 **Interfaces（dsh）:** `abstract class SpillStore extends Service { abstract saveText(input:{owner:{sessionId}, source:{toolName,callId,label}, suggestedName, content}): Promise<{locator, bytes, retrievalHint}> }`（服务键 `spillStore`，`SpillLocator` 品牌 string）；工具注册走 `ctx.tools.register(...)`（形状照 `dsh-tool-ask-user`：`{ name, description, parameters(schema), execute(args, exec) }`——实现前 `grep -n "tools.register" node_modules/@deepseek-ai/dsh-tool-ask-user/lib/index.js` 核对一次签名）。
 **Produces:** `export default class S3SpillStore extends SpillStore`，key `spill/<sha256(sessionId).slice(0,12)>/<rand6>-<encodeSegment(name)>`，locator `s3://<bucket>/<key>`，`retrievalHint = "Use the read_spill tool with this locator (supports offset/limit lines)."`；同包 `apply` 时若 `ctx.get('tools')` 存在则注册 `read_spill{locator, offset?, limit?}`（默认 200 行，输出 ≤ 20000 字节，超出截断并提示 offset）。
 - [ ] 失败测试：saveText 返回 `s3://` locator + hint；read_spill 读回同内容并支持 offset/limit；非本平台 locator 拒绝
 - [ ] 实现 → 通过 → commit
 
-### Task 5: `@opendb-dsh/tenant-context`（骨架）+ 迁移 002
+### Task 5: `@opendb-dsh/tenant-context`（骨架）+ 迁移 002 ✅
 **Files:** `packages/tenant-context/{package.json,src/index.ts}`, `packages/session-persistence-pg/sql/002_tenant.sql`
 - [ ] 002：给 `dsh_sessions/dsh_threads/dsh_thread_queue/dsh_questions/dsh_kv_units/dsh_kv_records` 加 `tenant_id text NOT NULL DEFAULT 'default'` + 索引；建 RLS policy `tenant_isolation`（`ENABLE ROW LEVEL SECURITY`，**不 FORCE**，policy 用 `current_setting('app.tenant_id', true) IS NULL OR tenant_id = current_setting('app.tenant_id', true)`）
 - [ ] `tenant-context` Service `ctx.tenantContext`：`current(): { tenantId }`（W1 恒 `default`），`withTenant(id, fn)`（AsyncLocalStorage），供 W2 registry/RLS 使用
 - [ ] commit
 
-### Task 6: 接线（bundle/profile/chart）+ 端到端验收
+### Task 6: 接线 + 端到端验收 ✅（2026-08-18）：k8s 上 read_spill 工具可调用；Host 重启后 session.list 完全一致（storage-pg：workspace/projcache 落 PG）；`--dump-config` 无 PENDING。注：端到端"自然大输出溢出"未在集群复跑（LLM 生成 >50KB 耗时），S3 写读由单测覆盖，W3 tool-db 大结果将自然覆盖
 - [ ] `bundle-host`：`- id: storage-json disabled: true`；insert `storage-pg`；`- id: storage-domain config: { backend: pg }`；`- id: attachment-local disabled: true`；insert `attachment-s3`；insert `tenant-context`
 - [ ] `bundle-runtime`：`attachment-local` → `attachment-s3`；`spill-local` → `spill-s3`（含 read_spill）；insert `tenant-context`
 - [ ] profiles 加直接依赖；`pnpm build && pnpm test`（本地 PG `dsh_test` + `scripts/dev-minio.sh`）
