@@ -75,3 +75,5 @@
 task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构造器内 inject(['tools'])"模式——模型工具列表里从未出现过这两个工具，静默失败无报错。改成独立 function plugin（tool-db 的已验证模式：顶层 export inject + apply 内 ctx.effect 注册）后错误反而显形：task_report 的 data 参数缺 `additionalProperties: true|false`（defineTool 强制），Runtime boot 崩溃循环 5 次——补上即好。**教训：① 工具注册一律用 function plugin 顶层 inject；② defineTool 的 object 参数必须显式 additionalProperties；③ "静默不生效"比"崩溃"更危险，read_spill 失效两天无人知。**
 
 **辅修**：任务默认超时 10→20 分钟（巡检会话实测 15-25 分钟，deepseek 出现过 15 分钟无输出空洞）；fire 时重置 fired_at=实际开跑（排队不计超时）；task_report 接受 timeout 后迟到报告（救回 succeeded）；快速链路验收法——用 prompt 任务"立即调用 task_report"1 分钟验完整链路，与耗时的巡检内容验收解耦。
+
+**W4 核心链路验收 ✅（2026-08-19）**：`w4-fast.sh` 快任务全链路——tasks/create → runNow 入队秒回 → 引擎 tick 拾取开会话 → 模型调 task_report（severity=ok）→ 报告落库 run=succeeded → 引擎自动建 report-ack 审批单 → RPC 签收（decided_by=console + 意见）→ 重复决定被 CAS 拒（"已是 approved，不能重复决定"）。真实类型（inspection/sql-audit）报告验收在途（`w4-types.sh`）。**新欠账：runtime-worker 的 stale 回收对"死 pod 已认领未开跑"的 queue 行不生效**（P0 只验证了跑到一半的接力），本次手工重置 admitted_by 解决；W6 收口时修。
