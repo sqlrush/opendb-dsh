@@ -48,11 +48,12 @@ export class TaskEngine {
     this.d = deps;
   }
 
-  /** 一轮：cron 触发 + 终态清扫 + 审批单补建。 */
+  /** 一轮：手动队列拾取 + cron 触发 + 终态清扫 + 审批单补建。 */
   async tick(now = new Date()): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
+      await this.fireQueuedManuals();
       await this.fireDue(now);
       await this.sweepTimeouts(now);
       await this.settleFinishedTurns();
@@ -64,14 +65,33 @@ export class TaskEngine {
     }
   }
 
+  /**
+   * runNow 只入队立即返回（真正 fire 在下一次 tick）：fire 会经 Host 自身 /api 开会话，
+   * 而 runNow 本身就跑在 /api 的 RPC 处理上下文里 —— 同步自调用会与请求处理串行化互等
+   * 而死锁（实测挂满 curl 超时）。异步拾取彻底绕开。
+   */
   async runNow(taskId: string): Promise<TaskRunRecord> {
     const r = await this.d.pool.query('SELECT * FROM dsh_tasks WHERE id = $1', [taskId]);
     if (r.rows[0] === undefined) throw new Error(`任务 ${taskId} 不存在`);
-    const task = taskRow(r.rows[0]);
-    const run = await this.createRun(task.id, 'manual');
-    await this.fire(task, run);
-    const fresh = await this.d.pool.query('SELECT * FROM dsh_task_runs WHERE id = $1', [run.id]);
-    return runRow(fresh.rows[0]);
+    return this.createRun(taskId, 'manual');
+  }
+
+  /** 拾取 runNow 入队、尚未开会话的 manual run（MVP Host 单副本；P3 多引擎需 claim）。 */
+  private async fireQueuedManuals(): Promise<void> {
+    const r = await this.d.pool.query(
+      `SELECT r.id AS run_id, t.* FROM dsh_task_runs r JOIN dsh_tasks t ON t.id = r.task_id
+       WHERE r.status = 'queued' AND r.session_id IS NULL AND r.trigger_kind = 'manual'
+       ORDER BY r.fired_at`,
+    );
+    for (const raw of r.rows) {
+      const task = taskRow(raw);
+      const runRes = await this.d.pool.query('SELECT * FROM dsh_task_runs WHERE id = $1', [raw.run_id]);
+      try {
+        await this.fire(task, runRow(runRes.rows[0]));
+      } catch (cause) {
+        process.stderr.write(`[tasks] manual fire "${task.name}" failed: ${String((cause as Error).message ?? cause)}\n`);
+      }
+    }
   }
 
   private async fireDue(now: Date): Promise<void> {
