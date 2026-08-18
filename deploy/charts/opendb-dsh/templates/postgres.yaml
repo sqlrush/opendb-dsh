@@ -23,6 +23,17 @@ spec:
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
+          # 防僵尸防线（W4 事故复盘）：pod 被杀后的半开 TCP 连接曾拖住全平台迁移 32 分钟。
+          # keepalive 10 分钟内清掉死连接；idle-in-transaction 5 分钟杀挂死事务。
+          args:
+            - -c
+            - idle_in_transaction_session_timeout=300000
+            - -c
+            - tcp_keepalives_idle=60
+            - -c
+            - tcp_keepalives_interval=10
+            - -c
+            - tcp_keepalives_count=6
           env:
             - { name: POSTGRES_USER, value: {{ .Values.postgres.user | quote }} }
             - { name: POSTGRES_PASSWORD, value: {{ .Values.postgres.password | quote }} }
