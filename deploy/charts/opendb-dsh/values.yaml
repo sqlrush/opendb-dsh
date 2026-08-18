@@ -43,6 +43,9 @@ runtime:
       replicas: 2
       resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
   healthPort: 9090
+  # 节点凭据 Secret（W3）：kubectl -n <ns> create secret generic opendb-db-credentials \
+  #   --from-literal=credentials.json='{"og5":{"username":"opendb_ro","password":"<pw>"}}'
+  dbCredentialsSecret: opendb-db-credentials
   terminationGracePeriodSeconds: 330
   pollMs: 2000
   heartbeatMs: 5000

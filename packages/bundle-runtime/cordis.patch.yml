@@ -71,3 +71,13 @@
       name: '@opendb-dsh/instructions-pg'
 - id: agent-instructions
   disabled: true
+# ── P1 W3 批次1: db seam + og 方言 + 只读诊断工具 ────────────────────────────
+- insert:
+    - id: opendb-db
+      name: '@opendb-dsh/db'
+      config:
+        credentialsJson: !!js process.env.OPENDB_DB_CREDENTIALS ?? ''
+    - id: db-opengauss
+      name: '@opendb-dsh/db-opengauss'
+    - id: tool-db
+      name: '@opendb-dsh/tool-db'

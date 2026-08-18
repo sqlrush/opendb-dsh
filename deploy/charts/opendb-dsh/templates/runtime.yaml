@@ -26,6 +26,12 @@ spec:
             - { name: OPENDB_RUNTIME_CLASS, value: {{ .name | quote }} }
             - { name: OPENDB_HEALTH_PORT, value: {{ $.Values.runtime.healthPort | quote }} }
             - { name: OPENDB_POD_NAME, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - name: OPENDB_DB_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.runtime.dbCredentialsSecret | quote }}
+                  key: credentials.json
+                  optional: true
           ports: [{ containerPort: {{ $.Values.runtime.healthPort }} }]
           readinessProbe: { httpGet: { path: /, port: {{ $.Values.runtime.healthPort }} }, initialDelaySeconds: 5, periodSeconds: 5 }
           resources: {{- toYaml .resources | nindent 12 }}

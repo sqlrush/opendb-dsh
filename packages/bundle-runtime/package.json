@@ -12,6 +12,9 @@
     "@opendb-dsh/spill-s3": "workspace:*",
     "@opendb-dsh/tenant-context": "workspace:*",
     "@opendb-dsh/registry": "workspace:*",
-    "@opendb-dsh/instructions-pg": "workspace:*"
+    "@opendb-dsh/instructions-pg": "workspace:*",
+    "@opendb-dsh/db": "workspace:*",
+    "@opendb-dsh/db-opengauss": "workspace:*",
+    "@opendb-dsh/tool-db": "workspace:*"
   }
 }
