@@ -25,7 +25,11 @@ const REJECTED: [string, RegExp][] = [
   ['with w as (insert into t values (1) returning *) select * from w', /insert/i],
   ['with w as (delete from t returning *) select * from w', /delete/i],
   ['explain analyze select 1', /analyze/i],
-  ['select set_config($$x$$, $$1$$, false)', /set/i],
+  ['select set_config($$x$$, $$1$$, false)', /set_config/i],
+  ['select pg_terminate_backend(123)', /pg_terminate_backend/i],
+  ['select pg_read_file($$/etc/passwd$$)', /pg_read_file/i],
+  ['select pg_advisory_lock(1)', /pg_advisory_lock/i],
+  ['select setval($$s$$, 10)', /setval/i],
   ['select 1 -- ; drop table t', /^/],           // comment stripped → plain select 1 → this one is ALLOWED, asserted below
 ];
 
