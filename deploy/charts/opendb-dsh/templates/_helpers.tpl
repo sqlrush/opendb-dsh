@@ -33,6 +33,12 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
   value: {{ .Values.minio.rootUser | quote }}
 - name: OPENDB_S3_SECRET_KEY
   value: {{ .Values.minio.rootPassword | quote }}
+{{- if .Values.ollama.enabled }}
+- name: OPENDB_EMBEDDINGS_URL
+  value: {{ printf "http://%s-ollama:11434/v1" .Release.Name | quote }}
+- name: OPENDB_EMBEDDINGS_MODEL
+  value: {{ .Values.ollama.embeddingModel | quote }}
+{{- end }}
 - name: DEEPSEEK_API_KEY
   valueFrom: { secretKeyRef: { name: {{ .Values.llm.existingSecret }}, key: DEEPSEEK_API_KEY } }
 {{- if .Values.llm.deepseekBaseUrl }}

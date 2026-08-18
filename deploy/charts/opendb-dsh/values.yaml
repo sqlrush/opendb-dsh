@@ -67,3 +67,12 @@ ingress:
 
 debug:
   dispatchTraceLog: ""            # set to a file path to enable agent-loop-dispatch traces
+
+# ── W5: 集群内 embedding 服务（Ollama + bge-m3，1024 维；user 已拍板）─────────
+ollama:
+  enabled: true
+  image: ollama/ollama:0.6.8          # 钉版；arm64 ✓
+  embeddingModel: bge-m3
+  storage: 8Gi
+  storageClassName: ""
+  resources: { requests: { cpu: 500m, memory: 2Gi }, limits: { memory: 6Gi } }

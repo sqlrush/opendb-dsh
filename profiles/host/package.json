@@ -16,7 +16,10 @@
     "@opendb-dsh/task-sql-audit": "workspace:*",
     "@opendb-dsh/approvals": "workspace:*",
     "@opendb-dsh/metrics-timescale": "workspace:*",
-    "@opendb-dsh/dictionary-pg": "workspace:*"
+    "@opendb-dsh/dictionary-pg": "workspace:*",
+    "@opendb-dsh/embeddings-openai-compat": "workspace:*",
+    "@opendb-dsh/memory-pg": "workspace:*",
+    "@opendb-dsh/memory-ingest": "workspace:*"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@opendb-dsh/bundle-host"] } }
 }

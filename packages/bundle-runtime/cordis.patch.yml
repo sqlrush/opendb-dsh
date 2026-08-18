@@ -116,3 +116,15 @@
 - insert:
     - id: tool-read-spill
       name: '@opendb-dsh/tool-read-spill'
+# ── P1 W5: 记忆层（Runtime 侧：注入 + 读写工具）──────────────────────────────
+- insert:
+    - id: opendb-embeddings
+      name: '@opendb-dsh/embeddings-openai-compat'
+    - id: opendb-memory
+      name: '@opendb-dsh/memory-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: memory-context
+      name: '@opendb-dsh/memory-context'
+    - id: tool-memory
+      name: '@opendb-dsh/tool-memory'
