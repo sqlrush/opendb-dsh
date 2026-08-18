@@ -56,3 +56,7 @@
       name: '@opendb-dsh/directory-picker-agent'
     - id: ui-directory-picker-browse
       name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
+# ── P1 W2 批次2: OpenDB 管理页（/opendb RPC + settings.section）──
+- insert:
+    - id: ui-opendb
+      name: '@opendb-dsh/ui-opendb'

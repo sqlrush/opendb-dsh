@@ -1,0 +1,33 @@
+{
+  "name": "@opendb-dsh/ui-opendb",
+  "version": "0.0.1",
+  "description": "opendb-dsh management UI: /opendb RPC channel on the Host and an 'OpenDB' settings section in the dsh web app (agents, db nodes, standing instructions)",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./client": { "default": "./lib/client.js" },
+    "./package.json": "./package.json"
+  },
+  "files": ["lib"],
+  "dsh": { "client": { "platform": "web" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node build-client.mjs",
+    "test": "node --experimental-strip-types --test --test-concurrency=1 --test-timeout=60000 test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "react": "^19.0.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@opendb-dsh/registry": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@types/react": "^19.0.0",
+    "esbuild": "^0.25.0",
+    "react": "^19.0.0"
+  }
+}
