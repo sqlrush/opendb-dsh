@@ -44,3 +44,15 @@
       name: '@opendb-dsh/attachment-s3'
     - id: tenant-context
       name: '@opendb-dsh/tenant-context'
+# ── P1 W2: workspace == agent（零前端：官方 browse UI + 我们的 picker provider）──
+- id: directory-picker
+  disabled: true
+- insert:
+    - id: opendb-registry
+      name: '@opendb-dsh/registry'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: directory-picker-agent
+      name: '@opendb-dsh/directory-picker-agent'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'

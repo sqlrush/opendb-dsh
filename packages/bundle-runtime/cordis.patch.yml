@@ -61,3 +61,13 @@
       name: '@opendb-dsh/spill-s3'
     - id: tenant-context
       name: '@opendb-dsh/tenant-context'
+# ── P1 W2: 常驻指令注入（registry.instruction_doc → step1 authority message）──
+- insert:
+    - id: opendb-registry
+      name: '@opendb-dsh/registry'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: instructions-pg
+      name: '@opendb-dsh/instructions-pg'
+- id: agent-instructions
+  disabled: true

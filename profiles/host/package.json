@@ -7,7 +7,9 @@
     "@opendb-dsh/session-persistence-pg": "workspace:*",
     "@opendb-dsh/storage-pg": "workspace:*",
     "@opendb-dsh/attachment-s3": "workspace:*",
-    "@opendb-dsh/tenant-context": "workspace:*"
+    "@opendb-dsh/tenant-context": "workspace:*",
+    "@opendb-dsh/registry": "workspace:*",
+    "@opendb-dsh/directory-picker-agent": "workspace:*"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@opendb-dsh/bundle-host"] } }
 }
