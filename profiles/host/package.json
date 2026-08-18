@@ -10,7 +10,8 @@
     "@opendb-dsh/tenant-context": "workspace:*",
     "@opendb-dsh/registry": "workspace:*",
     "@opendb-dsh/directory-picker-agent": "workspace:*",
-    "@opendb-dsh/ui-opendb": "workspace:*"
+    "@opendb-dsh/ui-opendb": "workspace:*",
+    "@opendb-dsh/scheduler": "workspace:*"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@opendb-dsh/bundle-host"] } }
 }

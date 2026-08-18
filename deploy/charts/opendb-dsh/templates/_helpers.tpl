@@ -15,6 +15,7 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 {{- define "opendb.trustedHosts" -}}
 {{- $hosts := list -}}
 {{- if .Values.ingress.enabled }}{{ $hosts = append $hosts .Values.ingress.host }}{{ end -}}
+{{- $hosts = append $hosts (printf "127.0.0.1:%d" (int .Values.host.port)) -}}
 {{- $hosts = append $hosts (printf "%s-host:%d" .Release.Name (int .Values.host.port)) -}}
 {{- $hosts = append $hosts (printf "%s-host.%s.svc:%d" .Release.Name .Release.Namespace (int .Values.host.port)) -}}
 {{- $hosts = append $hosts (printf "%s-host.%s.svc.cluster.local:%d" .Release.Name .Release.Namespace (int .Values.host.port)) -}}

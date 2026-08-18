@@ -60,3 +60,10 @@
 - insert:
     - id: ui-opendb
       name: '@opendb-dsh/ui-opendb'
+# ── P1 W3 批次3: 定时任务（cron → 新会话入队）─────────────────────────────────
+- insert:
+    - id: opendb-scheduler
+      name: '@opendb-dsh/scheduler'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+        tickMs: 30000
