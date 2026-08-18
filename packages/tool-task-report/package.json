@@ -1,0 +1,14 @@
+{
+  "name": "@opendb-dsh/tool-task-report",
+  "version": "0.0.1",
+  "description": "Registers the task_report tool (G1 contract) into the Runtime tools registry — split out as a function plugin because in-Service registration does not activate",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./package.json": "./package.json" },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "echo no tests" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6" },
+  "dependencies": { "@opendb-dsh/tasks": "workspace:*" },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6" }
+}

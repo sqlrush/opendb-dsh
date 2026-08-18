@@ -5,7 +5,7 @@ import type { TaskType, Severity } from './types.ts';
 
 const SEVERITIES: readonly Severity[] = ['ok', 'warn', 'critical'];
 
-export interface TaskReportToolDeps { pool: pg.Pool; types: Map<string, TaskType> }
+export interface TaskReportToolDeps { pool: pg.Pool; getType(key: string): TaskType | undefined }
 
 /**
  * task_report — 任务报告唯一提交通道（G1 决策 3）。运行在 Runtime；经 exec.agent.id ==
@@ -40,7 +40,7 @@ export function defineTaskReportTool(deps: TaskReportToolDeps) {
       );
       const run = r.rows[0];
       if (run === undefined) throw new Error('当前会话不是运行中的任务会话，无需提交任务报告');
-      const type = deps.types.get(run.type);
+      const type = deps.getType(run.type);
       if (type === undefined) throw new Error(`任务类型 ${run.type} 未在本运行环境注册`);
       if (type.report === 'none') throw new Error(`任务类型 ${type.title} 不接收报告`);
       const severity = String(args.severity ?? '');

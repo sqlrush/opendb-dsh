@@ -78,11 +78,8 @@ export default class TasksService extends Service {
       }, 'opendbTasks.engine');
     }
 
-    // task_report 工具：注册到任何有 tools 注册表的环境（Runtime）；Host 无 tools 则自然跳过
-    anyCtx.inject(['tools'], (c: any) => {
-      c.effect(() => c.tools.register(defineTaskReportTool({ pool: this.pool, types: this.types })), 'tasks.task_report');
-    });
-
+    // task_report 工具注册在独立 function plugin @opendb-dsh/tool-task-report（Runtime bundle）——
+    // Service 构造器内 anyCtx.inject(['tools']) 实测不生效（W4 事故：模型工具列表里没有 task_report）。
     ctx.effect(() => async () => { await this.ready.catch(() => {}); await this.pool.end(); }, 'opendbTasks.pool');
   }
 

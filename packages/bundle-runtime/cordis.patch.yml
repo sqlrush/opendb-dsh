@@ -110,3 +110,6 @@
       name: '@opendb-dsh/approvals'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+- insert:
+    - id: tool-task-report
+      name: '@opendb-dsh/tool-task-report'
