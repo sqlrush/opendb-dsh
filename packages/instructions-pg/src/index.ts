@@ -39,7 +39,8 @@ export function apply(ctx: Context, config: { maxBytes?: number }): void {
       injected.set(agent, { version: sessionAgent.instructionVersion });
       const lastClaimedIndex = decision.messages.findLastIndex((m: unknown) => (messages as unknown[]).includes(m));
       return { kind: 'enter', messages: decision.messages.toSpliced(lastClaimedIndex + 1, 0, message) };
-    } catch {
+    } catch (err) {
+      process.stderr.write(`[instructions-pg] injection skipped: ${String(err)}\n`);
       return decision;   // registry unavailable → run without standing instructions
     }
   });
@@ -54,6 +55,6 @@ async function resolveAgent(registry: any, agent: any): Promise<{ name: string; 
   }
   const cwd: string | undefined = agent.session?.header?.cwd;
   const m = cwd ? /\/agents\/([^/]+)\/?$/.exec(cwd) : null;   // $DSH_HOME/agents/<agent-id>
-  if (m) return registry.getAgent(m[1]);
+  if (m) return registry.getAgentByName(decodeURIComponent(m[1]));
   return undefined;
 }
