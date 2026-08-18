@@ -14,7 +14,7 @@ before(async () => {
   await p.query('DROP TABLE IF EXISTS dsh_db_nodes, dsh_db_groups, dsh_agents, dsh_users, dsh_tenants CASCADE').catch(() => {});
   await p.end();
   await ctx.plugin(Registry, { connectionString: PG_URL });
-  reg = (ctx as any).registry as Registry;
+  reg = (ctx as any).opendbRegistry as Registry;
 });
 after(async () => { await ctx.root.fiber.dispose(); });
 

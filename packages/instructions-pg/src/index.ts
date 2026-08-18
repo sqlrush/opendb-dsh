@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 
 export const name = 'instructions-pg';
-export const inject = ['registry'];
+export const inject = ['opendbRegistry'];
 export const Config = z.object({ maxBytes: z.number().step(1).min(1).default(65536) });
 
 interface InjectedState { version: number }
@@ -25,7 +25,7 @@ export function apply(ctx: Context, config: { maxBytes?: number }): void {
     const decision = await next();
     if (decision.kind === 'reject') return decision;
     try {
-      const registry = anyCtx.registry;
+      const registry = anyCtx.opendbRegistry;
       const sessionAgent = await resolveAgent(registry, agent);
       if (!sessionAgent || sessionAgent.instructionDoc.trim() === '') return decision;
       const state = injected.get(agent);
