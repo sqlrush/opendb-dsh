@@ -77,3 +77,5 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 **辅修**：任务默认超时 10→20 分钟（巡检会话实测 15-25 分钟，deepseek 出现过 15 分钟无输出空洞）；fire 时重置 fired_at=实际开跑（排队不计超时）；task_report 接受 timeout 后迟到报告（救回 succeeded）；快速链路验收法——用 prompt 任务"立即调用 task_report"1 分钟验完整链路，与耗时的巡检内容验收解耦。
 
 **W4 核心链路验收 ✅（2026-08-19）**：`w4-fast.sh` 快任务全链路——tasks/create → runNow 入队秒回 → 引擎 tick 拾取开会话 → 模型调 task_report（severity=ok）→ 报告落库 run=succeeded → 引擎自动建 report-ack 审批单 → RPC 签收（decided_by=console + 意见）→ 重复决定被 CAS 拒（"已是 approved，不能重复决定"）。真实类型（inspection/sql-audit）报告验收在途（`w4-types.sh`）。**新欠账：runtime-worker 的 stale 回收对"死 pod 已认领未开跑"的 queue 行不生效**（P0 只验证了跑到一半的接力），本次手工重置 admitted_by 解决；W6 收口时修。
+
+**W4 真实类型验收 ✅（2026-08-19）**：inspection → severity=ok「会话/锁/连接/指标均无异常」findings=6（含 level=ok 检查记录，reportSchema 全合规）；sql-audit → severity=ok，正确识别 Top 8 全为平台采集器自身查询并按提示词规则跳过（"平台内部管控语句不审"被遵守），findings=1。两单 report-ack 均自动生成；巡检单已签收，SQL 审核单留 pending 供 user 在浏览器审批箱体验。W4 全部收口。
