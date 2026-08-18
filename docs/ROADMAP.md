@@ -30,9 +30,9 @@
 > MVP 数据库原型 = **openGauss**（user 2026-08-17）：数据库能力层经 `ctx.db` 方言 seam，MVP provider `db-opengauss`；P2 加 `db-postgres`（含 pgrac）。平台自身存储仍是 PostgreSQL。
 | 周 | 主题 | 交付 |
 |---|---|---|
-| W1 | 数据面打底 | `storage-pg`、`attachment-s3`、`spill-s3`（MinIO）；`tenant-context`（全表 `tenant_id`，RLS 建不 FORCE）；迁移工具；Helm chart 骨架（host/runtime/collector/postgres+timescaledb+pgvector/minio） |
-| W2 | 注册表 + agent 工作区 | `registry`（tenants/users/agents/db_nodes/db_groups + RPC + slots 页）；`directory-picker-agent`（真实目录）；`ui-agent-workspace`；`instructions-pg` |
-| W3 | 数据库能力 + 采集（og） | `db` seam + `db-opengauss`（连接/认证适配：确认 node `pg` 驱动对 openGauss SHA256 的兼容，必要时 `password_encryption_type` 或 og 官方 Node 连接器；`dbe_perf.*`/`gs_*` 视图映射）+ `tool-db`（只读）；`metrics`/`dictionary` seam + `metrics-timescale` + `dictionary-pg` + `collector` class + `tool-metrics`；`scheduler` |
+| W1 ✅ | 数据面打底 | `storage-pg`、`attachment-s3`、`spill-s3`（MinIO）；`tenant-context`（全表 `tenant_id`，RLS 建不 FORCE）；迁移工具；Helm chart 骨架（host/runtime/collector/postgres+timescaledb+pgvector/minio） |
+| W2 ✅ | 注册表 + agent 工作区 | `registry`（tenants/users/agents/db_nodes/db_groups + RPC + slots 页）；`directory-picker-agent`（真实目录）；`ui-agent-workspace`；`instructions-pg` |
+| W3 ✅（2026-08-18） | 数据库能力 + 采集（og） | `db` seam + `db-opengauss`（连接/认证适配：确认 node `pg` 驱动对 openGauss SHA256 的兼容，必要时 `password_encryption_type` 或 og 官方 Node 连接器；`dbe_perf.*`/`gs_*` 视图映射）+ `tool-db`（只读）；`metrics`/`dictionary` seam + `metrics-timescale` + `dictionary-pg` + `collector` class + `tool-metrics`；`scheduler` |
 | W4 | 任务插件 + 审批 | `tasks` seam + `task-inspection` + `task-sql-audit`；`approval-platform` + `approval-ui` |
 | W5 | 记忆与知识 | `memory`/`knowledge`/`embeddings` seam + `memory-pg` + `knowledge-pg` + `embeddings-openai-compat` + `memory-context` + `tool-memory` + `memory-ingest`；preset ConfigMap；KEDA |
 | W6 | 收口 | e2e、conformance、`--dump-config` 快照 CI、文档、演示 |

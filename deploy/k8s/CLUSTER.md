@@ -54,3 +54,9 @@
 - **PG 换 timescale/timescaledb-ha:pg16（含 pgvector，W5 直接用）**：挂载点由 /var/lib/postgresql/data 改为 /home/postgres/pgdata（PGDATA=…/data），**旧 PVC 无需删除**——新路径为空目录自动 initdb；流程 = pg_dump → helm upgrade → 立刻 scale 0（wait-for-pg init 挡住新 pod）→ PG ready 后 psql 恢复 → scale 回。数据无损（agents/nodes/2622 事件、Host RPC、workspace 全正常）。dump 备份在 mac `~/opendb-k8s/dsh-dump-w3.sql`。
 - 验收：opendb_metrics 22 指标持续写入且为 hypertable；字典 337 对象（139表+185索引+1视图+1函数+11序列，og5 实测精确吻合）；建表→added（表+隐式索引）、删表→removed 均检出；节点状态回写 online；chat e2e 模型调 db_nodes→metrics_recent→dict_changes 并以【og-lab 运维台】口吻答真实数据。
 - 经验：og 视图 pg_views.definition 可为 null → 签名 md5 必须 coalesce；`kubectl exec -i psql < file.sql` 是绕 ssh/zsh 引号地狱的正解。
+
+## P1 W3 批次3（2026-08-18 完成，scheduler）——W3 全部完成
+
+- `@opendb-dsh/scheduler`（Host 内）：自写 5 字段 cron 解析（* , - / 步长、dom/dow either-match、7=周日），tick 30s；到点 CAS 更新 last_fired_at 防重 → 走 Host 自身 /api（workspace.list→session.create→session.prompt mode=queue）开新会话入队，下游与用户手发完全一致。trust fence 需 127.0.0.1:<port>（chart helper 已加）。
+- 表 dsh_schedules（005 迁移，tenant+name 唯一，last_fired_at/last_session_id）。
+- 验收：插入每分钟巡检 schedule → ~1min 内触发，新会话模型调 db_nodes→db_overview，最终回复【og-lab 运维台】给出真实健康总结（13 会话/0 等待锁/库大小）；测试行已清理。**注意：分钟级 cron 每次触发都烧模型 token，测试后必须 disable/删除。**
