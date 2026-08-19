@@ -171,3 +171,10 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   （从 dsh_sessions.header.cwd 反推归属；**跑完必须立刻重启 host**，否则内存旧记录下次 mutate 覆盖回去）。
 - 回归证据：修复+重启后 session.create（workspaceId og-lab）→ sessionIds 24→25 追加不裁剪。
 - Host /api 直调格式：POST /api/<method>，body `{"type":"client-request","rpcId":"...","method":"...","payload":{...}}`（还需 origin 头过 fence）。
+
+## 2026-08-19 W6 韧性 e2e 全绿
+- `deploy/k8s/e2e/kill-pod-resilience.sh`：mid-turn（首条 assistant 消息落地瞬间）杀认领 pod →
+  继任 pod 经 markStale 重放队列行接力 → turn 闭合、7 条消息完整。PASS。
+- markStale 修复（同事务把死 pod 在途 queued 行取消 admit）单测 4/4 + 本 e2e 实战双验证。
+- 注意 v4-flash 速度：三步任务 ~10s 就跑完，e2e 里固定延时杀会错过 mid-turn，必须事件驱动定杀点。
+- collector 杀无需专测（重启即全量快照是设计行为）；host 单副本重启=UI 重连（P3 才做多副本）。
