@@ -126,3 +126,9 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   `socat TCP4-LISTEN:18080,fork,reuseaddr,bind=127.0.0.1 EXEC:'orb -m k8s-cp socat - TCP4:127.0.0.1:80'`（v6 同理 bind=[::1]）→ 浏览器 **http://localhost:18080/**。注意 8080 被 OrbStack 内 Cloud CLI Proxy 容器占用（Chrome 经 ::1 撞上过）。fence 已加白 localhost:18080/127.0.0.1:18080。
 - kubectl 稳定化：`kubectl config set-cluster opendb-dsh --server=https://k8s-cp.orb.local:6443`（orb.local=v6 且由 OrbStack resolver 保证）；注意 OrbStack 重启会把 current-context 切到内置 `orbstack`，用 `kubectl config use-context opendb-dsh` 切回。
 - 诊断方法论：分层采样（mac→ingress / 节点内 traefik / 跨节点 pod / 同节点 pod / 裸 TCP / UDP echo / ICMP-DF）+ **UI 改动必须 headless Chrome 自验**（puppeteer-core 连 --remote-debugging-port，DCL 超时时用请求追踪找挂住的资源；截图 Read 亲眼看——本次靠它发现端口冲突渲染了别人的页面）。
+
+## W5.5 分区树 + 两项重要沉淀（2026-08-19）
+
+- **侧栏定形（user 定案）**：会话/任务/数据库三分区各挂子列表（dsh 原版树形态）——会话不断新增、任务不断添加（监控大盘/SQL 审核…）、数据库挂节点；点分区头开总览、点条目直达（任务→详情面板，节点→数据库页选中）。自验+截图确认，零 JS 错误。
+- **UI 热更新通道（提速 30 倍）**：client bundle 是 dsh **每请求读盘**的 —— `kubectl cp packages/ui-harness/lib/client.js <host-pod>:/app/packages/ui-harness/lib/client.js -c host` 即时生效，UI 迭代从 5 分钟镜像重建降到 10 秒。仅前端改动时使用；host/runtime 代码仍需镜像。
+- **workspace sessionIds 覆盖事故**：某次 PG 不可达窗口 host 重启，workspace 服务疑似以空状态启动后回写覆盖 kv（`dsh_kv_records unit='workspace'` 的 sessionIds 只剩 1 条；会话事件数据无损）。恢复：从 dsh_session_events 重建数组（SQL 见 git log fixws）。**欠账（W6）**：排查 storage-pg loadAll 失败路径是否被吞（应让服务启动失败而非以空态运行）。
