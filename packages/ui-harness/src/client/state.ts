@@ -52,3 +52,16 @@ declare global { interface Window { __opendbHarness__?: { registerTaskPanel: typ
 if (typeof window !== 'undefined') {
   window.__opendbHarness__ = { registerTaskPanel };
 }
+
+/** 全局资源大盘面板（platform-status 插件的 client 半边注册，单一）。 */
+export type ResourcePanelComponent = () => any;
+let resourcePanel: ResourcePanelComponent | undefined;
+export function registerResourcePanel(panel: ResourcePanelComponent): () => void {
+  resourcePanel = panel;
+  for (const fn of listeners) fn();
+  return () => { resourcePanel = undefined; };
+}
+export function getResourcePanel(): ResourcePanelComponent | undefined { return resourcePanel; }
+if (typeof window !== 'undefined' && window.__opendbHarness__ !== undefined) {
+  (window.__opendbHarness__ as any).registerResourcePanel = registerResourcePanel;
+}

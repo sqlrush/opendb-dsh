@@ -5,7 +5,7 @@
  * 经 registerTaskPanel(typeKey, Panel) 注册专属 UI；未注册的类型用默认面板（运行历史+报告）。
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { getState, setState, subscribe, getTaskPanel } from './state.ts';
+import { getState, setState, subscribe, getTaskPanel, getResourcePanel } from './state.ts';
 
 const hsSel = () => getState().selectedTaskId;
 
@@ -237,6 +237,8 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   }
 
   function ResourcesPage() {
+    const Panel = getResourcePanel();
+    if (Panel !== undefined) return <Panel />;
     const [agents, setAgents] = useState<any[]>([]);
     useEffect(() => { void call('agents/list', {}).then((a) => setAgents(a.agents)).catch(() => {}); }, []);
     return (

@@ -101,3 +101,9 @@
 - insert:
     - id: ui-harness
       name: '@opendb-dsh/ui-harness'
+# ── 插件地图：platform-status（全局资源大盘，双半边）────────────────────────
+- insert:
+    - id: platform-status
+      name: '@opendb-dsh/platform-status'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
