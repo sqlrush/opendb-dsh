@@ -75,7 +75,7 @@ function makePanel(call: (endpoint: string, payload?: unknown) => Promise<any>) 
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 64 }}>
               {d.tokens.daily.map((x: any) => (
                 <div key={x.day} style={{ textAlign: 'center' }} title={`${x.day}: ${fmtTokens(x.input + x.output)}`}>
-                  <div style={{ width: 22, height: Math.max(3, ((x.input + x.output) / maxDay) * 48), background: '#4D6BFE', borderRadius: 3, margin: '0 auto' }} />
+                  <div style={{ width: 22, height: Math.max(3, ((x.input + x.output) / maxDay) * 48), background: 'linear-gradient(180deg, #4D6BFE 0%, #7C93FE 100%)', borderRadius: 3, margin: '0 auto' }} />
                   <div style={{ color: T.dim, fontSize: 10, marginTop: 3 }}>{x.day.slice(3)}</div>
                 </div>
               ))}
@@ -85,7 +85,7 @@ function makePanel(call: (endpoint: string, payload?: unknown) => Promise<any>) 
         </div>
 
         <div style={h2}>近 7 日 Top 会话（按 tokens）</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, maxWidth: 640 }}>
+        <table className="odbTable" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, maxWidth: 640 }}>
           <tbody>
             {d.tokens.topSessions.map((s: any) => (
               <tr key={s.sessionId}>
