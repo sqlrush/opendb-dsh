@@ -235,7 +235,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     if (hs.view === 'chat') return null;
     if (hs.view === 'newAgent') {
       return (
-        <div style={{ position: 'fixed', inset: 0, background: 'var(--dsw-alias-bg-layer-0, #fff)', zIndex: 50, display: 'flex', flexDirection: 'column', color: 'var(--dsw-alias-label-primary)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--dsw-alias-bg-base, #fff)', zIndex: 50, display: 'flex', flexDirection: 'column', color: 'var(--dsw-alias-label-primary)' }}>
           <div style={S.head}>
             <span style={S.title}>新建智能体</span>
             <button style={{ ...S.btn, marginLeft: 'auto' }} onClick={() => setState({ view: 'chat' })}>关闭 ✕</button>
@@ -248,7 +248,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     return (
       <div style={{
         position: 'fixed', top: 0, bottom: 0, right: 0, left: hs.sidebarRight,
-        background: 'var(--dsw-alias-bg-layer-0, #111)', zIndex: 30,
+        background: 'var(--dsw-alias-bg-base, #fff)', zIndex: 30,
         display: 'flex', flexDirection: 'column', color: 'var(--dsw-alias-label-primary)',
       }}>
         <div style={S.head}>
