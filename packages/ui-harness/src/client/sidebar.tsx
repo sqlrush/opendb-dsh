@@ -172,6 +172,18 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
 
     const match = (s: string) => q === '' || s.toLowerCase().includes(q.toLowerCase());
     const openSession = (id: string) => { setState({ view: 'chat' }); ctx.sessions.open(id); };
+
+    // P2 W3：内容全文检索（session-query-pg 通道）——标题过滤之外，搜历史会话正文；400ms 防抖
+    const [contentHits, setContentHits] = useState<any[]>([]);
+    useEffect(() => {
+      if (q.trim().length < 2) { setContentHits([]); return; }
+      const t = setTimeout(() => {
+        void ctx.connection.rpc.call('/opendb-sessions', 'search', { query: q })
+          .then((r: any) => { if (r.ok) setContentHits(r.value.sessions); })
+          .catch(() => {});
+      }, 400);
+      return () => clearTimeout(t);
+    }, [q]);
     const newSession = async (agentName: string) => {
       setState({ view: 'chat' });
       try {
@@ -246,6 +258,20 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
           <IconBtn title="新建智能体" onClick={() => setState({ view: 'newAgent' })}>{I.plus('currentColor')}</IconBtn>
         </div>
         {searching && <input style={S.input} autoFocus placeholder="搜索会话 / 任务 / 数据库" value={q} onChange={(e) => setQ(e.target.value)} />}
+        {searching && contentHits.length > 0 && (
+          <div style={{ marginTop: 4 }}>
+            <div style={S.subHead}><span>内容命中（{contentHits.length}）</span></div>
+            {contentHits.map((h) => (
+              <Row key={h.sessionId} title={h.excerpt} onClick={() => openSession(h.sessionId)}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="odbTitle">{h.title}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--dsw-alias-label-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.excerpt}</div>
+                </div>
+                <span className="odbTime">{h.hits} 处</span>
+              </Row>
+            ))}
+          </div>
+        )}
         {creating && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
             <input style={{ ...S.input, margin: 0 }} autoFocus placeholder="智能体名称" value={newName}

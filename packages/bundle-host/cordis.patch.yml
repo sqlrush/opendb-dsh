@@ -129,3 +129,17 @@
       name: '@opendb-dsh/task-monitor-dashboard'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+# ── 插件地图：P2 W3 知识与检索（Host 侧：知识服务+两个管理段+会话全文检索）──────
+- insert:
+    - id: opendb-knowledge
+      name: '@opendb-dsh/knowledge-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: ui-knowledge
+      name: '@opendb-dsh/ui-knowledge'
+    - id: ui-memory
+      name: '@opendb-dsh/ui-memory'
+    - id: session-query-pg
+      name: '@opendb-dsh/session-query-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL

@@ -143,3 +143,11 @@
       name: '@opendb-dsh/task-monitor-dashboard'
     - id: skill-pg
       name: '@opendb-dsh/skill-pg'
+# ── P2 W3：知识库（Runtime 侧：服务+读写工具，会话灌入/检索主路径）────────────
+- insert:
+    - id: opendb-knowledge
+      name: '@opendb-dsh/knowledge-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    - id: tool-knowledge
+      name: '@opendb-dsh/tool-knowledge'

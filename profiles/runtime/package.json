@@ -28,6 +28,8 @@
     "@opendb-dsh/tool-task-admin": "workspace:*",
     "@opendb-dsh/embeddings-openai-compat": "workspace:*",
     "@opendb-dsh/memory-pg": "workspace:*",
+    "@opendb-dsh/knowledge-pg": "workspace:*",
+    "@opendb-dsh/tool-knowledge": "workspace:*",
     "@opendb-dsh/memory-context": "workspace:*",
     "@opendb-dsh/tool-memory": "workspace:*"
   },

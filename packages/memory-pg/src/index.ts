@@ -130,6 +130,25 @@ export default class MemoryService extends Service {
     return r.rows.map(row);
   }
 
+  /** P2 W3 additive：管理页列表（跨 agent，可按 agent/kind 过滤）。 */
+  async list(input: { agentId?: string; kind?: MemoryKind; limit?: number } = {}): Promise<MemoryRecord[]> {
+    await this.ready;
+    const conds: string[] = ['tenant_id = $1'];
+    const vals: unknown[] = [this.tenant];
+    if (input.agentId !== undefined) { vals.push(input.agentId); conds.push(`agent_id = $${vals.length}`); }
+    if (input.kind !== undefined) { vals.push(input.kind); conds.push(`kind = $${vals.length}`); }
+    vals.push(Math.min(input.limit ?? 200, 1000));
+    const r = await this.pool.query(
+      `SELECT * FROM opendb_memories WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT $${vals.length}`, vals);
+    return r.rows.map(row);
+  }
+
+  /** P2 W3 additive：管理页删除（记忆修剪是人类监督动作）。 */
+  async remove(id: string): Promise<void> {
+    await this.ready;
+    await this.pool.query('DELETE FROM opendb_memories WHERE id = $1', [id]);
+  }
+
   /** Whether a memory with this source already exists (ingest idempotence check). */
   async hasSource(agentId: string, source: string): Promise<boolean> {
     await this.ready;
