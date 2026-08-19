@@ -146,3 +146,15 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - task-inspection/client + task-sql-audit/client：任务类型插件补齐 client 半边（dsh.client 声明 + esbuild bundle + host 重启被 client-modules 扫描）。面板经 **window 桥**（`window.__opendbHarness__.registerTaskPanel`）注册——跨 client 插件共享注册表，与加载顺序无关（250ms×40 轮询兜底）。
 - 面板遵守纲领：纯展示无按钮。巡检=severity 徽标+findings 按节点分组+近10次运行时间线；SQL审核=SQL 代码块+问题/建议/依据卡片。
 - 行为自验：两面板渲染断言全过、默认视图已被专属面板替换、零 JS 错误。
+
+## 2026-08-19 platform-status / onboarding 交付备忘
+- **client bundle 验证 URL 是 `/plugins/<pkg>/client.js?rev=`**（从首页 `__DSH_BOOT__.entries` 读），
+  `/modules/...` 是 SPA fallback——返回的是 index.html，`curl` 看似 200 实为假阳性。
+- esbuild 产物默认把非 ASCII 转义成 `\uXXXX`，grep 中文验证 bundle 内容会误报缺失；用 ASCII 关键字。
+- platform-status 的 k8s 访问：chart `templates/rbac.yaml`（SA `opendb-dsh-host` + Role pods get/list + RoleBinding），
+  host deployment `serviceAccountName`。Helm release 在 **namespace `opendb-dsh`**、无 values 文件（直接 chart values.yaml），
+  `helm upgrade opendb-dsh deploy/charts/opendb-dsh -n opendb-dsh`。
+- runtime deployment 名是 `opendb-dsh-runtime-default` / `-collector`（没有裸 `opendb-dsh-runtime`）。
+- mac 无头 Chrome（9333 端口）会随睡眠/重启消失，跑 puppeteer 前先 `curl 127.0.0.1:9333/json/version` 探活，
+  掉了就 `--headless=new --remote-debugging-port=9333 --user-data-dir=/tmp/chrome-odb` 重拉；
+  新 profile 首次打开 dsh 会弹「内测声明」，脚本先点「继续」再断言。

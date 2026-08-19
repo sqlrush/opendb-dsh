@@ -35,7 +35,7 @@
 | W3 ✅（2026-08-18） | 数据库能力 + 采集（og） | `db` seam + `db-opengauss`（连接/认证适配：确认 node `pg` 驱动对 openGauss SHA256 的兼容，必要时 `password_encryption_type` 或 og 官方 Node 连接器；`dbe_perf.*`/`gs_*` 视图映射）+ `tool-db`（只读）；`metrics`/`dictionary` seam + `metrics-timescale` + `dictionary-pg` + `collector` class + `tool-metrics`；`scheduler` |
 | W4 ✅（2026-08-19，核心链路验收通过；真实类型报告在途） | 任务插件 + 审批 | `tasks` seam + `task-inspection` + `task-sql-audit`；`approval-platform` + `approval-ui` |
 | W5 ✅（2026-08-19，核心验收「次日引用昨日巡检结论」通过；KEDA 并入 W6） | 记忆与知识 | `memory`/`knowledge`/`embeddings` seam + `memory-pg` + `knowledge-pg` + `embeddings-openai-compat` + `memory-context` + `tool-memory` + `memory-ingest`；preset ConfigMap；KEDA |
-| W5.5 | **工作区侧栏重设计**（user 2026-08-19 提出） | 与 user 过设计稿后实施：左侧从"编码向工作区列表"改造为"agent 运维台"——候选方向：agent 卡片（节点数/在线状态/最近巡检 severity 徽标/任务运行中指示）、按数据库集群分组、快捷入口（巡检报告/审批箱红点）；技术路径 = 替换 ui-workspace slots（须原样保留 directoryFlow 两个子槽） |
+| W5.5 ✅（2026-08-19，产品壳+插件面板全量交付并浏览器行为验证） | 产品壳重设计 + 插件面板 | 侧栏 dsh 原版风格（品牌接管/智能体分组/单滚动条/原生 hover）；主区任务框架 + registerTaskPanel 插槽；**task-inspection/client**、**task-sql-audit/client** 专属大盘；节点监控详情页（波形+字典变更）；**platform-status** 全局资源大盘（k8s 只读 RBAC + pod 拓扑 + token 用量）；**onboarding** 首开向导（命名默认智能体） |
 | W6 | 收口 | e2e、conformance、`--dump-config` 快照 CI、文档、演示 |
 - 验收：100 节点 / 5 agent 排程巡检跑通；SQL 审核每日出报告；审批端到端；随机杀 pod 不丢会话不丢采集；次日对话能引用昨日巡检结论。
 - G1：任务插件契约 ✅ 已冻结（2026-08-19，设计 §8.5：task_report 工具提交、审批=P1 报告签收、dsh_schedules 收编）；embedding 来源 ✅ 已定（Ollama+bge-m3）；认证不提前（P2）。
@@ -103,10 +103,10 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 ### 剩余节点 → 插件交付
 | 节点 | 需开发插件 |
 |---|---|
-| W5.5·任务大盘 | **task-inspection/client**、**task-sql-audit/client**（双半边补全：registerTaskPanel 专属面板——findings 分组/severity 徽标/SQL 建议卡片） |
-| W5.5·节点监控 | ui-node-monitor（先内聚 ui-opendb+ui-harness 交付 ✅，W6 拆独立 client 插件还债） |
-| W5.5·资源大盘 | **platform-status**（Host：k8s 只读 RBAC + pod 拓扑 RPC + 模型 token 用量统计；client 半边：全局大盘面板） |
-| W5.5·首开向导 | **onboarding**（Host 检测零 agent + client 向导页：default 智能体命名/节点/模型） |
+| W5.5·任务大盘 ✅ | task-inspection/client、task-sql-audit/client（双半边补全：registerTaskPanel 专属面板——findings 分组/severity 徽标/SQL 建议卡片） |
+| W5.5·节点监控 ✅ | ui-node-monitor（先内聚 ui-opendb+ui-harness 交付 ✅，W6 拆独立 client 插件还债） |
+| W5.5·资源大盘 ✅ | platform-status（Host：k8s 只读 RBAC + pod 拓扑 RPC + 模型 token 用量统计[今日/近7日/Top会话]；client 半边经 registerResourcePanel 进驻资源页；已完成 Job Pod 灰点标注） |
+| W5.5·首开向导 ✅ | onboarding（client-only：零 agent 空态全屏欢迎页——命名默认智能体+可选纳管节点，复用 /opendb RPC，`#onboarding` 调试入口；空态判定失败 fail-safe 不挡人） |
 | W6·扩缩 | KEDA ScaledObject（k8s 配置，PG scaler 直查 thread_queue，无需插件） |
 | W6·收口 | conformance 测试资产（非插件）；ui-node-monitor 拆包还债 |
 | P2 W1-2 | **exec-ssh**（gsql/gs_ctl/gs_om 白名单）· **tool-db-actions**（动作类，经审批）· **db-postgres**（含 pgrac 方言）· **preset-change-execution** · **token-issuer**（一次性令牌） |
