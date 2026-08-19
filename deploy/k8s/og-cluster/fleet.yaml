@@ -20,8 +20,8 @@ spec:
           env:
             - { name: GS_PASSWORD, value: "Root@1234" }
             - { name: TZ, value: Asia/Shanghai }
-            - name: GS_NODENAME
-              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            # og 节点名禁止连字符（gs_initdb 校验），且我们按 host:port 寻址不依赖它 → 固定值
+            - { name: GS_NODENAME, value: ognode }
           ports: [{ containerPort: 5432 }]
           readinessProbe: { tcpSocket: { port: 5432 }, initialDelaySeconds: 20, periodSeconds: 10 }
           resources: { requests: { cpu: 100m, memory: 300Mi }, limits: { memory: 1Gi } }
