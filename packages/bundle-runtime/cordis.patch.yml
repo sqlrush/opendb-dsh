@@ -137,3 +137,9 @@
 - insert:
     - id: task-incident
       name: '@opendb-dsh/task-incident'
+# ── P2 W2：monitor-dashboard 类型双侧 + PG 运维技能包（skills 服务在 agent 树）──
+- insert:
+    - id: task-monitor-dashboard
+      name: '@opendb-dsh/task-monitor-dashboard'
+    - id: skill-pg
+      name: '@opendb-dsh/skill-pg'

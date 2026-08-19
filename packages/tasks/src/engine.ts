@@ -50,11 +50,12 @@ export class TaskEngine {
     this.d = deps;
   }
 
-  /** 一轮：手动队列拾取 + cron 触发 + 终态清扫 + 审批单补建。 */
+  /** 一轮：service 实例对账 + 手动队列拾取 + cron 触发 + 终态清扫 + 审批单补建。 */
   async tick(now = new Date()): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
+      await this.reconcileServices();
       await this.fireQueuedManuals();
       await this.fireDue(now);
       await this.sweepTimeouts(now);
@@ -64,6 +65,51 @@ export class TaskEngine {
       process.stderr.write(`[tasks] tick failed: ${String((cause as Error).message ?? cause)}\n`);
     } finally {
       this.busy = false;
+    }
+  }
+
+  // ---------------- service 型任务（P2 W2：runMode:'service'，不走 LLM 的常驻实例）
+  private readonly services = new Map<string, { stop: () => void | Promise<void>; fingerprint: string }>();
+
+  /**
+   * 对账：enabled 的 service 型任务 ↔ 运行中实例。缺则 start、多则 stop、
+   * 配置/名称变更则重启（指纹比对）。Host 重启后首轮 tick 自动全量拉起——常驻跨重启存活。
+   */
+  private async reconcileServices(): Promise<void> {
+    const r = await this.d.pool.query(`SELECT * FROM dsh_tasks WHERE tenant_id = $1 AND enabled`, [this.d.tenant]);
+    const want = new Map<string, TaskRecord>();
+    for (const raw of r.rows) {
+      const task = taskRow(raw);
+      if (this.d.types.get(task.type)?.runMode === 'service') want.set(task.id, task);
+    }
+    for (const [id, inst] of [...this.services]) {
+      const task = want.get(id);
+      if (task !== undefined && serviceFingerprint(task) === inst.fingerprint) continue;
+      this.services.delete(id);
+      try { await inst.stop(); } catch (cause) {
+        process.stderr.write(`[tasks] service stop ${id} failed: ${String((cause as Error).message ?? cause)}\n`);
+      }
+      process.stderr.write(`[tasks] service stopped: ${id}${task !== undefined ? ' (config changed, will restart)' : ''}\n`);
+    }
+    for (const [id, task] of want) {
+      if (this.services.has(id)) continue;
+      const type = this.d.types.get(task.type);
+      if (type?.startService === undefined) continue;
+      try {
+        const stop = await type.startService(task, this.d.buildCtx);
+        this.services.set(id, { stop, fingerprint: serviceFingerprint(task) });
+        process.stderr.write(`[tasks] service started: ${task.name} (${id})\n`);
+      } catch (cause) {
+        process.stderr.write(`[tasks] service start ${task.name} failed: ${String((cause as Error).message ?? cause)}\n`);
+      }
+    }
+  }
+
+  /** 引擎停机（Host 关闭/热重载）：停掉全部 service 实例。 */
+  async stopAllServices(): Promise<void> {
+    for (const [id, inst] of [...this.services]) {
+      this.services.delete(id);
+      try { await inst.stop(); } catch { /* teardown 尽力而为 */ }
     }
   }
 
@@ -131,6 +177,7 @@ export class TaskEngine {
     try {
       const type = this.d.types.get(task.type);
       if (type === undefined) throw new Error(`任务类型 ${task.type} 未注册`);
+      if (type.runMode !== 'session') throw new Error(`service 型任务不经会话运行（enabled 即常驻，无需触发）`);
       const agent = await this.d.registry.getAgent(task.agentId);
       if (agent === undefined) throw new Error(`agent ${task.agentId} 不存在`);
       const workspaces = await this.api('workspace.list', {});
@@ -246,4 +293,9 @@ export class TaskEngine {
     if (result.ok === false) throw new Error(`${method} → ${result.error?.message ?? 'request failed'}`);
     return result.value ?? result;
   }
+}
+
+/** service 实例指纹：名称/配置/时长参数任一变化 → 重启实例。 */
+function serviceFingerprint(task: TaskRecord): string {
+  return JSON.stringify([task.name, task.config, task.timeoutMs]);
 }

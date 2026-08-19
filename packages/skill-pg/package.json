@@ -1,0 +1,15 @@
+{
+  "name": "@opendb-dsh/skill-pg",
+  "version": "0.0.1",
+  "description": "PG/openGauss ops SOP skill pack: registers runtime skills (slow-query triage, lock diagnosis, capacity review, DDL audit) into dsh skills registry",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "echo no tests" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1"
+  },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
+}

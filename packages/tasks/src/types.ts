@@ -30,13 +30,24 @@ export interface TaskBuildContext {
   nodesOf(agentId: string): Promise<{ id: string; name: string; engine: string; host: string; port: number; dbname: string; status: string }[]>;
   metricsLatest?(nodeId: string): Promise<{ metric: string; value: number; time: Date }[]>;
   dictChanges?(nodeId: string, sinceHours: number): Promise<unknown[]>;
+  /** 舰队聚合（P2 W2 additive；metrics-timescale.fleetOverview 在场时可用）。 */
+  fleetOverview?(nodeIds: string[], topMetrics: string[], topN?: number): Promise<{
+    covered: number; coveredIds: string[];
+    agg: { metric: string; n: number; avg: number; max: number; min: number }[];
+    top: { nodeId: string; metric: string; value: number }[];
+  }>;
 }
 
 export interface TaskType<C = any> {
   key: string;
   title: string;
-  /** 冻结时预留 'service'（P2 监控大盘：不走 LLM）。 */
-  runMode: 'session';
+  /**
+   * 'session'：触发→开会话→模型执行→task_report。
+   * 'service'（P2 W2 落地，G1 冻结时预留）：不走 LLM——任务 enabled 期间由引擎在 Host 内
+   * 常驻运行 startService 实例；创建/启用→start，停用/删除/配置变更→stop（变更则重启），
+   * Host 重启后 reconcile 自动拉起（常驻跨重启存活）。
+   */
+  runMode: 'session' | 'service';
   /** required: 无报告 = run failed；optional: 交了就存；none: task_report 拒收。 */
   report: ReportMode;
   /** schemastery schema —— UI 表单与校验同源。 */
@@ -45,4 +56,6 @@ export interface TaskType<C = any> {
   reportSchema: (value?: any) => unknown;
   defaultCron?: string;
   buildPrompt(task: TaskRecord<C>, run: TaskRunRecord, ctx: TaskBuildContext): Promise<string>;
+  /** service 型必须提供：启动常驻实例，返回 stop 清理函数（幂等）。 */
+  startService?(task: TaskRecord<C>, ctx: TaskBuildContext): Promise<() => void | Promise<void>>;
 }

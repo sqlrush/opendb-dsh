@@ -60,6 +60,9 @@ export default class TasksService extends Service {
         nodesOf: (agentId: string) => this.registry.listNodes({ agentId }),
         metricsLatest: (nodeId: string) => anyCtx.opendbMetrics.latest(nodeId),
         dictChanges: (nodeId: string, sinceHours: number) => anyCtx.opendbDictionary.changes({ nodeId, sinceHours }),
+        // P2 W2 additive：舰队聚合（metrics-timescale 提供；service 型监控任务的主数据源）
+        fleetOverview: (nodeIds: string[], topMetrics: string[], topN?: number) =>
+          anyCtx.opendbMetrics.fleetOverview(nodeIds, topMetrics, topN ?? 15),
       };
       this.engine = new TaskEngine({
         pool: this.pool,
@@ -74,7 +77,10 @@ export default class TasksService extends Service {
       const tickMs = config.tickMs ?? 30_000;
       ctx.effect(() => {
         const timer = setInterval(() => { void this.ready.then(() => this.engine!.tick()).catch(() => {}); }, tickMs);
-        return () => clearInterval(timer);
+        return async () => {
+          clearInterval(timer);
+          await this.engine!.stopAllServices();   // 热重载/停机时不留孤儿 service 实例
+        };
       }, 'opendbTasks.engine');
     }
 

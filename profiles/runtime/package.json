@@ -19,6 +19,8 @@
     "@opendb-dsh/tasks": "workspace:*",
     "@opendb-dsh/task-inspection": "workspace:*",
     "@opendb-dsh/task-incident": "workspace:*",
+    "@opendb-dsh/task-monitor-dashboard": "workspace:*",
+    "@opendb-dsh/skill-pg": "workspace:*",
     "@opendb-dsh/task-sql-audit": "workspace:*",
     "@opendb-dsh/approvals": "workspace:*",
     "@opendb-dsh/tool-task-report": "workspace:*",

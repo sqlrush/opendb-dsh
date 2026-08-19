@@ -123,3 +123,9 @@
       name: '@opendb-dsh/alert-ddl'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+# ── 插件地图：P2 W2（常驻监控大盘 service 型双半边）────────────────────────────
+- insert:
+    - id: task-monitor-dashboard
+      name: '@opendb-dsh/task-monitor-dashboard'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
