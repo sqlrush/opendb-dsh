@@ -156,7 +156,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     useEffect(() => { void call('agents/list', {}).then((a) => setAgents(a.agents)).catch(() => {}); }, []);
     return (
       <div>
-        <div style={S.h2}>平台资源（下一批展示实时 pod 拓扑 / k8s 逻辑架构 / 模型用量）</div>
+        <div style={S.h2}>资源大盘（全局）—— 当前 k8s 集群各 Pod 与组件的资源与状态（实时拓扑/模型用量下一批上线）</div>
         <div style={S.cards}>
           <div style={S.card}><b>逻辑 agent</b><div style={{ marginTop: 6 }}>{agents.length} 个</div></div>
           <div style={S.card}><b>运行形态</b><div style={{ marginTop: 6, fontSize: 12 }}>Host ×1 · Runtime 池 ×2 · Collector ×1<br />PG(Timescale+pgvector) · MinIO · Ollama(bge-m3)</div></div>

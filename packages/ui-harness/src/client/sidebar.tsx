@@ -99,7 +99,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     itemActive: { background: T.hover },
     itemTitle: { flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, fontSize: 14 },
     meta: { fontSize: 12, color: T.dim, flexShrink: 0 },
-    subHead: { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 6px 3px', fontSize: 12, color: T.dim },
+    subHead: { display: 'flex', alignItems: 'center', gap: 7, padding: '8px 6px 4px', fontSize: 14, color: T.sub },
     input: { background: 'var(--dsw-alias-bg-layer-1)', border: `1px solid var(--dsw-alias-border-l2)`, borderRadius: 8, color: T.text, padding: '5px 9px', fontSize: 13, width: '100%', boxSizing: 'border-box' as const, margin: '2px 0 6px' },
     menu: { position: 'absolute' as const, top: 0, left: 0, right: 0, zIndex: 20, background: 'var(--dsw-alias-bg-layer-1)', border: `1px solid var(--dsw-alias-border-l2)`, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.18)', overflow: 'hidden' },
     dot: { width: 7, height: 7, borderRadius: 4, flexShrink: 0 },
@@ -198,7 +198,6 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     /* 条目渲染器（会话/任务/节点通用行风格） */
     const sessionRow = (s: any) => match(s.title) && (
       <Row key={s.sessionId} title={s.title} onClick={() => openSession(s.sessionId)}>
-        {I.chat(T.dim)}
         <span style={S.itemTitle}>{s.title}</span>
         <span style={S.meta}>{relTime(s.lastAt)}</span>
       </Row>
@@ -206,7 +205,6 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     const taskRow = (t: any) => match(t.name) && (
       <Row key={t.id} active={hs.view === 'tasks' && hs.selectedTaskId === t.id} title={`${t.name}（${t.type}）`}
         onClick={() => setState({ view: 'tasks', selectedTaskId: t.id })}>
-        {I.task(T.dim)}
         <span style={S.itemTitle}>{t.name}</span>
         {t.lastRun?.status === 'running'
           ? <span style={S.meta}>运行中</span>
@@ -218,7 +216,6 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     const nodeRow = (n: any) => match(n.name) && (
       <Row key={n.id} active={hs.view === 'databases' && hs.selectedNodeId === n.id} title={`${n.host}:${n.port}/${n.dbname}`}
         onClick={() => setState({ view: 'databases', selectedNodeId: n.id })}>
-        {I.db(T.dim as string, 15)}
         <span style={S.itemTitle}>{n.name}</span>
         <span style={{ ...S.dot, background: n.status === 'online' ? '#3fa552' : n.status === 'offline' ? '#d64545' : 'var(--dsw-alias-border-l2)' }} />
       </Row>
@@ -295,12 +292,15 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
               </div>
             )}
 
-          {/* 资源入口 */}
-          <div style={{ ...S.groupRow, marginTop: 6, ...(hs.view === 'resources' ? S.itemActive : {}) }} onClick={() => setState({ view: 'resources' })}>
-            <span style={{ width: 10 }} />
-            {I.chart(T.dim)}
-            <span style={S.itemTitle}>资源</span>
-          </div>
+        </div>
+
+        {/* 资源：与「智能体」同级的全局入口（k8s 集群 Pod 与组件资源大盘） */}
+        <div
+          style={{ ...S.secRow, cursor: 'pointer', borderTop: `1px solid ${T.border}`, paddingTop: 10, ...(hs.view === 'resources' ? { background: T.hover, borderRadius: 8 } : {}) }}
+          onClick={() => setState({ view: 'resources' })}
+        >
+          {I.chart(T.sub as string)}
+          <span style={{ fontSize: 14, color: T.sub }}>资源</span>
         </div>
       </div>
     );
