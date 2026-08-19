@@ -56,14 +56,44 @@ export async function release(pool: pg.Pool, sessionId: string, podName: string,
   );
 }
 
-/** Any `running` thread whose heartbeat is older than `olderThanMs` is an orphan → interrupted (re-claimable). */
+/**
+ * Any `running` thread whose heartbeat is older than `olderThanMs` is an orphan → interrupted
+ * (re-claimable). The dead pod's in-flight queue row (its latest admitted `queued` row for that
+ * session) is un-admitted in the same statement so the prompt is re-delivered by the next claim
+ * (at-least-once: a pod that died between turn completion and release may cause one duplicate turn —
+ * preferred over silently losing the queued prompt, W4 debt).
+ */
 export async function markStale(pool: pg.Pool, olderThanMs: number): Promise<number> {
-  const r = await pool.query(
-    `UPDATE dsh_threads SET status = 'interrupted', running_pod = NULL, updated_at = now()
-      WHERE status = 'running' AND heartbeat_at < now() - ($1 || ' milliseconds')::interval`,
-    [String(olderThanMs)],
-  );
-  return r.rowCount ?? 0;
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    const reset = await c.query<{ session_id: string; running_pod: string }>(
+      `WITH victims AS (
+          SELECT session_id, running_pod FROM dsh_threads
+           WHERE status = 'running' AND heartbeat_at < now() - ($1 || ' milliseconds')::interval
+           FOR UPDATE SKIP LOCKED
+       )
+       UPDATE dsh_threads t SET status = 'interrupted', running_pod = NULL, updated_at = now()
+         FROM victims v WHERE t.session_id = v.session_id
+       RETURNING v.session_id, v.running_pod`,
+      [String(olderThanMs)],
+    );
+    for (const v of reset.rows) {
+      await c.query(
+        `UPDATE dsh_thread_queue SET admitted_at = NULL, admitted_by = NULL
+          WHERE session_id = $1 AND admitted_by = $2 AND kind = 'queued'
+            AND id = (SELECT max(id) FROM dsh_thread_queue
+                       WHERE session_id = $1 AND admitted_by = $2 AND kind = 'queued')`,
+        [v.session_id, v.running_pod],
+      );
+    }
+    await c.query('COMMIT');
+    c.release();
+    return reset.rowCount ?? 0;
+  } catch (e) {
+    await rollbackAndRelease(c);
+    throw e;
+  }
 }
 
 /** Consume pending interrupt rows for a session; returns how many were consumed. */
