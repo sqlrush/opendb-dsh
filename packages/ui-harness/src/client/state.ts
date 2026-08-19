@@ -1,6 +1,6 @@
 /** Tiny external store shared between HarnessSidebar and HarnessMain (same plugin). */
 
-export type HarnessView = 'chat' | 'tasks' | 'databases' | 'resources';
+export type HarnessView = 'chat' | 'tasks' | 'databases' | 'resources' | 'newAgent';
 
 export interface HarnessState {
   view: HarnessView;

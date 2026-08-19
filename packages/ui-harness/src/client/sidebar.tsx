@@ -235,7 +235,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
           <span style={{ flex: 1 }} />
           <IconBtn title="搜索" active={searching} onClick={() => { setSearching(!searching); setQ(''); }}>{I.search('currentColor')}</IconBtn>
           <IconBtn title={grouped ? '取消按智能体分组' : '按智能体分组'} active={grouped} onClick={() => setGrouped(!grouped)}>{I.group('currentColor')}</IconBtn>
-          <IconBtn title="新建智能体" onClick={() => setCreating(!creating)}>{I.plus('currentColor')}</IconBtn>
+          <IconBtn title="新建智能体" onClick={() => setState({ view: 'newAgent' })}>{I.plus('currentColor')}</IconBtn>
         </div>
         {searching && <input style={S.input} autoFocus placeholder="搜索会话 / 任务 / 数据库" value={q} onChange={(e) => setQ(e.target.value)} />}
         {creating && (
@@ -266,7 +266,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
                         {sessions.length > 12 && (
                           <Row onClick={() => setShowAllSessions(!showAllSessions)}>
                             <span style={{ width: 15 }} />
-                            <span style={{ ...S.meta, flex: 1 }}>{showAllSessions ? '收起' : `显示全部  条`}</span>
+                            <span style={{ ...S.meta, flex: 1 }}>{showAllSessions ? '收起' : `显示全部 ${sessions.length} 条`}</span>
                           </Row>
                         )}
                         {typeHead(I.task(T.dim), '任务')}
@@ -285,7 +285,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
                 {sessions.length > 12 && (
                   <Row onClick={() => setShowAllSessions(!showAllSessions)}>
                     <span style={{ width: 15 }} />
-                    <span style={{ ...S.meta, flex: 1 }}>{showAllSessions ? '收起' : `显示全部  条`}</span>
+                    <span style={{ ...S.meta, flex: 1 }}>{showAllSessions ? '收起' : `显示全部 ${sessions.length} 条`}</span>
                   </Row>
                 )}
                 {typeHead(I.task(T.dim), '任务', pendingAcks > 0 ? <span style={{ ...S.meta, background: '#c9862d', color: '#fff', borderRadius: 8, padding: '0 6px', fontSize: 11 }}>{pendingAcks}</span> : undefined)}

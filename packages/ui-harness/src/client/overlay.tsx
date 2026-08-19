@@ -166,9 +166,84 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
+  /** 新建智能体（交互纲领 §15：稀缺的弹页场景，设置页风格）——配置管理的数据库/挂载插件技能/连接模型。 */
+  function NewAgentPage() {
+    const [nodes, setNodes] = useState<any[]>([]);
+    const [name, setName] = useState('');
+    const [picked, setPicked] = useState<Record<string, boolean>>({});
+    const [model, setModel] = useState('deepseek-v4-flash');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState('');
+    useEffect(() => { void call('nodes/list', {}).then((r) => setNodes(r.nodes)).catch(() => {}); }, []);
+    const submit = async () => {
+      const n = name.trim();
+      if (!/^[\w-]{1,40}$/.test(n)) { setErr('名称只能包含字母/数字/下划线/连字符'); return; }
+      setBusy(true); setErr('');
+      try {
+        const created = await call('agents/create', { name: n });
+        for (const node of nodes) if (picked[node.id]) await call('nodes/assign', { nodeId: node.id, agentId: created.agent.id });
+        await call('agents/update', { id: created.agent.id, patch: { modelProvider: 'deepseek-official', modelName: model } });
+        await ctx.workspaces.create({ path: `/var/lib/dsh/agents/${n}` }).catch(() => {});
+        setState({ view: 'chat', agentId: created.agent.id, agentName: n });
+      } catch (e) { setErr(String((e as Error).message ?? e)); } finally { setBusy(false); }
+    };
+    const label: React.CSSProperties = { fontSize: 13, color: 'var(--dsw-alias-label-secondary)', margin: '18px 0 8px', fontWeight: 600 };
+    const box: React.CSSProperties = { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 10, padding: 12 };
+    return (
+      <div style={{ maxWidth: 560, margin: '0 auto', paddingBottom: 40 }}>
+        <div style={{ fontSize: 17, fontWeight: 700, margin: '8px 0 2px' }}>新建智能体</div>
+        <div style={{ ...S.dim, fontSize: 13 }}>创建后，会话、任务、数据库都挂在这个智能体下；日常使用中的一切调整都可以在会话里告诉它。</div>
+
+        <div style={label}>名称</div>
+        <input style={{ ...S.input, width: '100%', boxSizing: 'border-box', padding: '8px 10px' }} autoFocus placeholder="例如 og-prod" value={name} onChange={(e) => setName(e.target.value)} />
+
+        <div style={label}>管理的数据库（可多选，之后也能在会话里增减）</div>
+        <div style={box}>
+          {nodes.map((n) => (
+            <label key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px', cursor: 'pointer', fontSize: 14 }}>
+              <input type="checkbox" checked={picked[n.id] === true} onChange={(e) => setPicked({ ...picked, [n.id]: e.target.checked })} />
+              <span>{n.name}</span>
+              <span style={{ ...S.dim, fontSize: 12 }}>{n.engine} · {n.host}:{n.port}{n.agentId ? ' · 已属其它智能体' : ''}</span>
+            </label>
+          ))}
+          {nodes.length === 0 && <span style={S.dim}>暂无已登记节点（可先创建智能体，稍后在会话里添加节点）</span>}
+        </div>
+
+        <div style={label}>挂载插件与技能</div>
+        <div style={{ ...box, ...S.dim, fontSize: 13, lineHeight: 1.9 }}>
+          数据库诊断（db_query / db_overview）· 指标监控（metrics）· 字典变更（dict）· 记忆（memory）· 任务引擎（巡检 / SQL 审核 / 定时对话）
+          <div style={{ fontSize: 12, marginTop: 4 }}>MVP 阶段默认全量挂载，后续版本支持按智能体裁剪。</div>
+        </div>
+
+        <div style={label}>连接模型（会话与任务可单独调整）</div>
+        <select style={{ ...S.input, padding: '8px 10px' }} value={model} onChange={(e) => setModel(e.target.value)}>
+          <option value="deepseek-v4-flash">DeepSeek-V4-Flash（默认，性价比）</option>
+          <option value="deepseek-v4">DeepSeek-V4（复杂诊断）</option>
+        </select>
+
+        {err !== '' && <div style={{ color: 'var(--dsw-alias-state-error-primary)', fontSize: 13, marginTop: 12 }}>{err}</div>}
+        <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+          <button style={{ ...S.btn, padding: '8px 22px', fontWeight: 600 }} disabled={busy} onClick={() => void submit()}>创建</button>
+          <button style={{ ...S.btn, padding: '8px 16px' }} onClick={() => setState({ view: 'chat' })}>取消</button>
+        </div>
+      </div>
+    );
+  }
+
   return function HarnessMain() {
     const hs = useSyncExternalStore(subscribe, getState);
     if (hs.view === 'chat') return null;
+    if (hs.view === 'newAgent') {
+      return (
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--dsw-alias-bg-layer-0, #fff)', zIndex: 50, display: 'flex', flexDirection: 'column', color: 'var(--dsw-alias-label-primary)' }}>
+          <div style={S.head}>
+            <span style={S.title}>新建智能体</span>
+            <button style={{ ...S.btn, marginLeft: 'auto' }} onClick={() => setState({ view: 'chat' })}>关闭 ✕</button>
+          </div>
+          <div style={S.body}><NewAgentPage /></div>
+        </div>
+      );
+    }
     const title = hs.view === 'tasks' ? '任务' : hs.view === 'databases' ? '数据库' : '资源';
     return (
       <div style={{
