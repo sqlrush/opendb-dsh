@@ -107,7 +107,7 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | W5.5·节点监控 ✅ | ui-node-monitor（先内聚 ui-opendb+ui-harness 交付 ✅，W6 拆独立 client 插件还债） |
 | W5.5·资源大盘 ✅ | platform-status（Host：k8s 只读 RBAC + pod 拓扑 RPC + 模型 token 用量统计[今日/近7日/Top会话]；client 半边经 registerResourcePanel 进驻资源页；已完成 Job Pod 灰点标注） |
 | W5.5·首开向导 ✅ | onboarding（client-only：零 agent 空态全屏欢迎页——命名默认智能体+可选纳管节点，复用 /opendb RPC，`#onboarding` 调试入口；空态判定失败 fail-safe 不挡人） |
-| W6·扩缩 | KEDA ScaledObject（k8s 配置，PG scaler 直查 thread_queue，无需插件） |
+| W6·扩缩 | KEDA ScaledObject（k8s 配置，PG scaler 直查 thread_queue，无需插件）；**规模验收环境=独立 og k8s 集群**（user 2026-08-19 定案：数据库 pod 不与平台同集群——新 OrbStack VM 起第二套 k3s，~20 真 og-lite pod + 930 逻辑别名=950 节点，mac 128G 内存；平台跨 VM 网络接入） |
 | W6·收口 | conformance 测试资产（非插件）；ui-node-monitor 拆包还债；**UI 视觉集中优化**（user 2026-08-19：内容可以，UI 难看——任务/资源/节点详情/向导四页统一打磨：间距/层次/图表质感/空态，对齐 dsh 原版质感） |
 | P2 W1-2 | **exec-ssh**（gsql/gs_ctl/gs_om 白名单）· **tool-db-actions**（动作类，经审批）· **db-postgres**（含 pgrac 方言）· **preset-change-execution** · **token-issuer**（一次性令牌） |
 | P2 W3 | **subagent-queue** · **workflow-sandbox-job** |
