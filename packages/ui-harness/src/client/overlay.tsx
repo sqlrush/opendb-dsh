@@ -253,7 +253,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
       }}>
         <div style={S.head}>
           <span style={S.title}>{title}</span>
-          <span style={S.dim}>agent：{hs.agentName || '…'}</span>
+          {hs.view !== 'resources' && <span style={S.dim}>agent：{hs.agentName || '…'}</span>}
           <button style={{ ...S.btn, marginLeft: 'auto' }} onClick={() => setState({ view: 'chat' })}>返回会话</button>
         </div>
         <div style={S.body}>

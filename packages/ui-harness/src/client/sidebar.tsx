@@ -296,7 +296,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
 
         {/* 资源：与「智能体」同级的全局入口（k8s 集群 Pod 与组件资源大盘） */}
         <div
-          style={{ ...S.secRow, cursor: 'pointer', borderTop: `1px solid ${T.border}`, paddingTop: 10, ...(hs.view === 'resources' ? { background: T.hover, borderRadius: 8 } : {}) }}
+          style={{ ...S.secRow, cursor: 'pointer', borderTop: `1px solid `, paddingTop: 10 }}
           onClick={() => setState({ view: 'resources' })}
         >
           {I.chart(T.sub as string)}
