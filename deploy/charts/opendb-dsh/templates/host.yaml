@@ -6,7 +6,7 @@ metadata:
 spec:
   replicas: {{ .Values.host.replicas }}
   # RWO PVC（agents-dir）：滚动更新会新旧 pod 抢卷死锁，必须整体重建
-  strategy: { type: Recreate }
+  strategy: { type: Recreate, rollingUpdate: null }
   selector: { matchLabels: { app: {{ .Release.Name }}-host } }
   template:
     metadata: { labels: { app: {{ .Release.Name }}-host } }
