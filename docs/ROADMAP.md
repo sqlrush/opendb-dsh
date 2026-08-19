@@ -36,7 +36,7 @@
 | W4 ✅（2026-08-19，核心链路验收通过；真实类型报告在途） | 任务插件 + 审批 | `tasks` seam + `task-inspection` + `task-sql-audit`；`approval-platform` + `approval-ui` |
 | W5 ✅（2026-08-19，核心验收「次日引用昨日巡检结论」通过；KEDA 并入 W6） | 记忆与知识 | `memory`/`knowledge`/`embeddings` seam + `memory-pg` + `knowledge-pg` + `embeddings-openai-compat` + `memory-context` + `tool-memory` + `memory-ingest`；preset ConfigMap；KEDA |
 | W5.5 ✅（2026-08-19，产品壳+插件面板全量交付并浏览器行为验证） | 产品壳重设计 + 插件面板 | 侧栏 dsh 原版风格（品牌接管/智能体分组/单滚动条/原生 hover）；主区任务框架 + registerTaskPanel 插槽；**task-inspection/client**、**task-sql-audit/client** 专属大盘；节点监控详情页（波形+字典变更）；**platform-status** 全局资源大盘（k8s 只读 RBAC + pod 拓扑 + token 用量）；**onboarding** 首开向导（命名默认智能体） |
-| W6 | 收口 | e2e、conformance、`--dump-config` 快照 CI、文档、演示 |
+| W6 ✅（2026-08-19，全项完成；文档演示见 CLUSTER.md 各复盘节） | 收口 | 韧性债务（stale-claim 重放/sessionIds 根治/agents-dir PVC）；杀 Pod e2e PASS；KEDA 扩缩实测（含 maxConcurrent 关键修复）；**950 节点/5 agent 规模验收超额通过**（独立 og k8s 集群，P95=66s，覆盖率 100%）；GitHub Actions CI 门全绿（build+patch lint+dump-config PENDING+PG 单测）；UI 视觉第一轮+数据库页规模化；ui-node-monitor 拆包还债 |
 - 验收：100 节点 / 5 agent 排程巡检跑通；SQL 审核每日出报告；审批端到端；随机杀 pod 不丢会话不丢采集；次日对话能引用昨日巡检结论。
 - G1：任务插件契约 ✅ 已冻结（2026-08-19，设计 §8.5：task_report 工具提交、审批=P1 报告签收、dsh_schedules 收编）；embedding 来源 ✅ 已定（Ollama+bge-m3）；认证不提前（P2）。
 - user 提供：3–5 个测试 **openGauss** 节点（mac docker `opengauss/opengauss` 镜像即可，含一主一备拓扑）；embedding 服务；MinIO/S3。
@@ -107,8 +107,8 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | W5.5·节点监控 ✅ | ui-node-monitor（先内聚 ui-opendb+ui-harness 交付 ✅，W6 拆独立 client 插件还债） |
 | W5.5·资源大盘 ✅ | platform-status（Host：k8s 只读 RBAC + pod 拓扑 RPC + 模型 token 用量统计[今日/近7日/Top会话]；client 半边经 registerResourcePanel 进驻资源页；已完成 Job Pod 灰点标注） |
 | W5.5·首开向导 ✅ | onboarding（client-only：零 agent 空态全屏欢迎页——命名默认智能体+可选纳管节点，复用 /opendb RPC，`#onboarding` 调试入口；空态判定失败 fail-safe 不挡人） |
-| W6·扩缩 | KEDA ScaledObject（k8s 配置，PG scaler 直查 thread_queue，无需插件）；**规模验收环境=独立 og k8s 集群**（user 2026-08-19 定案：数据库 pod 不与平台同集群——新 OrbStack VM 起第二套 k3s，~20 真 og-lite pod + 930 逻辑别名=950 节点，mac 128G 内存；平台跨 VM 网络接入） |
-| W6·收口 | conformance 测试资产（非插件）；ui-node-monitor 拆包还债；**UI 视觉集中优化**（user 2026-08-19：内容可以，UI 难看——任务/资源/节点详情/向导四页统一打磨：间距/层次/图表质感/空态，对齐 dsh 原版质感） |
+| W6·扩缩 ✅ | KEDA ScaledObject（postgresql scaler 查队列深度，扩 2→5 缩回实测；runtime-worker maxConcurrent=2 防信号失真）；独立 og k8s 集群 950 节点验收通过（20 真 og-lite+930 别名，og-k8s VM） |
+| W6·收口 ✅ | CI 门（.github/workflows/ci.yml：build+patch lint+dump-config PENDING 零容忍+PG 单测）；ui-node-monitor 拆包 ✅（registerNodePanel 桥）；UI 视觉第一轮 ✅（Sparkline 渐变/Empty 空态/数据库页 950 节点适配/侧栏限量/表格 hover）——后续微调随 user 反馈 |
 | P2 W1-2 | **exec-ssh**（gsql/gs_ctl/gs_om 白名单）· **tool-db-actions**（动作类，经审批）· **db-postgres**（含 pgrac 方言）· **preset-change-execution** · **token-issuer**（一次性令牌） |
 | P2 W3 | **subagent-queue** · **workflow-sandbox-job** |
 | P2 W4 | **task-monitor-dashboard**（双半边：runMode:'service' 首个实践）· **task-incident**（双半边）· **alert-ddl** |
