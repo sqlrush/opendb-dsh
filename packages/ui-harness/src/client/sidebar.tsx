@@ -117,15 +117,10 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
-  function Row({ active, onClick, title, children }: any) {
-    const [hov, setHov] = useState(false);
+  /** 列表行——官方 sessionRow 同款：hover 走纯 CSS（.odbRow:hover），无 JS 状态、无持久选中高亮。 */
+  function Row({ onClick, title, children }: any) {
     return (
-      <div
-        style={{ ...S.item, ...(active ? S.itemActive : hov ? { background: T.hover } : {}) }}
-        title={title}
-        onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-        onClick={onClick}
-      >{children}</div>
+      <div className="odbRow" title={title} onClick={onClick}>{children}</div>
     );
   }
 
@@ -198,25 +193,25 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     /* 条目渲染器（会话/任务/节点通用行风格） */
     const sessionRow = (s: any) => match(s.title) && (
       <Row key={s.sessionId} title={s.title} onClick={() => openSession(s.sessionId)}>
-        <span style={S.itemTitle}>{s.title}</span>
-        <span style={S.meta}>{relTime(s.lastAt)}</span>
+        <span className="odbTitle">{s.title}</span>
+        <span className="odbTime">{relTime(s.lastAt)}</span>
       </Row>
     );
     const taskRow = (t: any) => match(t.name) && (
-      <Row key={t.id} active={hs.view === 'tasks' && hs.selectedTaskId === t.id} title={`${t.name}（${t.type}）`}
+      <Row key={t.id} title={`${t.name}（${t.type}）`}
         onClick={() => setState({ view: 'tasks', selectedTaskId: t.id })}>
-        <span style={S.itemTitle}>{t.name}</span>
+        <span className="odbTitle">{t.name}</span>
         {t.lastRun?.status === 'running'
-          ? <span style={S.meta}>运行中</span>
+          ? <span className="odbTime">运行中</span>
           : sevColor(t.lastReport?.severity) !== undefined
             ? <span style={{ ...S.dot, background: sevColor(t.lastReport?.severity) }} />
-            : !t.enabled ? <span style={S.meta}>停用</span> : null}
+            : !t.enabled ? <span className="odbTime">停用</span> : null}
       </Row>
     );
     const nodeRow = (n: any) => match(n.name) && (
-      <Row key={n.id} active={hs.view === 'databases' && hs.selectedNodeId === n.id} title={`${n.host}:${n.port}/${n.dbname}`}
+      <Row key={n.id} title={`${n.host}:${n.port}/${n.dbname}`}
         onClick={() => setState({ view: 'databases', selectedNodeId: n.id })}>
-        <span style={S.itemTitle}>{n.name}</span>
+        <span className="odbTitle">{n.name}</span>
         <span style={{ ...S.dot, background: n.status === 'online' ? '#3fa552' : n.status === 'offline' ? '#d64545' : 'var(--dsw-alias-border-l2)' }} />
       </Row>
     );
@@ -253,7 +248,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
                     <div style={S.groupRow} onClick={() => setOpenGroups({ ...openGroups, [a.id]: !open })}>
                       {I.caret(open, T.dim as string)}
                       {I.agent()}
-                      <span style={S.itemTitle}>{a.name}</span>
+                      <span className="odbTitle">{a.name}</span>
                       {pendingAcks > 0 && a.id === hs.agentId && <span style={{ ...S.meta, background: '#c9862d', color: '#fff', borderRadius: 8, padding: '0 6px', fontSize: 11 }}>{pendingAcks}</span>}
                     </div>
                     {open && (
@@ -296,9 +291,9 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
 
         {/* 资源：与「智能体」同级的全局入口——交互与列表条目一致（hover 反馈 + 紧凑圆角选中态） */}
         <div style={{ paddingTop: 4, paddingBottom: 2 }}>
-          <Row active={hs.view === 'resources'} onClick={() => setState({ view: 'resources' })}>
+          <Row onClick={() => setState({ view: 'resources' })}>
             {I.chart(T.sub as string)}
-            <span style={S.itemTitle}>资源</span>
+            <span className="odbTitle">资源</span>
           </Row>
         </div>
       </div>

@@ -45,6 +45,11 @@ function takeOverBranding(): void {
     style.textContent = [
       '[class*="logoRow"] svg, [class*="logoRow"] img, [class*="logoRow"] span, [class*="logoRow"] a { display: none !important; }',
       `[class*="logoRow"]::before { content: ""; display: block; width: 196px; height: 26px; margin-right: auto; background: url('data:image/svg+xml;utf8,${logoSvg}') no-repeat left center / contain; }`,
+      // 列表行 hover 照抄官方 sessionRow：纯 CSS :hover（无 JS 状态残留，移开即退，与原生会话行为一致）
+      '.odbRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;padding:0 8px;display:flex;height:32px;box-sizing:border-box;min-width:0}',
+      '.odbRow:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      '.odbTitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;margin:0 6px 0 4px}',
+      '.odbTime{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;flex:none}',
     ].join('\n');
     document.head.appendChild(style);
   } catch { /* branding is cosmetic — never block boot */ }
