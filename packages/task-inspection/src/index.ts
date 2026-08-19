@@ -28,6 +28,20 @@ export const INSPECTION_TASK_TYPE: TaskType<InspectionConfig> = {
   async buildPrompt(task: TaskRecord<InspectionConfig>, _run, ctx: TaskBuildContext): Promise<string> {
     const bound = await ctx.nodesOf(task.agentId);
     const picked = task.config.nodes.length > 0 ? bound.filter((n) => task.config.nodes.includes(n.name)) : bound;
+    // 大规模分档（W6：950 节点/5 agent）：节点多时逐个巡检不可行也没必要——聚合→钻取
+    if (picked.length > 10) {
+      return [
+        `请对本智能体管理的 ${picked.length} 个数据库节点执行舰队巡检（聚合模式，不要逐节点查询）：`,
+        `1. 先调 metrics_fleet_overview 拿全舰队总览：采集覆盖率、每指标聚合、异常值 Top 节点、无数据节点；`,
+        `2. 对异常榜前几名和无数据节点，挑最可疑的至多 5 个，用 db_overview / metrics_recent / db_query 钻取确认；`,
+        `3. 覆盖率不足 95% 本身就是 warn 级发现（说明采集或节点出了问题）。`,
+        task.config.focus !== '' ? `\n本次额外关注：${task.config.focus}` : '',
+        ``,
+        `报告要求：data.findings 数组每项 {node, item, level(ok|warn|critical), detail}——`,
+        `舰队级结论 node 填 "fleet"（如覆盖率、整体水位），钻取到的具体问题填节点名；`,
+        `全部正常也要有一条 level=ok 的 fleet 记录；severity 取全部 findings 的最高级别。`,
+      ].join('\n');
+    }
     const nodeList = picked.map((n) => `- ${n.name}（${n.engine} ${n.host}:${n.port}，当前状态 ${n.status}）`).join('\n');
     return [
       `请对以下数据库节点执行例行巡检：`,

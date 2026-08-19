@@ -76,6 +76,47 @@ export default class MetricsService extends Service {
     return r.rows.map((row) => ({ time: row.time, nodeId: row.node_id, metric: row.metric, value: Number(row.value) }));
   }
 
+  /**
+   * 舰队聚合（W6 规模巡检）：一次 SQL 汇总一批节点最近 5 分钟的最新指标——
+   * 每指标 min/avg/max、按指标取值 Top-N 节点、采集覆盖数。950 节点也只是一次查询。
+   */
+  async fleetOverview(nodeIds: string[], topMetrics: string[], topN = 15): Promise<{
+    covered: number;
+    agg: { metric: string; n: number; avg: number; max: number; min: number }[];
+    top: { nodeId: string; metric: string; value: number }[];
+    coveredIds: string[];
+  }> {
+    await this.ready;
+    const agg = await this.pool.query(
+      `WITH latest AS (
+         SELECT DISTINCT ON (node_id, metric) node_id, metric, value FROM opendb_metrics
+          WHERE node_id = ANY($1) AND time > now() - interval '5 minutes'
+          ORDER BY node_id, metric, time DESC)
+       SELECT metric, count(*) AS n, avg(value) AS avg, max(value) AS max, min(value) AS min
+         FROM latest GROUP BY metric ORDER BY metric`,
+      [nodeIds],
+    );
+    const top = await this.pool.query(
+      `WITH latest AS (
+         SELECT DISTINCT ON (node_id, metric) node_id, metric, value FROM opendb_metrics
+          WHERE node_id = ANY($1) AND metric = ANY($2) AND time > now() - interval '5 minutes'
+          ORDER BY node_id, metric, time DESC)
+       SELECT node_id, metric, value FROM latest WHERE value > 0 ORDER BY value DESC LIMIT $3`,
+      [nodeIds, topMetrics, topN],
+    );
+    const covered = await this.pool.query(
+      `SELECT DISTINCT node_id FROM opendb_metrics
+        WHERE node_id = ANY($1) AND time > now() - interval '5 minutes'`,
+      [nodeIds],
+    );
+    return {
+      covered: covered.rowCount ?? 0,
+      coveredIds: covered.rows.map((r) => r.node_id),
+      agg: agg.rows.map((r) => ({ metric: r.metric, n: Number(r.n), avg: Number(r.avg), max: Number(r.max), min: Number(r.min) })),
+      top: top.rows.map((r) => ({ nodeId: r.node_id, metric: r.metric, value: Number(r.value) })),
+    };
+  }
+
   /** Raw recent points for one metric (newest first, capped). */
   async recent(nodeId: string, metric: string, minutes = 60, limit = 500): Promise<MetricRow[]> {
     await this.ready;

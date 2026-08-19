@@ -1,7 +1,7 @@
 import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { pickNode, renderTable, clampText } from '@opendb-dsh/tool-db';
+import { pickNode, renderTable, clampText, resolvePlatformAgent } from '@opendb-dsh/tool-db';
 
 export const name = 'tool-metrics';
 export const inject = ['opendbMetrics', 'opendbDictionary', 'opendbRegistry'];
@@ -65,6 +65,45 @@ function defineDictChangesTool(deps: Deps) {
   } as any);
 }
 
+function defineFleetOverviewTool(deps: Deps) {
+  return defineTool({
+    name: 'metrics_fleet_overview',
+    description: '舰队级指标总览（大规模巡检入口）：一次汇总本智能体全部绑定节点最近 5 分钟的指标——采集覆盖率、每指标 min/avg/max、异常值 Top 节点、无数据节点。适合先总览再对可疑节点用 db_overview/metrics_recent 钻取。',
+    parameters: {
+      topN: { type: 'integer', description: '异常榜长度（默认 15）。' },
+    },
+    output: TEXT_OUTPUT,
+    async execute(args: any, exec: any) {
+      const agent = await resolvePlatformAgent(deps.registry, exec?.agent);
+      if (agent === undefined) return { content: '无法确定当前会话所属的平台 agent（会话没有绑定工作区）' };
+      const nodes = await deps.registry.listNodes({ agentId: agent.id });
+      if (nodes.length === 0) return { content: `智能体「${agent.name}」没有绑定任何节点` };
+      const byId = new Map<string, string>(nodes.map((n: any) => [n.id, n.name]));
+      const ov = await deps.metrics.fleetOverview(
+        nodes.map((n: any) => n.id),
+        ['db.waiting_locks', 'db.connections_used_ratio', 'db.sessions.active', 'db.sessions.total'],
+        Number(args.topN ?? 15),
+      );
+      const coveredSet = new Set(ov.coveredIds);
+      const missing = nodes.filter((n: any) => !coveredSet.has(n.id)).slice(0, 10);
+      const aggTable = renderTable(['metric', 'nodes', 'min', 'avg', 'max'],
+        ov.agg.map((a: any) => ({ metric: a.metric, nodes: a.n, min: round3(a.min), avg: round3(a.avg), max: round3(a.max) })));
+      const topTable = ov.top.length === 0 ? '（无非零异常值）' : renderTable(['node', 'metric', 'value'],
+        ov.top.map((t: any) => ({ node: byId.get(t.nodeId) ?? t.nodeId, metric: t.metric, value: round3(t.value) })));
+      return {
+        content: clampText([
+          `-- 舰队总览：绑定 ${nodes.length} 节点，最近 5 分钟有采集的 ${ov.covered} 个`,
+          missing.length > 0 ? `无数据节点（前 ${missing.length} 个）：${missing.map((n: any) => n.name).join(', ')}${nodes.length - ov.covered > missing.length ? ` …共 ${nodes.length - ov.covered} 个` : ''}` : '采集覆盖完整',
+          ``, `== 每指标聚合 ==`, aggTable,
+          ``, `== 异常值 Top（按值降序，>0）==`, topTable,
+        ].join('\n'), deps.maxContentBytes),
+      };
+    },
+  } as any);
+}
+
+function round3(v: number): number { return Math.round(v * 1000) / 1000; }
+
 /** Metric/dictionary read tools for Runtime pods; scoping mirrors tool-db (agent-bound nodes only). */
 export function apply(ctx: Context, config: { maxContentBytes?: number } = {}): void {
   const anyCtx = ctx as any;
@@ -77,5 +116,6 @@ export function apply(ctx: Context, config: { maxContentBytes?: number } = {}): 
     };
     c.effect(() => c.tools.register(defineMetricsRecentTool(deps)), 'tool-metrics.metrics_recent');
     c.effect(() => c.tools.register(defineDictChangesTool(deps)), 'tool-metrics.dict_changes');
+    c.effect(() => c.tools.register(defineFleetOverviewTool(deps)), 'tool-metrics.metrics_fleet_overview');
   });
 }
