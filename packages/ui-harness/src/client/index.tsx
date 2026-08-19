@@ -40,8 +40,9 @@ function takeOverBranding(): void {
     const style = document.createElement('style');
     style.setAttribute('data-opendb-harness', 'brand');
     style.textContent = [
-      '[class*="logoRow"] > * { display: none !important; }',
-      '[class*="logoRow"]::after { content: "opendb-harness"; font-weight: 700; font-size: 14px; letter-spacing: .3px; color: var(--dsw-alias-label-primary); }',
+      // 官方海豚 logo 行整体隐藏（我们在自己的侧栏顶部画 opendb 版 logo）
+      '[class*="logoRow"] { display: none !important; }',
+
     ].join('\n');
     document.head.appendChild(style);
   } catch { /* branding is cosmetic — never block boot */ }
