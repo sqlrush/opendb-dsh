@@ -87,3 +87,11 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - 事故复盘补充：迁移锁滞留再现一次，持锁者是 **rollout 被杀旧 pod 的半开连接**（idle in transaction 3:56，5 分钟自动杀线将至，手动提前清）；xact 锁 + idle_in_transaction 超时防线按预期工作，只是清理有分钟级延迟——属可接受行为。注意 chart 的 tcp_keepalives args 对 TCP 连接是否真实生效未验证（psql unix socket 显示 0 属正常）。
 - 计划调整：批次 3 的 KEDA 并入 W6（与「100 节点/5 agent 排程」规模验收强相关，当前单节点无真负载可验）。
 - 已知小坑：JS 稀疏数组 `new Array(n).some()` 跳过空槽（embeddings index 连续性检查踩过）。
+
+## W5.5 批次1（2026-08-19 完成，opendb-harness 产品壳）
+
+- 产品定案（user）：更名 opendb-harness（仓库不改）；保留逻辑 agent（default agent 首开命名，特殊需求才新建：节点/插件技能/默认模型）；侧栏=agent 切换器+四资源列表（会话/任务/数据库/资源）；任务主要从会话衍生（task_propose，批次4）。
+- 新包 `ui-harness`（client-only）：**替换 sidebar.workspaces hole**（官方 ui-workspace disabled；register 声明 directoryFlow 子槽 kind:single scope:root）——品牌行/agent 切换器（≤1 个时低调显示）/四导航（任务角标=pending 审批、数据库角标=offline 节点）/最近会话列表（点击 ctx.sessions.open）/新会话（workspaces/find→ctx.workspaces.startSession）/新建 agent（agents/create RPC+ctx.workspaces.create）。`shell.overlay` 全屏页：任务（列表/历史/审批箱）/数据库（节点卡片）/资源（占位，批次3 实时化）。两组件经模块级外部 store 通信（useSyncExternalStore）。
+- 新 RPC：agents/create（含 mkdir agents 目录）、workspaces/find（**workspace 注册表就在 storage-pg kv：dsh_kv_records unit='workspace' tbl='workspaces'，value.path/sessionIds**——Host 直查 PG 零死锁）、sessions/list（归属真相=workspace kv 的 sessionIds；**持久化 request/header 只含 tools 没有 cwd**，不能用 cwd 过滤——坑）。
+- client API 侦察成果：ctx.sessions.open(id) 开既有会话；ctx.workspaces.startSession(wsId)/create(input)；sidebar.workspaces 是独占 hole 不可叠加。
+- 验收：__DSH_BOOT__ 含 ui-harness；client.js 200/27.9KB；agents/list、workspaces/find→og-lab wsId、sessions/list→3 会话带标题 ✅。浏览器渲染待 user 确认。
