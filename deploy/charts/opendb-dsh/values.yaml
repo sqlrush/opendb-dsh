@@ -36,7 +36,7 @@ minio:
 host:
   replicas: 1
   port: 3080
-  extraTrustedHosts: []           # e.g. ["opendb.local", "192.168.139.164:30080"]; ingress.host is added automatically
+  extraTrustedHosts: ["192.168.139.164", "192.168.139.164:30080"]   # IP 直连（user 决定弃域名）；ingress.host 仍自动加入
   hostPathPort: 3080
   resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
 
