@@ -5,6 +5,8 @@ metadata:
   labels: {{- include "opendb.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.host.replicas }}
+  # RWO PVC（agents-dir）：滚动更新会新旧 pod 抢卷死锁，必须整体重建
+  strategy: { type: Recreate }
   selector: { matchLabels: { app: {{ .Release.Name }}-host } }
   template:
     metadata: { labels: { app: {{ .Release.Name }}-host } }
@@ -30,6 +32,22 @@ spec:
           ports: [{ containerPort: {{ .Values.host.port }} }]
           readinessProbe: { tcpSocket: { port: {{ .Values.host.port }} }, initialDelaySeconds: 5, periodSeconds: 5 }
           resources: {{- toYaml .Values.host.resources | nindent 12 }}
+          volumeMounts:
+            # agents 工作区目录必须跨重启存活：dsh workspace 启动校验 header.cwd 目录，
+            # 目录丢失 → 全部会话标 invalid → 首次 mutate 持久化裁光 sessionIds（2026-08-19 事故）
+            - { name: agents-dir, mountPath: /var/lib/dsh/agents }
+      volumes:
+        - name: agents-dir
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-agents-dir }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-agents-dir
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
 ---
 apiVersion: v1
 kind: Service
