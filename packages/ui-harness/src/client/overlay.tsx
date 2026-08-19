@@ -40,12 +40,9 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <b>{task.name}</b><span style={S.dim}>{task.type} · {task.cron ?? '手动'}</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-            <button style={S.btn} onClick={() => void call('tasks/runNow', { id: task.id }).then(refresh)}>立即运行</button>
-            <button style={S.btn} onClick={() => void call('tasks/update', { id: task.id, patch: { enabled: !task.enabled } })}>{task.enabled ? '停用' : '启用'}</button>
-          </span>
+          <span style={{ marginLeft: 'auto', ...S.dim, fontSize: 12 }}>{task.enabled ? (task.cron ? '定时运行中' : '手动触发') : '已停用'}</span>
         </div>
-        <div style={{ ...S.dim, fontSize: 12, margin: '8px 0' }}>该任务类型暂未提供专属面板，使用默认视图（任务插件可注册自己的 UI）。</div>
+        <div style={{ ...S.dim, fontSize: 12, margin: '8px 0' }}>要调整这个任务（改周期/改策略/停用），直接在会话里告诉智能体即可。专属大盘由任务插件提供，当前为默认视图。</div>
         <table style={S.table}>
           <thead><tr><th style={S.th}>时间</th><th style={S.th}>触发</th><th style={S.th}>状态</th><th style={S.th}>报告</th></tr></thead>
           <tbody>

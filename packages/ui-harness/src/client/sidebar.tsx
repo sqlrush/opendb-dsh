@@ -143,6 +143,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
     const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+    const [showAllSessions, setShowAllSessions] = useState(false);
 
     useEffect(() => {
       const measure = () => {
@@ -261,7 +262,13 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
                     {open && (
                       <div style={{ marginLeft: 14 }}>
                         {typeHead(I.chat(T.dim), '会话', <IconBtn title="新会话" onClick={() => void newSession(a.name)}>{I.plus('currentColor')}</IconBtn>)}
-                        <div style={{ maxHeight: 300, overflowY: 'auto' }}>{sessions.map(sessionRow)}</div>
+                        {(showAllSessions ? sessions : sessions.slice(0, 12)).map(sessionRow)}
+                        {sessions.length > 12 && (
+                          <Row onClick={() => setShowAllSessions(!showAllSessions)}>
+                            <span style={{ width: 15 }} />
+                            <span style={{ ...S.meta, flex: 1 }}>{showAllSessions ? '收起' : `显示全部  条`}</span>
+                          </Row>
+                        )}
                         {typeHead(I.task(T.dim), '任务')}
                         {tasks.filter((t) => t.agentId === a.id).map(taskRow)}
                         {typeHead(I.db(T.dim as string, 15), '数据库')}
@@ -274,7 +281,13 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
             : (
               <div>
                 {typeHead(I.chat(T.dim), '会话', <IconBtn title="新会话" onClick={() => void newSession(hs.agentName)}>{I.plus('currentColor')}</IconBtn>)}
-                <div style={{ maxHeight: 300, overflowY: 'auto' }}>{sessions.map(sessionRow)}</div>
+                {(showAllSessions ? sessions : sessions.slice(0, 12)).map(sessionRow)}
+                {sessions.length > 12 && (
+                  <Row onClick={() => setShowAllSessions(!showAllSessions)}>
+                    <span style={{ width: 15 }} />
+                    <span style={{ ...S.meta, flex: 1 }}>{showAllSessions ? '收起' : `显示全部  条`}</span>
+                  </Row>
+                )}
                 {typeHead(I.task(T.dim), '任务', pendingAcks > 0 ? <span style={{ ...S.meta, background: '#c9862d', color: '#fff', borderRadius: 8, padding: '0 6px', fontSize: 11 }}>{pendingAcks}</span> : undefined)}
                 {tasks.map(taskRow)}
                 {typeHead(I.db(T.dim as string, 15), '数据库')}

@@ -128,3 +128,7 @@
       name: '@opendb-dsh/memory-context'
     - id: tool-memory
       name: '@opendb-dsh/tool-memory'
+# ── 交互纲领 §15：会话即任务管理 ─────────────────────────────────────────────
+- insert:
+    - id: tool-task-admin
+      name: '@opendb-dsh/tool-task-admin'

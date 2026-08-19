@@ -25,6 +25,7 @@
     "@opendb-dsh/approvals": "workspace:*",
     "@opendb-dsh/tool-task-report": "workspace:*",
     "@opendb-dsh/tool-read-spill": "workspace:*",
+    "@opendb-dsh/tool-task-admin": "workspace:*",
     "@opendb-dsh/embeddings-openai-compat": "workspace:*",
     "@opendb-dsh/memory-pg": "workspace:*",
     "@opendb-dsh/memory-context": "workspace:*",
