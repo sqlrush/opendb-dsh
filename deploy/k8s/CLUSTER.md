@@ -195,12 +195,13 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   舰队巡检 5/5 succeeded，单任务 22-66s（P95=66s，标准 <3min）；KEDA 扩容 2→5 实测、缩回 min。
 - **舰队巡检模式**：>10 节点自动切聚合 prompt——metrics_fleet_overview（一条 SQL 聚合 950 节点：
   覆盖率/每指标 min-avg-max/异常 Top-N/无数据名单）→ 模型只钻取可疑 ≤5 个 → fleet 级 findings。
-- **三连环事故与根治**（都是规模才暴露的真问题，巡检报告自己发现的）：
-  ① 镜像里 db 包没编译（Dockerfile 只 COPY lib）→ '*' 回退未生效 → 巡检钻取用空凭据打 og
-  → **防呆脚本 deploy/k8s/build-image.sh（全量 pnpm build 再 bake，以后一律用它）**；
-  ② 空凭据反复重试触发 og failed_login_attempts 锁账号；
-  ③ og-lite 1Gi limit 在 ~47 路采集连接/实例下 OOMKilled，且无卷 pod 重启即 initdb **连账号一起抹掉**
-  （14/20 账号消失之谜）→ 2Gi limit + volumeClaimTemplates 持久卷 + failed_login_attempts=0（实验环境）。
+- **事故与根治（复盘修正版）**：认证失败/覆盖率崩盘的唯一根因是
+  **og-lite 1Gi limit 在 ~47 路采集连接/实例下 OOMKilled，且无卷 pod 重启即 initdb 连账号一起抹掉**
+  （OOM 10:25Z 早于第一轮巡检 10:5x；14/20 账号消失）→ 2Gi limit + volumeClaimTemplates 持久卷
+  + failed_login_attempts=0（实验环境）。
+  ⚠️ 初判「镜像漏编 db 包」是**错误定性**：Dockerfile build 阶段本就全量 pnpm build（证据：
+  10:33 collector 951/951 全覆盖，无 '*' 回退不可能）。build-image.sh 保留作双保险，
+  但记住：**复盘先对时间线，再下结论**——OOM 时间戳 vs 巡检时间戳一对就穿帮。
 - og 手册：账号建立 `su - omm -c "LD_LIBRARY_PATH=... gsql -c ..."`；og 节点名禁连字符（GS_NODENAME 固定值）；
   psql16 对 og 报 "unsupported frontend protocol 3.9999" 是客户端协商噪音，node pg 驱动正常。
 - 排程：5 舰队巡检 cron 0 8 * * *（与 og5 巡检 07:00/审核 18:00 并存）。
