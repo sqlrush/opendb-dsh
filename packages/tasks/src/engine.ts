@@ -70,7 +70,7 @@ export class TaskEngine {
    * 而 runNow 本身就跑在 /api 的 RPC 处理上下文里 —— 同步自调用会与请求处理串行化互等
    * 而死锁（实测挂满 curl 超时）。异步拾取彻底绕开。
    */
-  async runNow(taskId: string, kind: 'manual' | 'alert' = 'manual'): Promise<TaskRunRecord> {
+  async runNow(taskId: string, kind: 'manual' | 'event' = 'manual'): Promise<TaskRunRecord> {
     const r = await this.d.pool.query('SELECT * FROM dsh_tasks WHERE id = $1', [taskId]);
     if (r.rows[0] === undefined) throw new Error(`任务 ${taskId} 不存在`);
     return this.createRun(taskId, kind);
@@ -80,7 +80,7 @@ export class TaskEngine {
   private async fireQueuedManuals(): Promise<void> {
     const r = await this.d.pool.query(
       `SELECT r.id AS run_id, t.* FROM dsh_task_runs r JOIN dsh_tasks t ON t.id = r.task_id
-       WHERE r.status = 'queued' AND r.session_id IS NULL AND r.trigger_kind IN ('manual', 'alert')
+       WHERE r.status = 'queued' AND r.session_id IS NULL AND r.trigger_kind IN ('manual', 'event')
        ORDER BY r.fired_at`,
     );
     for (const raw of r.rows) {
@@ -116,7 +116,7 @@ export class TaskEngine {
     }
   }
 
-  private async createRun(taskId: string, triggerKind: 'cron' | 'manual'): Promise<TaskRunRecord> {
+  private async createRun(taskId: string, triggerKind: 'cron' | 'manual' | 'event'): Promise<TaskRunRecord> {
     const r = await this.d.pool.query(
       `INSERT INTO dsh_task_runs (id, task_id, trigger_kind) VALUES ($1,$2,$3) RETURNING *`,
       [`run-${randomUUID().slice(0, 8)}`, taskId, triggerKind],

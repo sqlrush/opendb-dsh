@@ -79,7 +79,7 @@ export function apply(ctx: Context, config: AlertDdlConfig): void {
       // 已在排队/运行的 incident run 不叠加（本次变更会被该会话的 lookback 覆盖）
       const runs: any[] = await tasks.listRuns({ taskId: task.id, limit: 5 });
       if (runs.some((r: any) => r.status === 'queued' || r.status === 'running')) continue;
-      await tasks.runNow(task.id, 'alert');
+      await tasks.runNow(task.id, 'event');
       lastFired.set(agentId, Date.now());
       process.stderr.write(`[alert-ddl] fired incident for agent ${agentId}: ${agentChanges.length} fresh DDL change(s)\n`);
     }
