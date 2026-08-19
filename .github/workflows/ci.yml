@@ -30,6 +30,10 @@ jobs:
       - name: dump-config conformance (PENDING gate, all profiles)
         run: |
           set -euo pipefail
+          # dsh 按 DSH_HOME/profiles/<name> 找 profile（与 Dockerfile 同法软链）
+          export DSH_HOME="$PWD/.dsh-home"
+          mkdir -p "$DSH_HOME/profiles"
+          for prof in host runtime collector; do ln -sfn "$PWD/profiles/$prof" "$DSH_HOME/profiles/$prof"; done
           for prof in host runtime collector; do
             out=$(OPENDB_PG_URL=x node_modules/.bin/dsh --profile "$prof" --dump-config)
             pending=$(printf '%s' "$out" | grep -c PENDING || true)
