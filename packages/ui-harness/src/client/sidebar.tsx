@@ -215,6 +215,22 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
         <span style={{ ...S.dot, background: n.status === 'online' ? '#3fa552' : n.status === 'offline' ? '#d64545' : 'var(--dsw-alias-border-l2)' }} />
       </Row>
     );
+    /** W6 规模适配：侧栏节点列表限量（950 节点不可平铺）——前 8 个 + 汇总行进数据库页。 */
+    const nodeRows = (list: any[]) => {
+      const matched = q === '' ? list : list.filter((n) => n.name.includes(q));
+      const head = matched.slice(0, 8);
+      return (
+        <div>
+          {head.map(nodeRow)}
+          {matched.length > head.length && (
+            <Row onClick={() => setState({ view: 'databases', selectedNodeId: '' })}>
+              <span style={{ width: 15 }} />
+              <span style={{ ...S.meta, flex: 1 }}>共 {matched.length} 个节点，去数据库页查看</span>
+            </Row>
+          )}
+        </div>
+      );
+    };
     const typeHead = (icon: React.ReactNode, label: string, extra?: React.ReactNode) => (
       <div style={S.subHead}>{icon}<span>{label}</span>{extra}</div>
     );
@@ -264,7 +280,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
                         {typeHead(I.task(T.dim), '任务')}
                         {tasks.filter((t) => t.agentId === a.id).map(taskRow)}
                         {typeHead(I.db(T.dim as string, 15), '数据库')}
-                        {nodes.filter((n) => n.agentId === a.id || n.agentId === undefined).map(nodeRow)}
+                        {nodeRows(nodes.filter((n) => n.agentId === a.id || n.agentId === undefined))}
                       </div>
                     )}
                   </div>
@@ -283,7 +299,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
                 {typeHead(I.task(T.dim), '任务', pendingAcks > 0 ? <span style={{ ...S.meta, background: '#c9862d', color: '#fff', borderRadius: 8, padding: '0 6px', fontSize: 11 }}>{pendingAcks}</span> : undefined)}
                 {tasks.map(taskRow)}
                 {typeHead(I.db(T.dim as string, 15), '数据库')}
-                {nodes.map(nodeRow)}
+                {nodeRows(nodes)}
               </div>
             )}
 

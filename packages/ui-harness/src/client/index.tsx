@@ -48,6 +48,9 @@ function takeOverBranding(): void {
       // 列表行 hover 照抄官方 sessionRow：纯 CSS :hover（无 JS 状态残留，移开即退，与原生会话行为一致）
       '.odbRow{cursor:pointer;user-select:none;color:var(--dsw-alias-label-primary);border-radius:8px;align-items:center;padding:0 8px;display:flex;height:32px;box-sizing:border-box;min-width:0}',
       '.odbRow:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      // 表格行 hover（视觉集中优化）：与列表条目同一反馈语言；表头与行间留呼吸感
+      '.odbTable tbody tr:hover td{background:var(--dsw-alias-interactive-bg-hover)}',
+      '.odbTable tbody td{transition:background .08s ease}',
       '.odbTitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;margin:0 6px 0 4px}',
       '.odbTime{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;flex:none}',
     ].join('\n');

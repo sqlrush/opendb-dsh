@@ -113,7 +113,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
                 </div>
               </div>
             ))}
-            {tasks.length === 0 && <span style={S.dim}>还没有任务——在会话里让 opendb-harness 帮你建</span>}
+            {tasks.length === 0 && <Empty icon="▤" title="还没有任务" hint="在会话里说一句就能建，例如「每天早上八点巡检所有节点」" />}
           </div>
           <div style={S.detailPane}>
             {Panel !== undefined && task !== undefined
@@ -125,7 +125,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
-  /** 24h 趋势折线（自绘 SVG，无图表库；纲领：大盘只展示不交互）。 */
+  /** 24h 趋势折线（自绘 SVG，无图表库；纲领：大盘只展示不交互）。面积渐变 + 弱网格 + 端点强调。 */
   function Sparkline({ points, color, height = 56, fmt }: { points: { t: number; v: number }[]; color: string; height?: number; fmt?: (v: number) => string }) {
     const W = 260;
     if (points.length === 0) return <div style={{ ...S.dim, fontSize: 12, height, display: 'flex', alignItems: 'center' }}>暂无数据</div>;
@@ -133,16 +133,43 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     const min = Math.min(...vs);
     const max = Math.max(...vs);
     const span = max - min || 1;
-    const xy = points.map((p, i) => `${(i / Math.max(points.length - 1, 1)) * (W - 8) + 4},${height - 8 - ((p.v - min) / span) * (height - 16) + 4}`);
+    const px = (i: number) => (i / Math.max(points.length - 1, 1)) * (W - 8) + 4;
+    const py = (v: number) => height - 8 - ((v - min) / span) * (height - 20) + 4;
+    const xy = points.map((p, i) => `${px(i)},${py(p.v)}`);
     const last = points[points.length - 1];
+    const gid = `sg-${color.replace(/[^a-zA-Z0-9]/g, '')}-${height}`;
     return (
       <div>
         <svg width={W} height={height} style={{ display: 'block' }}>
+          <defs>
+            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          {[0.5].map((f) => (
+            <line key={f} x1="4" y1={py(min + span * f)} x2={W - 4} y2={py(min + span * f)} stroke="var(--dsw-alias-border-l1)" strokeWidth="1" strokeDasharray="3 4" />
+          ))}
           <line x1="4" y1={height - 4} x2={W - 4} y2={height - 4} stroke="var(--dsw-alias-border-l1)" strokeWidth="1" />
-          <polyline points={xy.join(' ')} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" />
-          <circle cx={xy[xy.length - 1].split(',')[0]} cy={xy[xy.length - 1].split(',')[1]} r="2.5" fill={color} />
+          <polygon points={`4,${height - 4} ${xy.join(' ')} ${W - 4},${height - 4}`} fill={`url(#${gid})`} />
+          <polyline points={xy.join(' ')} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx={px(points.length - 1)} cy={py(last.v)} r="2.8" fill={color} />
         </svg>
-        <div style={{ ...S.dim, fontSize: 12 }}>当前 {fmt ? fmt(last.v) : Math.round(last.v * 100) / 100} · 区间 {fmt ? `${fmt(min)}~${fmt(max)}` : `${Math.round(min * 100) / 100}~${Math.round(max * 100) / 100}`}</div>
+        <div style={{ ...S.dim, fontSize: 12, marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
+          当前 <span style={{ color: 'var(--dsw-alias-label-primary)', fontWeight: 600 }}>{fmt ? fmt(last.v) : Math.round(last.v * 100) / 100}</span>
+          <span style={{ margin: '0 4px' }}>·</span>区间 {fmt ? `${fmt(min)}~${fmt(max)}` : `${Math.round(min * 100) / 100}~${Math.round(max * 100) / 100}`}
+        </div>
+      </div>
+    );
+  }
+
+  /** 统一空态（视觉集中优化）：居中、留白、主/副文案两级。 */
+  function Empty({ icon, title, hint }: { icon?: string; title: string; hint?: string }) {
+    return (
+      <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--dsw-alias-label-tertiary)' }}>
+        {icon !== undefined && <div style={{ fontSize: 26, marginBottom: 10, opacity: 0.5 }}>{icon}</div>}
+        <div style={{ fontSize: 14, color: 'var(--dsw-alias-label-secondary)' }}>{title}</div>
+        {hint !== undefined && <div style={{ fontSize: 12.5, marginTop: 6 }}>{hint}</div>}
       </div>
     );
   }
@@ -207,31 +234,83 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
+  /** 数据库页（W6 规模适配：950 节点用 统计条+搜索+过滤+表格，不再铺卡片）。 */
   function DatabasesPage() {
     const hs = useSyncExternalStore(subscribe, getState);
     const [nodes, setNodes] = useState<any[]>([]);
+    const [q, setQ] = useState('');
+    const [st, setSt] = useState('all');
+    const [limit, setLimit] = useState(50);
     const refresh = async () => { try { setNodes((await call('nodes/list', {})).nodes); } catch { /* retry */ } };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 20_000); return () => clearInterval(t); }, []);
     if (hs.selectedNodeId !== '' && nodes.some((n) => n.id === hs.selectedNodeId)) {
-      return <NodeDetail nodeId={hs.selectedNodeId} />;
+      return (
+        <div>
+          <div style={{ marginBottom: 12 }}>
+            <span style={{ ...S.dim, fontSize: 13, cursor: 'pointer' }} onClick={() => setState({ selectedNodeId: '' })}>← 节点列表</span>
+          </div>
+          <NodeDetail nodeId={hs.selectedNodeId} />
+        </div>
+      );
     }
+    const counts = { online: 0, offline: 0, other: 0 };
+    for (const n of nodes) (counts as any)[n.status === 'online' ? 'online' : n.status === 'offline' ? 'offline' : 'other'] += 1;
+    const filtered = nodes.filter((n) =>
+      (st === 'all' || n.status === st)
+      && (q === '' || n.name.includes(q) || `${n.host}:${n.port}`.includes(q)));
+    const shown = filtered.slice(0, limit);
+    const statChip = (label: string, value: number, color?: string) => (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+        {color !== undefined && <span style={{ width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' }} />}
+        <span style={S.dim}>{label}</span>
+        <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      </div>
+    );
     return (
       <div>
-        <div style={S.h2}>数据库节点（点击查看监控详情）</div>
-        <div style={S.cards}>
-          {nodes.map((n) => (
-            <div key={n.id} style={{ ...S.card, cursor: 'pointer' }} onClick={() => setState({ selectedNodeId: n.id })}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: n.status === 'online' ? '#3fa552' : n.status === 'offline' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>●</span>
-                <b>{n.name}</b>
-                <span style={S.dim}>{n.engine}</span>
-              </div>
-              <div style={{ marginTop: 6, fontSize: 12 }}>{n.host}:{n.port}/{n.dbname}</div>
-              <div style={{ marginTop: 4, fontSize: 12 }}>状态：{n.status}</div>
-            </div>
-          ))}
-          {nodes.length === 0 && <span style={S.dim}>还没有节点——在会话里让智能体登记，或去 设置→OpenDB 添加</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginBottom: 14, flexWrap: 'wrap' }}>
+          {statChip('节点', nodes.length)}
+          {statChip('在线', counts.online, '#3fa552')}
+          {statChip('离线', counts.offline, 'var(--dsw-alias-state-error-primary)')}
+          {counts.other > 0 && statChip('其它', counts.other, 'var(--dsw-alias-label-tertiary)')}
+          <span style={{ flex: 1 }} />
+          <select style={{ ...S.input, padding: '5px 8px' }} value={st} onChange={(e) => { setSt(e.target.value); setLimit(50); }}>
+            <option value="all">全部状态</option>
+            <option value="online">在线</option>
+            <option value="offline">离线</option>
+          </select>
+          <input style={{ ...S.input, width: 200 }} placeholder="搜索名称 / 地址" value={q} onChange={(e) => { setQ(e.target.value); setLimit(50); }} />
         </div>
+        {nodes.length === 0
+          ? <Empty icon="◫" title="还没有数据库节点" hint="在会话里让智能体登记，或去 设置 → OpenDB 添加" />
+          : (
+            <div>
+              <table style={S.table} className="odbTable">
+                <thead><tr><th style={S.th}>节点</th><th style={S.th}>引擎</th><th style={S.th}>地址</th><th style={{ ...S.th, width: 90 }}>状态</th></tr></thead>
+                <tbody>
+                  {shown.map((n) => (
+                    <tr key={n.id} style={{ cursor: 'pointer' }} onClick={() => setState({ selectedNodeId: n.id })}>
+                      <td style={{ ...S.td, fontWeight: 500 }}>{n.name}</td>
+                      <td style={S.td}><span style={S.dim}>{n.engine}</span></td>
+                      <td style={{ ...S.td, fontVariantNumeric: 'tabular-nums' }}><span style={S.dim}>{n.host}:{n.port}/{n.dbname}</span></td>
+                      <td style={S.td}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 7, height: 7, borderRadius: 4, background: n.status === 'online' ? '#3fa552' : n.status === 'offline' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)', display: 'inline-block' }} />
+                          <span style={{ fontSize: 12.5 }}>{n.status}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                <span style={{ ...S.dim, fontSize: 12.5 }}>显示 {shown.length} / 匹配 {filtered.length}</span>
+                {filtered.length > shown.length && (
+                  <span style={{ fontSize: 12.5, color: '#4D6BFE', cursor: 'pointer' }} onClick={() => setLimit(limit + 200)}>显示更多</span>
+                )}
+              </div>
+            </div>
+          )}
       </div>
     );
   }
