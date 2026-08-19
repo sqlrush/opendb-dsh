@@ -18,4 +18,13 @@ spec:
                 name: {{ $.Release.Name }}-host
                 port: { number: {{ $.Values.host.port }} }
     {{- end }}
+    # 无 host 兜底：IP 直连（http://192.168.139.164/）也路由到控制台（user 决定用地址访问）
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-host
+                port: { number: {{ .Values.host.port }} }
 {{- end }}
