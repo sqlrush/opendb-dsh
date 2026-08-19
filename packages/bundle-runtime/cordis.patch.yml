@@ -151,3 +151,9 @@
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-knowledge
       name: '@opendb-dsh/tool-knowledge'
+# ── P3：记忆图谱（Host=实体抽取 leader；Runtime=memory_graph 工具）────────────
+- insert:
+    - id: memory-graph
+      name: '@opendb-dsh/memory-graph'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL

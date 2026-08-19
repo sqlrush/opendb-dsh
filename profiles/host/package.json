@@ -22,6 +22,7 @@
     "@opendb-dsh/dictionary-pg": "workspace:*",
     "@opendb-dsh/embeddings-openai-compat": "workspace:*",
     "@opendb-dsh/memory-pg": "workspace:*",
+    "@opendb-dsh/memory-graph": "workspace:*",
     "@opendb-dsh/knowledge-pg": "workspace:*",
     "@opendb-dsh/ui-knowledge": "workspace:*",
     "@opendb-dsh/ui-memory": "workspace:*",
