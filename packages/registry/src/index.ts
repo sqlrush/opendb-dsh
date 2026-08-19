@@ -60,6 +60,7 @@ export default class Registry extends Service {
   // ---------------- agents
   async createAgent(input: { name: string; kind?: 'domain' | 'assistant'; runtimeClass?: string; preset?: string; instructionDoc?: string }): Promise<AgentRecord> {
     await this.ready;
+    await this.checkQuota('max_agents', 'dsh_agents', '智能体');
     const id = `agent-${randomUUID().slice(0, 8)}`;
     const r = await this.pool.query(
       `INSERT INTO dsh_agents (id, tenant_id, name, kind, runtime_class, preset, instruction_doc)
@@ -111,8 +112,19 @@ export default class Registry extends Service {
   }
 
   // ---------------- db nodes / groups
+  /** P3 租户配额检查（opendb_tenant_quotas 无行 = 不限；列名/表名为内部常量，无注入面）。 */
+  private async checkQuota(col: 'max_agents' | 'max_nodes', table: 'dsh_agents' | 'dsh_db_nodes', label: string): Promise<void> {
+    const r = await this.pool.query(
+      `SELECT q.${col} AS cap, (SELECT count(*)::int FROM ${table} x WHERE x.tenant_id = $1) AS used
+       FROM opendb_tenant_quotas q WHERE q.tenant_id = $1`, [this.tenant]);
+    if (r.rows[0]?.cap != null && r.rows[0].used >= r.rows[0].cap) {
+      throw new Error(`租户 ${this.tenant} ${label}数已达配额上限 ${r.rows[0].cap}`);
+    }
+  }
+
   async createNode(input: { name: string; engine?: 'opengauss' | 'postgresql'; host: string; port?: number; dbname?: string; username?: string; sshTarget?: string; agentId?: string; groupId?: string; groupRole?: string }): Promise<DbNodeRecord> {
     await this.ready;
+    await this.checkQuota('max_nodes', 'dsh_db_nodes', '节点');
     const id = `node-${randomUUID().slice(0, 8)}`;
     const r = await this.pool.query(
       `INSERT INTO dsh_db_nodes (id, tenant_id, name, engine, host, port, dbname, username, ssh_target, agent_id, group_id, group_role)

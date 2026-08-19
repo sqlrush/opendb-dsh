@@ -107,6 +107,13 @@ export default class TasksService extends Service {
   // ---------------- 任务 CRUD
   async createTask(input: { agentId: string; type: string; name: string; config?: unknown; cron?: string; requiresApproval?: boolean; timeoutMs?: number; enabled?: boolean }): Promise<TaskRecord> {
     await this.ready;
+    // P3 租户配额（opendb_tenant_quotas 无行 = 不限）
+    const quota = await this.pool.query(
+      `SELECT q.max_tasks, (SELECT count(*)::int FROM dsh_tasks t WHERE t.tenant_id = $1) AS used
+       FROM opendb_tenant_quotas q WHERE q.tenant_id = $1`, [this.tenant]);
+    if (quota.rows[0]?.max_tasks != null && quota.rows[0].used >= quota.rows[0].max_tasks) {
+      throw new Error(`租户 ${this.tenant} 任务数已达配额上限 ${quota.rows[0].max_tasks}`);
+    }
     const type = this.types.get(input.type);
     if (type === undefined) throw new Error(`未知任务类型 ${input.type}（已注册：${[...this.types.keys()].join(', ')}）`);
     const config = type.configSchema(input.config ?? {});
