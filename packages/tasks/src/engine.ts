@@ -3,6 +3,8 @@ import type pg from 'pg';
 import { isDue } from './cron.ts';
 import type { TaskType, TaskRecord, TaskRunRecord, TaskBuildContext, ReportMode } from './types.ts';
 
+const REMINDER_MARK = '等待补交报告（已催交）';
+
 export interface EngineDeps {
   pool: pg.Pool;
   registry: any;
@@ -163,24 +165,47 @@ export class TaskEngine {
     );
   }
 
-  /** 回合已结束但没有报告的 running run：required → failed；optional/none → succeeded。 */
+  /**
+   * 回合全部闭合但没有报告的 running run：
+   * required → 先补救一次（追加催交 prompt，error 字段做提醒标记），仍不交才 failed；
+   * optional/none → succeeded。
+   * turn 闭合判定必须是 start/end 计数相抵（提醒会开新 turn，单看 EXISTS turn/end 会在
+   * 补救回合进行中误判）。
+   */
   private async settleFinishedTurns(): Promise<void> {
     const r = await this.d.pool.query(
-      `SELECT r.id, r.session_id, t.type FROM dsh_task_runs r
+      `SELECT r.id, r.session_id, r.error, t.type FROM dsh_task_runs r
        JOIN dsh_tasks t ON t.id = r.task_id
        WHERE r.status = 'running' AND r.session_id IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM dsh_task_reports p WHERE p.run_id = r.id)
-         AND EXISTS (SELECT 1 FROM dsh_session_events e WHERE e.session_id = r.session_id AND e.type = 'turn/end')`,
+         AND (SELECT count(*) FILTER (WHERE e.type = 'turn/start') > 0
+                AND count(*) FILTER (WHERE e.type = 'turn/end') >= count(*) FILTER (WHERE e.type = 'turn/start')
+              FROM dsh_session_events e
+              WHERE e.session_id = r.session_id AND e.type IN ('turn/start', 'turn/end'))`,
     );
     for (const raw of r.rows) {
       const mode: ReportMode = this.d.types.get(raw.type)?.report ?? 'required';
-      if (mode === 'required') {
-        await this.d.pool.query(
-          `UPDATE dsh_task_runs SET status = 'failed', error = '未提交报告', finished_at = now() WHERE id = $1 AND status = 'running'`,
-          [raw.id]);
-      } else {
+      if (mode !== 'required') {
         await this.d.pool.query(
           `UPDATE dsh_task_runs SET status = 'succeeded', finished_at = now() WHERE id = $1 AND status = 'running'`,
+          [raw.id]);
+        continue;
+      }
+      if (raw.error !== REMINDER_MARK) {
+        // 第一次：催交（模型偶发跑完不调 task_report——一次提醒能救回大多数）
+        try {
+          await this.api('session.prompt', {
+            sessionId: raw.session_id, mode: 'queue',
+            content: [{ type: 'text', text: '任务尚未提交报告。请立即调用 task_report 工具提交结构化结论（severity/summary/data 按任务要求），不要做其它事情。' }],
+          });
+          await this.d.pool.query(`UPDATE dsh_task_runs SET error = $2 WHERE id = $1 AND status = 'running'`, [raw.id, REMINDER_MARK]);
+          process.stderr.write(`[tasks] report reminder sent for run ${raw.id}\n`);
+        } catch (cause) {
+          process.stderr.write(`[tasks] report reminder failed for run ${raw.id}: ${String((cause as Error).message ?? cause)}\n`);
+        }
+      } else {
+        await this.d.pool.query(
+          `UPDATE dsh_task_runs SET status = 'failed', error = '未提交报告（已催交一次）', finished_at = now() WHERE id = $1 AND status = 'running'`,
           [raw.id]);
       }
     }
