@@ -9,8 +9,11 @@ export const name = 'skill-pg';
  * 注册用 function plugin 顶层 inject 模式（W4 教训：Service 构造器内 inject 静默失效）；
  * skills 服务只在 Runtime（agent 树）存在，Host 侧本插件静默不激活。
  */
-const SKILLS: { name: string; description: string; content: string }[] = [
+// 每个技能必须带 source: 'runtime'（dsh-skill 加载器校验 source 为 string——缺失时模型 invoke 报
+// "source must be a string"，注册端 validateRuntimeSkill 却不查，实测踩坑）
+const SKILLS: { name: string; description: string; content: string; source: string }[] = [
   {
+    source: 'runtime',
     name: 'og-slow-query-triage',
     description: '慢查询排查 SOP：从 dbe_perf 语句视图定位 Top 慢 SQL，判读等待事件与执行计划方向',
     content: [
@@ -29,6 +32,7 @@ const SKILLS: { name: string; description: string; content: string }[] = [
     ].join('\n'),
   },
   {
+    source: 'runtime',
     name: 'og-lock-diagnosis',
     description: '锁等待/阻塞链排查 SOP：从 waiting_locks 指标到 pg_locks 阻塞树定位持锁者',
     content: [
@@ -45,6 +49,7 @@ const SKILLS: { name: string; description: string; content: string }[] = [
     ].join('\n'),
   },
   {
+    source: 'runtime',
     name: 'og-capacity-review',
     description: '容量与连接水位评估 SOP：连接使用率、库大小趋势、会话构成的健康判读',
     content: [
@@ -61,6 +66,7 @@ const SKILLS: { name: string; description: string; content: string }[] = [
     ].join('\n'),
   },
   {
+    source: 'runtime',
     name: 'og-ddl-change-audit',
     description: 'DDL 变更审计 SOP：从字典变更流判定预期内外、评估影响面并出具审计结论',
     content: [
