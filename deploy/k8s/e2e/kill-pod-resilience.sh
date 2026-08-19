@@ -16,7 +16,7 @@ if [ -z "$SID" ]; then
   SID=$(api session.create "{\"workspaceId\":\"$WSID\"}" | grep -o '"sessionId":"[^"]*"' | cut -d'"' -f4)
 fi
 echo "session=$SID workspace=$WSID"
-api session.prompt "{\"sessionId\":\"$SID\",\"mode\":\"queue\",\"content\":[{\"type\":\"text\",\"text\":\"请分三步完成并且每步单独输出：1) 用 db_overview 看 og5 概况 2) 用 db_query 查 og5 的 select count(*) from pg_tables 3) 汇总一句话结论。\"}]}" >/dev/null
+api session.prompt "{\"sessionId\":\"$SID\",\"mode\":\"queue\",\"content\":[{\"type\":\"text\",\"text\":\"请分六步完成，每步必须单独调用工具并单独输出小结：1) db_overview 看 og5 概况 2) db_query 查 select count(*) from pg_tables 3) db_query 查 select count(*) from pg_class 4) db_query 查 select count(*) from pg_proc 5) 用 metrics 工具看 og5 最近指标 6) 汇总结论。\"}]}" >/dev/null
 echo "prompt queued; waiting for a runtime to claim..."
 
 POD=""
@@ -25,8 +25,12 @@ for i in $(seq 1 60); do
   [ -n "$POD" ] && break; sleep 2
 done
 [ -z "$POD" ] && { echo "FAIL: never claimed"; exit 1; }
-echo "claimed by $POD — waiting 10s for the turn to be mid-flight, then killing it"
-sleep 10
+echo "claimed by $POD — killing the moment the first assistant step lands (guaranteed mid-turn)"
+for i in $(seq 1 60); do
+  N=$(psq "SELECT count(*) FROM dsh_session_events WHERE session_id='$SID' AND type='assistant/message'" | tr -d ' ')
+  [ "${N:-0}" -ge 1 ] && break; sleep 1
+done
+[ "${N:-0}" -lt 1 ] && { echo "FAIL: no assistant step within 60s"; exit 1; }
 kubectl -n $NS delete pod "$POD" --grace-period=0 --force >/dev/null 2>&1
 echo "killed $POD"
 
