@@ -34,7 +34,7 @@ minio:
   consolePort: 9001
 
 host:
-  replicas: 1
+  replicas: 3               # P3: 多副本 + sticky cookie + 引擎 leader 竞选
   port: 3080
   # k8s-cp.orb.local = OrbStack 注册的系统 resolver 域名，对 mac 睡眠/换网免疫（IP 直连路由会被热点切换挤掉）
   extraTrustedHosts: ["192.168.139.164", "192.168.139.164:30080", "k8s-cp.orb.local", "localhost:18080", "127.0.0.1:18080"]

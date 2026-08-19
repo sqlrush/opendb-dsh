@@ -44,8 +44,23 @@ export function apply(ctx: Context, config: AlertDdlConfig): void {
 
   const lastFired = new Map<string, number>();   // agentId → epoch ms（进程内冷却；重启后靠 queued 判重兜底）
 
+  const ALERT_LEADER_LOCK = 7_204_211_032;   // P3 多 Host 副本：单 leader 扫描（事务级 try-lock，防重复告警/水位竞争）
+
   async function tick(): Promise<void> {
     await ready;
+    const lc = await pool.connect();
+    try {
+      await lc.query('BEGIN');
+      const got = await lc.query('SELECT pg_try_advisory_xact_lock($1) AS ok', [ALERT_LEADER_LOCK]);
+      if (got.rows[0].ok !== true) { await lc.query('COMMIT'); return; }
+      await tickBody();
+      await lc.query('COMMIT');
+    } finally {
+      lc.release();
+    }
+  }
+
+  async function tickBody(): Promise<void> {
     const wm = await pool.query(`SELECT watermark FROM opendb_alert_state WHERE alert_kind = 'ddl'`);
     const watermark: Date = wm.rows[0].watermark;
     // dictionary.changes 只有 sinceHours 粒度：取宽窗口再按精确水位过滤（变更量小，客侧过滤足够）

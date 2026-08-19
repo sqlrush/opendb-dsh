@@ -4,6 +4,7 @@ import { isDue } from './cron.ts';
 import type { TaskType, TaskRecord, TaskRunRecord, TaskBuildContext, ReportMode } from './types.ts';
 
 const REMINDER_MARK = '等待补交报告（已催交）';
+const ENGINE_LEADER_LOCK = 7_204_211_031;   // P3 多 Host 副本引擎 leader 锁（advisory key 段 7204211xxx）
 
 export interface EngineDeps {
   pool: pg.Pool;
@@ -50,20 +51,37 @@ export class TaskEngine {
     this.d = deps;
   }
 
-  /** 一轮：service 实例对账 + 手动队列拾取 + cron 触发 + 终态清扫 + 审批单补建。 */
+  /**
+   * 一轮：service 实例对账 + 手动队列拾取 + cron 触发 + 终态清扫 + 审批单补建。
+   * P3 多 Host 副本：整个 tick 套 **事务级 advisory try-lock 做 leader 竞选**——拿到锁的副本
+   * 执行本轮，其余副本静默跳过（30s 后再竞）。事务级锁天然防 W4 僵尸连接持锁事故
+   * （连接死/事务回滚即放锁）；leader 挂掉最多一个 tick 周期后其它副本接管。
+   * service 实例也随 leader 走：失去 leader 的副本在下一轮把本地 service 全部停掉。
+   */
   async tick(now = new Date()): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    const c = await this.d.pool.connect();
     try {
+      await c.query('BEGIN');
+      const got = await c.query('SELECT pg_try_advisory_xact_lock($1) AS ok', [ENGINE_LEADER_LOCK]);
+      if (got.rows[0].ok !== true) {
+        await c.query('COMMIT');
+        if (this.services.size > 0) await this.stopAllServices();   // 不是 leader：不能留常驻实例
+        return;
+      }
       await this.reconcileServices();
       await this.fireQueuedManuals();
       await this.fireDue(now);
       await this.sweepTimeouts(now);
       await this.settleFinishedTurns();
       await this.createPendingAcks();
+      await c.query('COMMIT');   // 放 leader 锁（本轮工作全部完成后）
     } catch (cause) {
+      await c.query('ROLLBACK').catch(() => {});
       process.stderr.write(`[tasks] tick failed: ${String((cause as Error).message ?? cause)}\n`);
     } finally {
+      c.release();
       this.busy = false;
     }
   }

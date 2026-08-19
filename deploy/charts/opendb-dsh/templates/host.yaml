@@ -5,17 +5,29 @@ metadata:
   labels: {{- include "opendb.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.host.replicas }}
-  # RWO PVC（agents-dir）：滚动更新会新旧 pod 抢卷死锁，必须整体重建
-  strategy: { type: Recreate, rollingUpdate: null }
+  # P3 多副本：agents-dir 改 emptyDir+initContainer 重建（RWO PVC 与多副本不兼容），恢复滚动更新
+  strategy: { type: RollingUpdate }
   selector: { matchLabels: { app: {{ .Release.Name }}-host } }
   template:
     metadata: { labels: { app: {{ .Release.Name }}-host } }
     spec:
       terminationGracePeriodSeconds: 30
-      {{- if .Values.postgres.builtin }}
       initContainers:
+        {{- if .Values.postgres.builtin }}
         {{- include "opendb.waitForPg" . | nindent 8 }}
-      {{- end }}
+        {{- end }}
+        # P3：每副本启动时从注册表重建全部 agent 工作区目录（emptyDir 随 pod 生灭——
+        # 目录缺失会让 dsh workspace 把 sessionIds 裁光，见 CLUSTER.md 2026-08-19 复盘）。
+        # 运行期新建 agent 的目录由 ui-opendb 周期 reconcile 补齐到每个副本。
+        - name: agents-dir-init
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          workingDir: /app/packages/db
+          command: ["node", "-e", "const pg=require('pg');const fs=require('fs');(async()=>{const p=new pg.Pool({connectionString:process.env.OPENDB_PG_URL});try{const r=await p.query('SELECT name FROM dsh_agents');for(const a of r.rows){fs.mkdirSync('/var/lib/dsh/agents/'+a.name,{recursive:true,mode:0o700});}console.log('agent dirs:',r.rowCount);}catch(e){console.log('skip (fresh install?):',String(e.message));}await p.end();})()"]
+          env:
+            {{- include "opendb.commonEnv" . | nindent 12 }}
+          volumeMounts:
+            - { name: agents-dir, mountPath: /var/lib/dsh/agents }
       serviceAccountName: {{ .Release.Name }}-host
       containers:
         - name: host
@@ -38,22 +50,19 @@ spec:
             - { name: agents-dir, mountPath: /var/lib/dsh/agents }
       volumes:
         - name: agents-dir
-          persistentVolumeClaim: { claimName: {{ .Release.Name }}-agents-dir }
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ .Release.Name }}-agents-dir
-  labels: {{- include "opendb.labels" . | nindent 4 }}
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: { requests: { storage: 1Gi } }
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ .Release.Name }}-host
   labels: {{- include "opendb.labels" . | nindent 4 }}
+  {{- if gt (int .Values.host.replicas) 1 }}
+  annotations:
+    # P3 多副本：cookie 粘性——同一浏览器固定到同一 Host（WS 会话亲和；副本挂掉 traefik 自动改派）
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: opendb-host
+  {{- end }}
 spec:
   selector: { app: {{ .Release.Name }}-host }
   ports: [{ port: {{ .Values.host.port }}, targetPort: {{ .Values.host.port }} }]

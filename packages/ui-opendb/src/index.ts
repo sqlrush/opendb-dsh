@@ -21,10 +21,10 @@ export function apply(ctx: Context): void {
   const tasks = anyCtx.opendbTasks;
   const approvals = anyCtx.opendbApprovals;
 
-  // 启动即重建全部 agent 工作区目录（幂等）。PVC 是第一道防线；这里兜底 PVC 丢失/首次挂载：
-  // dsh workspace 启动校验 header.cwd 目录存在，目录缺失会让历史会话被标 invalid，
-  // 首次 mutate 即把 sessionIds 持久化裁光（2026-08-19 事故复盘见 CLUSTER.md）。
-  void (async () => {
+  // agent 工作区目录 reconcile（幂等，启动即跑 + 每 60s 周期）：initContainer 是第一道防线；
+  // P3 多副本下运行期新建的 agent 只在处理请求的副本上 mkdir——周期 reconcile 把目录补齐到
+  // 每个副本（目录缺失会让 dsh workspace 把 sessionIds 裁光，2026-08-19 事故复盘见 CLUSTER.md）。
+  const reconcileDirs = async (): Promise<void> => {
     try {
       const { mkdir } = await import('node:fs/promises');
       const { join } = await import('node:path');
@@ -32,11 +32,15 @@ export function apply(ctx: Context): void {
       for (const a of agents) {
         await mkdir(join(process.env.DSH_HOME ?? '/var/lib/dsh', 'agents', a.name), { recursive: true, mode: 0o700 });
       }
-      process.stderr.write(`[ui-opendb] ensured ${agents.length} agent workspace dirs\n`);
     } catch (cause) {
       process.stderr.write(`[ui-opendb] agent dir reconcile failed: ${String((cause as Error).message ?? cause)}\n`);
     }
-  })();
+  };
+  ctx.effect(() => {
+    void reconcileDirs();
+    const timer = setInterval(() => void reconcileDirs(), 60_000);
+    return () => clearInterval(timer);
+  }, 'ui-opendb.agentDirs');
 
   ctx.effect(() => anyCtx.connection.rpc.handle('/opendb', async (endpoint: string, payload: any, _signal: AbortSignal): Promise<RpcResult> => {
     try {
