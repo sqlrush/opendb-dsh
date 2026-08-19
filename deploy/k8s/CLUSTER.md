@@ -205,3 +205,17 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - og 手册：账号建立 `su - omm -c "LD_LIBRARY_PATH=... gsql -c ..."`；og 节点名禁连字符（GS_NODENAME 固定值）；
   psql16 对 og 报 "unsupported frontend protocol 3.9999" 是客户端协商噪音，node pg 驱动正常。
 - 排程：5 舰队巡检 cron 0 8 * * *（与 og5 巡检 07:00/审核 18:00 并存）。
+
+## 2026-08-19 P2 W1 事件驱动运维上线（告警→诊断→报告→签收全闭环实测）
+- **alert-ddl**：60s 水位扫描 opendb_dict_changes → 按节点归属 agent 分组 → 触发 incident 任务
+  （trigger_kind='event'，G1 契约预留值）；agent 无 incident 任务时自举创建（requires_approval=true）；
+  冷却 15min + queued/running 判重；水位表 opendb_alert_state（首装水位=now，存量不告警）。
+- **task-incident** 双半边：诊断 prompt（dict_changes→可疑判定→影响追查→报告，动作只建议不执行）+
+  事故面板（severity 徽标/根因推测卡/按节点 findings/建议动作清单/近10次触发时间线）。
+- **引擎补救机制**：turn 全闭合无报告 → 先催交一次（error 字段做标记）→ 仍不交才 failed。
+  turn 闭合判定=start/end 计数相抵（EXISTS turn/end 会在催交回合进行中误判——踩过）。
+  实测：首轮 2/5 未交报告，催交后重跑 2/2 补交成功，日志有 reminder sent 实锤。
+- **演练全链路**：og-real-006 建表+索引 → collector 重启即快照检出（别名回声：1 物理实例=47 逻辑节点，
+  5 agent 全触发，真实环境无此现象）→ 5 份诊断报告全 ok（模型自己识破"演练脚本特征：每 20 节点一组
+  间隔 10-16s 批量执行"，甚至点破"多逻辑节点映射同一物理实例导致重复上报"）→ 5 张签收单自动补建。
+- 教训：psql 里带反斜杠的嵌套引号在 zsh heredoc 三层转义下极易碎——复杂查询写 .sql 文件再 `psql < file`。

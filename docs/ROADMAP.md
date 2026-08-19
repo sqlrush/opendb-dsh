@@ -44,7 +44,7 @@
 ### P2 · 观测闭环与平台面（user 2026-08-19 重排：「能动手」/IM 审批/mcp-db 先不做，进暂缓池）
 | 周 | 主题 | 交付 |
 |---|---|---|
-| W1 | 事件驱动运维 | `alert-ddl`（字典 diff 触发告警，非定时）；`task-incident`（双半边：告警→自动诊断→报告→**签收**闭环——「处置」环节待暂缓池的动手能力解锁后补上） |
+| W1 ✅（2026-08-19，全链路演练通过） | 事件驱动运维 | alert-ddl（水位扫描→按 agent 触发，冷却+判重+任务自举）+ task-incident 双半边（诊断 prompt+事故面板）+ 引擎报告催交补救；演练：真实 DDL→检出→5 agent 并发诊断→报告全 ok→签收单自动补建 |
 | W2 | 常驻监控 + 技能 | `task-monitor-dashboard`（双半边，runMode:'service' 首个实践：常驻监控大盘任务）；`skill-pg`（PG/og 运维 SOP 技能包） |
 | W3 | 知识与检索 | `knowledge-ingest`（文档灌入知识库）+ `ui-memory`/`ui-knowledge`（记忆/知识管理页，client 插件）；`session-query-pg`（会话全文检索） |
 | W4 | 平台面收尾 | `connection-auth`（简版账号认证即可，不强依赖 IdP——现在控制台裸奔靠 IP 信任）；`agent-presets-pg`（预设落库）；`storage-redis`（可选，PG 无瓶颈则顺延）；UI 视觉第二轮微调（随 user 反馈） |
