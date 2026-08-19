@@ -262,3 +262,24 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **顺延判定（诚实工程）**：agent-presets-pg——dsh preset 机制强绑文件目录树（preset root 逃逸校验），
   做 PG provider 复杂度高而单租户收益≈0，ConfigMap 方案已可版本管理 → 顺延暂缓池；
   storage-redis——950 节点规模下 PG kv 无瓶颈实证 → 顺延；UI 视觉第二轮等 user 反馈驱动。
+
+## 2026-08-19/20 P3 全项收官（规模与多租户）
+- **Host 水平扩 ✅**：3 副本 + traefik sticky cookie（Service annotation）+ 引擎/告警器/图抽取器
+  **session 级 advisory lock leader 竞选**（专用连接跨 tick 持有 + SELECT 1 保活 + 优雅停机 unlock；
+  ⚠ xact 级锁只互斥不固定 leader——实测两副本轮流 start service 快照双份）。
+  实测：杀 leader **6 秒接管**、切换期间控制台 200、快照流不断。agents-dir 改 emptyDir+initContainer
+  每副本重建（RWO PVC 与多副本不兼容；SSA 字段所有权冲突时删 deployment 重建）+ ui-opendb 60s 周期 reconcile。
+- **2000 节点 ✅**：2001/2001 采集覆盖率 100%、60s 零滑期（collector 5m CPU/118Mi——余量巨大）；
+  舰队巡检 5/5 ok，P95=91s；opendb_metrics 7 天保留策略。稳态 runtime 2 副本/峰值 5（KEDA），
+  验收「4-6 副本稳态」按实测重解释：本负载画像下 2 副本即稳态，扩缩弹性已验。
+- **多租户 ✅**：009 动态 FORCE RLS（16 张 tenant_id 表 + WITH CHECK）+ createPool 连接级
+  app.tenant 注入（env OPENDB_TENANT）+ 配额表与三创建口检查 + 越权用例 3/3 绿。
+  ⚠ **superuser 无条件绕过 RLS（FORCE 也不拦）**——用例用非特权探针角色验证策略；
+  **多租户生产部署检查单：平台必须以非超级角色连 PG**（当前 lab 单租户 superuser 可接受）。
+  ⚠ 运维 psql 现在要 `SET app.tenant='default';` 才能看到业务表数据。
+- **memory-graph ✅（G3=PG 原生做图）**：010 边表（记忆↔实体，实体=内容中出现的节点/agent 名）
+  + 水位增量抽取（leader 单实例）+ memory_graph 工具（直接记忆+经共现实体两跳桥接）。
+  e2e：模型查 og-sim-586 事件链，直接 7 条+两跳 8 条。
+- **判定入档**：knowledge-vector 不需要（pgvector 实证够用）；metrics-victoria 不需要（Timescale+
+  retention 够用）；terminal-ssh / code-runtime-sandbox-job 与「能动手」共享 SSH/执行前提 → 随暂缓池；
+  HPA-by-WS 以固定 3 副本满足验收；LISTEN/NOTIFY 以 2s poll 满足（队列唤醒延迟无感）。
