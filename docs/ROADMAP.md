@@ -41,15 +41,23 @@
 - G1：任务插件契约 ✅ 已冻结（2026-08-19，设计 §8.5：task_report 工具提交、审批=P1 报告签收、dsh_schedules 收编）；embedding 来源 ✅ 已定（Ollama+bge-m3）；认证不提前（P2）。
 - user 提供：3–5 个测试 **openGauss** 节点（mac docker `opengauss/opengauss` 镜像即可，含一主一备拓扑）；embedding 服务；MinIO/S3。
 
-### P2 · 执行与扇出（~5–6 周）
+### P2 · 观测闭环与平台面（user 2026-08-19 重排：「能动手」/IM 审批/mcp-db 先不做，进暂缓池）
 | 周 | 主题 | 交付 |
 |---|---|---|
-| W1–2 | 远端执行 | `exec-ssh`（og 工具链 `gsql`/`gs_ctl`/`gs_om` 白名单）、`tool-fs-search-ssh`；`tool-db` 动作类；一次性令牌 + 白名单；preset `变更执行`；`db-postgres` provider（含 pgrac 的 `pg-ops`/`pg-rac` class） |
-| W3 | 扇出与编排 | `subagent-queue`、`workflow-sandbox-job`、KEDA 调参 |
-| W4 | 任务与告警 | `task-monitor-dashboard`、`task-incident`、DDL 告警 |
-| W5 | 平台面 | `connection-auth` + Ingress 认证、`approval-im-feishu`/`-dingtalk`、`agent-presets-pg`、`session-query-pg`、`knowledge-ingest` + `ui-memory`/`ui-knowledge`、`storage-redis` 默认、`skill-pg`、**`mcp-db`**（把 `tool-db` 只读能力以 MCP server 对外暴露，供 Codex/Claude Code 使用；`skill-og` 已可移植） |
-- 验收：经审批变更在目标主机执行并审计；扇出 10 子代理跨 pod；告警→诊断→审批→处置闭环；IM 审批可用。
-- G2：SSH 账号策略；IM 优先级；IdP。
+| W1 | 事件驱动运维 | `alert-ddl`（字典 diff 触发告警，非定时）；`task-incident`（双半边：告警→自动诊断→报告→**签收**闭环——「处置」环节待暂缓池的动手能力解锁后补上） |
+| W2 | 常驻监控 + 技能 | `task-monitor-dashboard`（双半边，runMode:'service' 首个实践：常驻监控大盘任务）；`skill-pg`（PG/og 运维 SOP 技能包） |
+| W3 | 知识与检索 | `knowledge-ingest`（文档灌入知识库）+ `ui-memory`/`ui-knowledge`（记忆/知识管理页，client 插件）；`session-query-pg`（会话全文检索） |
+| W4 | 平台面收尾 | `connection-auth`（简版账号认证即可，不强依赖 IdP——现在控制台裸奔靠 IP 信任）；`agent-presets-pg`（预设落库）；`storage-redis`（可选，PG 无瓶颈则顺延）；UI 视觉第二轮微调（随 user 反馈） |
+- 验收：DDL 告警→自动诊断→报告→签收闭环端到端；常驻监控任务跨重启存活；知识库可灌可查可管；控制台需登录。
+- 扇出（`subagent-queue`/`workflow-sandbox-job`）暂缓：950 节点验收未暴露单代理瓶颈，出现瓶颈时再激活。
+
+### 暂缓池（user 2026-08-19 决策：先不做，条件成熟再解冻）
+| 组 | 内容 | 解冻条件 |
+|---|---|---|
+| 「能动手」远端执行 | `exec-ssh`（gsql/gs_ctl/gs_om 白名单）· `tool-db-actions`（动作类，经审批）· `token-issuer`（一次性令牌）· `preset-change-execution` · `tool-fs-search-ssh` · `db-postgres`（含 pgrac 方言） | user 拍板启动 + SSH 账号策略（原 G2 门） |
+| IM 审批 | `approval-im-feishu` / `approval-im-dingtalk`（ApprovalProvider seam 外部 provider） | user 拍板 + IM 应用凭据 |
+| MCP 对外 | `mcp-db`（tool-db 只读能力以 MCP server 暴露给 Codex/Claude Code） | user 拍板 |
+| 扇出编排 | `subagent-queue` · `workflow-sandbox-job` | 单代理出现实际瓶颈 |
 
 ### P3 · 规模与多租户（~6–8 周）
 - 规模：2000 节点压测（KEDA、`LISTEN/NOTIFY`、rollout 分区归档、连接池）。
@@ -69,14 +77,15 @@ CI 门（`--dump-config` 快照、真实 Loader e2e、`assertEntriesActivated`�
 | P0 前 | mac SSH 授权；node 22 / pnpm / docker / k8s；`DEEPSEEK_API_KEY` |
 | P1 W3 前 | 3–5 个测试 openGauss 节点（含一主一备） |
 | P1 W5 前 | embedding 服务（OpenAI 兼容）；MinIO/S3 |
-| P2 前 | SSH 账号策略；IM 应用凭据；IdP |
+| P2 前 | 无硬依赖（知识库如需灌真实文档，届时提供文档来源即可） |
+| 暂缓池解冻时 | 「能动手」→ SSH 账号策略；IM 审批 → 飞书/钉钉应用凭据；connection-auth 升级 → IdP |
 | P3 前 | 图数据库选型；压测环境 |
 
 ## 4. 主要风险
 P0 不确定点（备选已备）；dsh rc 升级（钉版 + conformance）；dsh Web UI 定制受限（seam 绕开/自研 slots）；上千节点连接数（连接池 + collector 独立池）；选型拖延（seam 留槽不阻塞）；单人带宽（每周可演示 + 门上裁剪）。
 
 ## 5. 度量
-P0：接力 100%、回灌延迟 < 1s、PENDING=0；P1：100 节点巡检成功率 ≥ 99%、P95 < 3 min、杀 pod 零丢失、审批端到端 < 5s；P2：变更成功率 100% 含审计、扇出 P95 < 5 min；P3：2000 节点副本 ≤ 6、越权 0 通过、Host 切换无感。
+P0：接力 100%、回灌延迟 < 1s、PENDING=0；P1：100 节点巡检成功率 ≥ 99%、P95 < 3 min、杀 pod 零丢失、审批端到端 < 5s（实测 950 节点 P95=66s）；P2（重排版）：DDL 告警→报告延迟 < 15 min、常驻监控任务重启存活率 100%、知识检索命中可用；P3：2000 节点副本 ≤ 6、越权 0 通过、Host 切换无感。
 
 ## 6. 不在范围
 MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS 化；移动端。
@@ -109,8 +118,9 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | W5.5·首开向导 ✅ | onboarding（client-only：零 agent 空态全屏欢迎页——命名默认智能体+可选纳管节点，复用 /opendb RPC，`#onboarding` 调试入口；空态判定失败 fail-safe 不挡人） |
 | W6·扩缩 ✅ | KEDA ScaledObject（postgresql scaler 查队列深度，扩 2→5 缩回实测；runtime-worker maxConcurrent=2 防信号失真）；独立 og k8s 集群 950 节点验收通过（20 真 og-lite+930 别名，og-k8s VM） |
 | W6·收口 ✅ | CI 门（.github/workflows/ci.yml：build+patch lint+dump-config PENDING 零容忍+PG 单测）；ui-node-monitor 拆包 ✅（registerNodePanel 桥）；UI 视觉第一轮 ✅（Sparkline 渐变/Empty 空态/数据库页 950 节点适配/侧栏限量/表格 hover）——后续微调随 user 反馈 |
-| P2 W1-2 | **exec-ssh**（gsql/gs_ctl/gs_om 白名单）· **tool-db-actions**（动作类，经审批）· **db-postgres**（含 pgrac 方言）· **preset-change-execution** · **token-issuer**（一次性令牌） |
-| P2 W3 | **subagent-queue** · **workflow-sandbox-job** |
-| P2 W4 | **task-monitor-dashboard**（双半边：runMode:'service' 首个实践）· **task-incident**（双半边）· **alert-ddl** |
-| P2 W5 | **connection-auth** · **approval-im-feishu** / **approval-im-dingtalk**（ApprovalProvider seam 首批外部 provider）· **agent-presets-pg** · **session-query-pg** · **knowledge-ingest** · **ui-memory** / **ui-knowledge** · **storage-redis** · **skill-pg** · **mcp-db**（tool-db 以 MCP 对外） |
+| P2 W1（事件驱动） | **alert-ddl** · **task-incident**（双半边） |
+| P2 W2（常驻监控+技能） | **task-monitor-dashboard**（双半边：runMode:'service' 首个实践）· **skill-pg** |
+| P2 W3（知识与检索） | **knowledge-ingest** · **ui-memory** / **ui-knowledge**（client 插件）· **session-query-pg** |
+| P2 W4（平台面收尾） | **connection-auth**（简版）· **agent-presets-pg** · **storage-redis**（可选） |
+| 暂缓池（user 决策先不做） | exec-ssh · tool-db-actions · token-issuer · preset-change-execution · tool-fs-search-ssh · db-postgres ｜ approval-im-feishu / -dingtalk ｜ mcp-db ｜ subagent-queue · workflow-sandbox-job |
 | P3 | **memory-graph** · **knowledge-vector** · **metrics-victoria** · **host-notify-bridge**（多 Host NOTIFY 桥）· **terminal-ssh** / **code-runtime-sandbox-job**（回归） |
