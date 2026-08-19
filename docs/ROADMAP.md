@@ -108,7 +108,7 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | W5.5·资源大盘 ✅ | platform-status（Host：k8s 只读 RBAC + pod 拓扑 RPC + 模型 token 用量统计[今日/近7日/Top会话]；client 半边经 registerResourcePanel 进驻资源页；已完成 Job Pod 灰点标注） |
 | W5.5·首开向导 ✅ | onboarding（client-only：零 agent 空态全屏欢迎页——命名默认智能体+可选纳管节点，复用 /opendb RPC，`#onboarding` 调试入口；空态判定失败 fail-safe 不挡人） |
 | W6·扩缩 | KEDA ScaledObject（k8s 配置，PG scaler 直查 thread_queue，无需插件） |
-| W6·收口 | conformance 测试资产（非插件）；ui-node-monitor 拆包还债 |
+| W6·收口 | conformance 测试资产（非插件）；ui-node-monitor 拆包还债；**UI 视觉集中优化**（user 2026-08-19：内容可以，UI 难看——任务/资源/节点详情/向导四页统一打磨：间距/层次/图表质感/空态，对齐 dsh 原版质感） |
 | P2 W1-2 | **exec-ssh**（gsql/gs_ctl/gs_om 白名单）· **tool-db-actions**（动作类，经审批）· **db-postgres**（含 pgrac 方言）· **preset-change-execution** · **token-issuer**（一次性令牌） |
 | P2 W3 | **subagent-queue** · **workflow-sandbox-job** |
 | P2 W4 | **task-monitor-dashboard**（双半边：runMode:'service' 首个实践）· **task-incident**（双半边）· **alert-ddl** |
