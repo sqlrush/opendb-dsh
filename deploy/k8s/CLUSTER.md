@@ -95,3 +95,12 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - 新 RPC：agents/create（含 mkdir agents 目录）、workspaces/find（**workspace 注册表就在 storage-pg kv：dsh_kv_records unit='workspace' tbl='workspaces'，value.path/sessionIds**——Host 直查 PG 零死锁）、sessions/list（归属真相=workspace kv 的 sessionIds；**持久化 request/header 只含 tools 没有 cwd**，不能用 cwd 过滤——坑）。
 - client API 侦察成果：ctx.sessions.open(id) 开既有会话；ctx.workspaces.startSession(wsId)/create(input)；sidebar.workspaces 是独占 hole 不可叠加。
 - 验收：__DSH_BOOT__ 含 ui-harness；client.js 200/27.9KB；agents/list、workspaces/find→og-lab wsId、sessions/list→3 会话带标题 ✅。浏览器渲染待 user 确认。
+
+## W5.5 交互修订（2026-08-19，user 四点反馈全落地）
+
+- **主区内渲染**：任务/数据库/资源页不再全屏 overlay——容器 `left = 侧栏右缘`（侧栏组件 ResizeObserver 实时上报 store.sidebarRight），侧栏始终可见可切换。
+- **品牌接管**：document.title + 左上角官方字标（ui-sidebar 的 logoRow/Wordmark 无插槽）DOM 接管为 opendb-harness（500ms×20 次重试后停）。
+- **新建 agent 下拉化**（低频操作不占常驻 UI）：agent 行点击展开下拉（agent 列表 + 底部"＋新建 agent…"内联表单）。
+- **DB 图标**：emoji → currentColor 圆柱 SVG。
+- **任务面板插槽契约（user 定案：不同任务对应不同插件，UI 统一进主区）**：`registerTaskPanel(typeKey, Panel)`（ui-harness 导出）；任务页=列表+详情框架，选中任务渲染 `getTaskPanel(type) ?? DefaultTaskPanel`（默认=运行历史+报告+操作）。未来任务类型插件的 client 半边注册专属面板即可进驻，零框架改动。
+- 访问方式定案：**IP 直连 http://192.168.139.164/**（user 弃域名；ingress 无 host 兜底规则 + fence 信任 IP）。.local/mDNS 域名坑记录在案。
