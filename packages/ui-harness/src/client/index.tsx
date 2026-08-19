@@ -2,9 +2,12 @@
  * opendb-harness 前端壳（W5.5）：
  * - 替换 sidebar.workspaces hole → HarnessSidebar
  * - shell.overlay → HarnessMain（主区页面，贴齐侧栏右缘——user 定案：不单开全屏页）
- * - 品牌接管：document.title + 左上角 DeepSeek Harness 字标替换为 opendb-harness
- * - 导出 registerTaskPanel：任务类型插件的 client 半边注册专属面板（不同任务对应不同插件）
+ * - 品牌接管：document.title + 纯 CSS 覆盖左上角字标（绝不改 React 管理的 DOM——
+ *   innerHTML 替换曾令 React reconcile 崩溃整页白屏，W5.5 事故）
+ * - ErrorBoundary 包裹自研组件：我们的 UI bug 最多空白自身区域，不炸整页
+ * - 导出 registerTaskPanel：任务类型插件的 client 半边注册专属面板
  */
+import { Component, type ReactNode } from 'react';
 import { makeSidebar } from './sidebar.tsx';
 import { makeOverlay } from './overlay.tsx';
 
@@ -12,24 +15,36 @@ export { registerTaskPanel } from './state.ts';
 
 export const inject = ['connection', 'slots', 'workspaces', 'sessions'];
 
-/** 左上角官方字标（ui-sidebar 的 logoRow/Wordmark，无插槽）→ DOM 接管为产品名。 */
+class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { failed: false };
+  }
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown): void {
+    // eslint-disable-next-line no-console
+    console.error('[ui-harness] component crashed:', error);
+  }
+  render(): ReactNode {
+    if (this.state.failed) return <div style={{ padding: 8, fontSize: 12, opacity: 0.6 }}>opendb-harness 组件出错（见控制台）</div>;
+    return this.props.children;
+  }
+}
+
+/** 品牌接管：只动 title 与注入 CSS —— 零 DOM 结构改动。 */
 function takeOverBranding(): void {
-  document.title = 'opendb-harness';
-  let attempts = 0;
-  const timer = setInterval(() => {
-    attempts += 1;
-    const nodes = document.querySelectorAll('[class*="logoRow"], [class*="Wordmark"], [class*="wordmark"]');
-    let done = false;
-    nodes.forEach((el) => {
-      const text = el.textContent ?? '';
-      if (text.includes('opendb-harness')) { done = true; return; }
-      if (/harness/i.test(text) || el.querySelector('svg') !== null) {
-        (el as HTMLElement).innerHTML = '<span style="font-weight:700;font-size:14px;letter-spacing:.3px">opendb-harness</span>';
-        done = true;
-      }
-    });
-    if (done || attempts >= 20) clearInterval(timer);
-  }, 500);
+  try {
+    document.title = 'opendb-harness';
+    const style = document.createElement('style');
+    style.setAttribute('data-opendb-harness', 'brand');
+    style.textContent = [
+      '[class*="logoRow"] > * { display: none !important; }',
+      '[class*="logoRow"]::after { content: "opendb-harness"; font-weight: 700; font-size: 14px; letter-spacing: .3px; color: var(--dsw-alias-label-primary); }',
+    ].join('\n');
+    document.head.appendChild(style);
+  } catch { /* branding is cosmetic — never block boot */ }
 }
 
 export function apply(ctx: any): void {
@@ -41,6 +56,8 @@ export function apply(ctx: any): void {
 
   const HarnessSidebar = makeSidebar(ctx, call);
   const HarnessMain = makeOverlay(ctx, call);
+  const SafeSidebar = () => <Boundary><HarnessSidebar /></Boundary>;
+  const SafeMain = () => <Boundary><HarnessMain /></Boundary>;
 
   ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
     {
@@ -49,12 +66,12 @@ export function apply(ctx: any): void {
       children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
       inject: () => ({}),
     },
-    HarnessSidebar,
+    SafeSidebar,
   ));
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(
     { name: 'shell.overlay', id: 'harness-main', order: 40, inject: () => ({}) },
-    HarnessMain,
+    SafeMain,
   ));
 
   takeOverBranding();
