@@ -37,6 +37,12 @@
   `additionalProperties`。Runtime 侧改动走镜像 + rollout；仅前端改动走热更。
 - 分钟级 cron 任务测试后必须禁用（每次触发都消耗模型 token）。
 
+## 插件纪律
+
+所有功能开发必须落为插件（dsh 核心=万物皆插件）。任务类型=双半边插件（server 注册 TaskType +
+client registerTaskPanel）。领域 UI 独立 client 插件；ui-harness/ui-opendb 只做底座。
+插件地图与每节点交付清单见 docs/ROADMAP.md §7。
+
 ## 交互纲领（产品级，设计 §15）
 
 一切交互尽量在会话完成（task_create/task_update 工具已就位）；主区任务页=无按钮结果大盘
