@@ -1,0 +1,14 @@
+{
+  "name": "@opendb-dsh/onboarding",
+  "version": "0.0.1",
+  "description": "First-open onboarding wizard (client-only): welcome + name the default agent + optional node pick; reuses ui-opendb RPC",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "dsh": { "client": { "platform": "web" } },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json && node build-client.mjs", "test": "echo no tests" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
+}

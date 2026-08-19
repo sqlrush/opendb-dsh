@@ -24,6 +24,7 @@
     "@opendb-dsh/memory-pg": "workspace:*",
     "@opendb-dsh/memory-ingest": "workspace:*",
     "@opendb-dsh/ui-harness": "workspace:*",
-    "@opendb-dsh/platform-status": "workspace:*"
+    "@opendb-dsh/platform-status": "workspace:*",
+    "@opendb-dsh/onboarding": "workspace:*"
   }
 }
