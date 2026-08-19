@@ -52,22 +52,49 @@ export class TaskEngine {
   }
 
   /**
-   * 一轮：service 实例对账 + 手动队列拾取 + cron 触发 + 终态清扫 + 审批单补建。
-   * P3 多 Host 副本：整个 tick 套 **事务级 advisory try-lock 做 leader 竞选**——拿到锁的副本
-   * 执行本轮，其余副本静默跳过（30s 后再竞）。事务级锁天然防 W4 僵尸连接持锁事故
-   * （连接死/事务回滚即放锁）；leader 挂掉最多一个 tick 周期后其它副本接管。
-   * service 实例也随 leader 走：失去 leader 的副本在下一轮把本地 service 全部停掉。
+   * P3 多 Host 副本 leader 竞选：**session 级 advisory lock 持在专用连接上、跨 tick 持有**——
+   * xact 级锁只能互斥不能固定 leader（实测：两副本轮流拿锁各自 start service，快照双份）。
+   * 每 tick 先 SELECT 1 保活检测；连接断（pod 死）PG 自动放锁，其它副本下轮接管
+   * （半开连接极端场景由 PG tcp_keepalives ~2 分钟清理，W4 防线复用）。
    */
+  private leaderClient: pg.PoolClient | undefined;
+
+  private async ensureLeader(): Promise<boolean> {
+    if (this.leaderClient !== undefined) {
+      try { await this.leaderClient.query('SELECT 1'); return true; }
+      catch { try { this.leaderClient.release(true as any); } catch { /* gone */ } this.leaderClient = undefined; }
+    }
+    const c = await this.d.pool.connect();
+    try {
+      const r = await c.query('SELECT pg_try_advisory_lock($1) AS ok', [ENGINE_LEADER_LOCK]);
+      if (r.rows[0].ok === true) {
+        this.leaderClient = c;
+        process.stderr.write('[tasks] engine leader acquired\n');
+        return true;
+      }
+      c.release();
+      return false;
+    } catch (cause) {
+      c.release(true as any);
+      throw cause;
+    }
+  }
+
+  /** 停机释放 leader（优雅退出立刻让位；非优雅由 PG 断连放锁）。 */
+  async releaseLeader(): Promise<void> {
+    if (this.leaderClient === undefined) return;
+    try { await this.leaderClient.query('SELECT pg_advisory_unlock($1)', [ENGINE_LEADER_LOCK]); } catch { /* closing */ }
+    try { this.leaderClient.release(); } catch { /* closing */ }
+    this.leaderClient = undefined;
+  }
+
+  /** 一轮：leader 竞选 → service 对账 + 队列拾取 + cron 触发 + 终态清扫 + 审批单补建。 */
   async tick(now = new Date()): Promise<void> {
     if (this.busy) return;
     this.busy = true;
-    const c = await this.d.pool.connect();
     try {
-      await c.query('BEGIN');
-      const got = await c.query('SELECT pg_try_advisory_xact_lock($1) AS ok', [ENGINE_LEADER_LOCK]);
-      if (got.rows[0].ok !== true) {
-        await c.query('COMMIT');
-        if (this.services.size > 0) await this.stopAllServices();   // 不是 leader：不能留常驻实例
+      if (!(await this.ensureLeader())) {
+        if (this.services.size > 0) await this.stopAllServices();   // 失去/不是 leader：不留常驻实例
         return;
       }
       await this.reconcileServices();
@@ -76,12 +103,9 @@ export class TaskEngine {
       await this.sweepTimeouts(now);
       await this.settleFinishedTurns();
       await this.createPendingAcks();
-      await c.query('COMMIT');   // 放 leader 锁（本轮工作全部完成后）
     } catch (cause) {
-      await c.query('ROLLBACK').catch(() => {});
       process.stderr.write(`[tasks] tick failed: ${String((cause as Error).message ?? cause)}\n`);
     } finally {
-      c.release();
       this.busy = false;
     }
   }

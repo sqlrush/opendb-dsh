@@ -80,6 +80,7 @@ export default class TasksService extends Service {
         return async () => {
           clearInterval(timer);
           await this.engine!.stopAllServices();   // 热重载/停机时不留孤儿 service 实例
+          await this.engine!.releaseLeader();     // 优雅让位（P3 多副本：接管零等待）
         };
       }, 'opendbTasks.engine');
     }

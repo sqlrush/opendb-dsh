@@ -44,20 +44,30 @@ export function apply(ctx: Context, config: AlertDdlConfig): void {
 
   const lastFired = new Map<string, number>();   // agentId → epoch ms（进程内冷却；重启后靠 queued 判重兜底）
 
-  const ALERT_LEADER_LOCK = 7_204_211_032;   // P3 多 Host 副本：单 leader 扫描（事务级 try-lock，防重复告警/水位竞争）
+  const ALERT_LEADER_LOCK = 7_204_211_032;   // P3 多 Host 副本：session 级 leader（进程内冷却 Map 依赖 leader 固定）
+  let leaderClient: pg.PoolClient | undefined;
+
+  async function ensureLeader(): Promise<boolean> {
+    if (leaderClient !== undefined) {
+      try { await leaderClient.query('SELECT 1'); return true; }
+      catch { try { leaderClient.release(true as any); } catch { /* gone */ } leaderClient = undefined; }
+    }
+    const c = await pool.connect();
+    try {
+      const r = await c.query('SELECT pg_try_advisory_lock($1) AS ok', [ALERT_LEADER_LOCK]);
+      if (r.rows[0].ok === true) { leaderClient = c; return true; }
+      c.release();
+      return false;
+    } catch (cause) {
+      c.release(true as any);
+      throw cause;
+    }
+  }
 
   async function tick(): Promise<void> {
     await ready;
-    const lc = await pool.connect();
-    try {
-      await lc.query('BEGIN');
-      const got = await lc.query('SELECT pg_try_advisory_xact_lock($1) AS ok', [ALERT_LEADER_LOCK]);
-      if (got.rows[0].ok !== true) { await lc.query('COMMIT'); return; }
-      await tickBody();
-      await lc.query('COMMIT');
-    } finally {
-      lc.release();
-    }
+    if (!(await ensureLeader())) return;
+    await tickBody();
   }
 
   async function tickBody(): Promise<void> {
