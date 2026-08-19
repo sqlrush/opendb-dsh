@@ -133,3 +133,7 @@
 - insert:
     - id: tool-task-admin
       name: '@opendb-dsh/tool-task-admin'
+# ── P2 W1：incident 任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）──────
+- insert:
+    - id: task-incident
+      name: '@opendb-dsh/task-incident'

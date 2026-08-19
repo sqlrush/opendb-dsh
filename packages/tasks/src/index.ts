@@ -150,10 +150,10 @@ export default class TasksService extends Service {
   }
 
   // ---------------- 运行与报告
-  async runNow(taskId: string): Promise<TaskRunRecord> {
+  async runNow(taskId: string, kind: 'manual' | 'alert' = 'manual'): Promise<TaskRunRecord> {
     await this.ready;
     if (this.engine === undefined) throw new Error('本实例未启用任务引擎（engine:false）');
-    return this.engine.runNow(taskId);
+    return this.engine.runNow(taskId, kind);
   }
   async listRuns(filter: { taskId?: string; limit?: number } = {}): Promise<TaskRunRecord[]> {
     await this.ready;

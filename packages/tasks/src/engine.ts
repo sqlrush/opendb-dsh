@@ -70,17 +70,17 @@ export class TaskEngine {
    * 而 runNow 本身就跑在 /api 的 RPC 处理上下文里 —— 同步自调用会与请求处理串行化互等
    * 而死锁（实测挂满 curl 超时）。异步拾取彻底绕开。
    */
-  async runNow(taskId: string): Promise<TaskRunRecord> {
+  async runNow(taskId: string, kind: 'manual' | 'alert' = 'manual'): Promise<TaskRunRecord> {
     const r = await this.d.pool.query('SELECT * FROM dsh_tasks WHERE id = $1', [taskId]);
     if (r.rows[0] === undefined) throw new Error(`任务 ${taskId} 不存在`);
-    return this.createRun(taskId, 'manual');
+    return this.createRun(taskId, kind);
   }
 
   /** 拾取 runNow 入队、尚未开会话的 manual run（MVP Host 单副本；P3 多引擎需 claim）。 */
   private async fireQueuedManuals(): Promise<void> {
     const r = await this.d.pool.query(
       `SELECT r.id AS run_id, t.* FROM dsh_task_runs r JOIN dsh_tasks t ON t.id = r.task_id
-       WHERE r.status = 'queued' AND r.session_id IS NULL AND r.trigger_kind = 'manual'
+       WHERE r.status = 'queued' AND r.session_id IS NULL AND r.trigger_kind IN ('manual', 'alert')
        ORDER BY r.fired_at`,
     );
     for (const raw of r.rows) {

@@ -115,3 +115,11 @@
 - insert:
     - id: ui-node-monitor
       name: '@opendb-dsh/ui-node-monitor'
+# ── 插件地图：P2 W1 事件驱动运维（task-incident 双半边 + alert-ddl 告警器）────────
+- insert:
+    - id: task-incident
+      name: '@opendb-dsh/task-incident'
+    - id: alert-ddl
+      name: '@opendb-dsh/alert-ddl'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
