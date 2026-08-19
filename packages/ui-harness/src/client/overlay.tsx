@@ -7,6 +7,8 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getState, setState, subscribe, getTaskPanel } from './state.ts';
 
+const hsSel = () => getState().selectedTaskId;
+
 export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown) => Promise<any>) {
   const S: Record<string, React.CSSProperties> = {
     head: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid var(--dsw-alias-border-l1)' },
@@ -65,7 +67,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   function TasksPage() {
     const [tasks, setTasks] = useState<any[]>([]);
     const [approvals, setApprovals] = useState<any[]>([]);
-    const [selected, setSelected] = useState<string>('');
+    const selected = hsSel();
     const [comment, setComment] = useState<Record<string, string>>({});
     const refresh = async () => {
       try {
@@ -103,7 +105,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
           <div style={S.listPane}>
             <div style={S.h2}>任务</div>
             {tasks.map((t) => (
-              <div key={t.id} style={{ ...S.taskRow, ...(t.id === selected ? S.taskRowActive : {}) }} onClick={() => setSelected(t.id)}>
+              <div key={t.id} style={{ ...S.taskRow, ...(t.id === selected ? S.taskRowActive : {}) }} onClick={() => setState({ selectedTaskId: t.id })}>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <b>{t.name}</b>
                   {!t.enabled && <span style={S.dim}>停用</span>}
@@ -135,7 +137,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
         <div style={S.h2}>数据库节点</div>
         <div style={S.cards}>
           {nodes.map((n) => (
-            <div key={n.id} style={S.card}>
+            <div key={n.id} style={{ ...S.card, ...(getState().selectedNodeId === n.id ? { borderColor: 'var(--dsw-alias-label-secondary)' } : {}) }} onClick={() => setState({ selectedNodeId: n.id })}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: n.status === 'online' ? '#3fa552' : n.status === 'offline' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>●</span>
                 <b>{n.name}</b>
