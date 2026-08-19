@@ -16,7 +16,7 @@ interface AlertDdlConfig { connectionString: string; pollMs: number; cooldownMs:
 /**
  * DDL 变更告警（P2 W1，事件驱动运维）：按时间水位扫描 opendb_dict_changes（collector 每 10 分钟
  * 快照 diff 产出），发现新变更 → 按节点归属的 agent 分组 → 触发该 agent 的 incident 任务
- * （trigger_kind='alert'，经任务引擎正常拾取开会话诊断）。
+ * （trigger_kind='event'，经任务引擎正常拾取开会话诊断）。
  * - agent 没有 incident 任务时自动创建一个（enabled、无 cron——纯事件驱动；策略调整在会话里说）。
  * - 冷却窗口内不重复触发；已有 queued/running 的 incident run 也不再叠加。
  * - 水位持久化在 opendb_alert_state（Host 单副本，无并发争用；重启从上次水位继续，不漏不重）。
