@@ -125,16 +125,102 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
+  /** 24h 趋势折线（自绘 SVG，无图表库；纲领：大盘只展示不交互）。 */
+  function Sparkline({ points, color, height = 56, fmt }: { points: { t: number; v: number }[]; color: string; height?: number; fmt?: (v: number) => string }) {
+    const W = 260;
+    if (points.length === 0) return <div style={{ ...S.dim, fontSize: 12, height, display: 'flex', alignItems: 'center' }}>暂无数据</div>;
+    const vs = points.map((p) => p.v);
+    const min = Math.min(...vs);
+    const max = Math.max(...vs);
+    const span = max - min || 1;
+    const xy = points.map((p, i) => `${(i / Math.max(points.length - 1, 1)) * (W - 8) + 4},${height - 8 - ((p.v - min) / span) * (height - 16) + 4}`);
+    const last = points[points.length - 1];
+    return (
+      <div>
+        <svg width={W} height={height} style={{ display: 'block' }}>
+          <line x1="4" y1={height - 4} x2={W - 4} y2={height - 4} stroke="var(--dsw-alias-border-l1)" strokeWidth="1" />
+          <polyline points={xy.join(' ')} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" />
+          <circle cx={xy[xy.length - 1].split(',')[0]} cy={xy[xy.length - 1].split(',')[1]} r="2.5" fill={color} />
+        </svg>
+        <div style={{ ...S.dim, fontSize: 12 }}>当前 {fmt ? fmt(last.v) : Math.round(last.v * 100) / 100} · 区间 {fmt ? `${fmt(min)}~${fmt(max)}` : `${Math.round(min * 100) / 100}~${Math.round(max * 100) / 100}`}</div>
+      </div>
+    );
+  }
+
+  /** 节点监控详情：最新指标卡 + 24h 趋势 + 字典变更流（数据 nodes/detail）。 */
+  function NodeDetail({ nodeId }: { nodeId: string }) {
+    const [d, setD] = useState<any>(null);
+    const [err, setErr] = useState('');
+    const refresh = async () => {
+      try { setD(await call('nodes/detail', { nodeId })); setErr(''); } catch (e) { setErr(String((e as Error).message ?? e)); }
+    };
+    useEffect(() => { setD(null); void refresh(); const t = setInterval(() => void refresh(), 60_000); return () => clearInterval(t); }, [nodeId]);
+    if (err !== '') return <div style={{ color: 'var(--dsw-alias-state-error-primary)', fontSize: 13 }}>{err}</div>;
+    if (d === null) return <div style={S.dim}>加载中…</div>;
+    const { node, latest, series, dictChanges } = d;
+    const lv = (m: string) => latest.find((x: any) => x.metric === m)?.value;
+    const sizeEntries = latest.filter((x: any) => x.metric.startsWith('db.size_bytes.'));
+    const totalSize = sizeEntries.reduce((s: number, x: any) => s + x.value, 0);
+    const fmtBytes = (b: number) => b > 1 << 30 ? `${(b / (1 << 30)).toFixed(1)}GB` : b > 1 << 20 ? `${(b / (1 << 20)).toFixed(1)}MB` : `${Math.round(b / 1024)}KB`;
+    const statCard = (label: string, value: React.ReactNode) => (
+      <div style={{ ...S.card, minWidth: 130, padding: '10px 14px' }}>
+        <div style={{ ...S.dim, fontSize: 12 }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 600, marginTop: 2 }}>{value}</div>
+      </div>
+    );
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <span style={{ color: node.status === 'online' ? '#3fa552' : 'var(--dsw-alias-state-error-primary)', fontSize: 12 }}>●</span>
+          <b style={{ fontSize: 16 }}>{node.name}</b>
+          <span style={S.dim}>{node.engine} · {node.host}:{node.port}/{node.dbname} · {node.status}</span>
+        </div>
+        <div style={{ ...S.cards, marginBottom: 18 }}>
+          {statCard('活跃会话', lv('db.sessions.active') ?? '-')}
+          {statCard('空闲会话', lv('db.sessions.idle') ?? '-')}
+          {statCard('等待锁', lv('db.waiting_locks') ?? '-')}
+          {statCard('连接使用率', lv('db.connections_used_ratio') !== undefined ? `${(lv('db.connections_used_ratio') * 100).toFixed(1)}%` : '-')}
+          {statCard('库总大小', totalSize > 0 ? fmtBytes(totalSize) : '-')}
+        </div>
+        <div style={S.h2}>24 小时趋势（15 分钟均值）</div>
+        <div style={S.cards}>
+          <div style={S.card}><div style={{ ...S.dim, fontSize: 12, marginBottom: 6 }}>活跃会话</div><Sparkline points={series['db.sessions.active'] ?? []} color="#4D6BFE" /></div>
+          <div style={S.card}><div style={{ ...S.dim, fontSize: 12, marginBottom: 6 }}>等待锁</div><Sparkline points={series['db.waiting_locks'] ?? []} color="#c9862d" /></div>
+          <div style={S.card}><div style={{ ...S.dim, fontSize: 12, marginBottom: 6 }}>连接使用率</div><Sparkline points={series['db.connections_used_ratio'] ?? []} color="#3fa552" fmt={(v) => `${(v * 100).toFixed(1)}%`} /></div>
+        </div>
+        <div style={S.h2}>数据字典变更（近 7 天）</div>
+        <table style={S.table}>
+          <thead><tr><th style={S.th}>时间</th><th style={S.th}>变更</th><th style={S.th}>类型</th><th style={S.th}>对象</th></tr></thead>
+          <tbody>
+            {dictChanges.map((c: any, i: number) => (
+              <tr key={i}>
+                <td style={S.td}>{String(c.time).replace('T', ' ').slice(0, 16)}</td>
+                <td style={S.td}><span style={{ color: c.change === 'removed' ? 'var(--dsw-alias-state-error-primary)' : c.change === 'added' ? '#3fa552' : '#c9862d' }}>{c.change}</span></td>
+                <td style={S.td}><span style={S.dim}>{c.kind}</span></td>
+                <td style={S.td}>{c.object}</td>
+              </tr>
+            ))}
+            {dictChanges.length === 0 && <tr><td style={S.td} colSpan={4}><span style={S.dim}>近 7 天没有结构变更</span></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   function DatabasesPage() {
+    const hs = useSyncExternalStore(subscribe, getState);
     const [nodes, setNodes] = useState<any[]>([]);
     const refresh = async () => { try { setNodes((await call('nodes/list', {})).nodes); } catch { /* retry */ } };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 20_000); return () => clearInterval(t); }, []);
+    if (hs.selectedNodeId !== '' && nodes.some((n) => n.id === hs.selectedNodeId)) {
+      return <NodeDetail nodeId={hs.selectedNodeId} />;
+    }
     return (
       <div>
-        <div style={S.h2}>数据库节点</div>
+        <div style={S.h2}>数据库节点（点击查看监控详情）</div>
         <div style={S.cards}>
           {nodes.map((n) => (
-            <div key={n.id} style={{ ...S.card, ...(getState().selectedNodeId === n.id ? { borderColor: 'var(--dsw-alias-label-secondary)' } : {}) }} onClick={() => setState({ selectedNodeId: n.id })}>
+            <div key={n.id} style={{ ...S.card, cursor: 'pointer' }} onClick={() => setState({ selectedNodeId: n.id })}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: n.status === 'online' ? '#3fa552' : n.status === 'offline' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>●</span>
                 <b>{n.name}</b>
@@ -142,10 +228,9 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
               </div>
               <div style={{ marginTop: 6, fontSize: 12 }}>{n.host}:{n.port}/{n.dbname}</div>
               <div style={{ marginTop: 4, fontSize: 12 }}>状态：{n.status}</div>
-              <div style={{ marginTop: 8 }}><span style={S.dim}>节点监控详情（下一批上线）</span></div>
             </div>
           ))}
-          {nodes.length === 0 && <span style={S.dim}>还没有节点——去 设置→OpenDB 添加</span>}
+          {nodes.length === 0 && <span style={S.dim}>还没有节点——在会话里让智能体登记，或去 设置→OpenDB 添加</span>}
         </div>
       </div>
     );

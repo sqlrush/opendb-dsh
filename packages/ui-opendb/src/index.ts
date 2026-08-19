@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 
 export const name = 'ui-opendb';
-export const inject = ['connection', 'webServer', 'opendbRegistry', 'opendbTasks', 'opendbApprovals'];
+export const inject = ['connection', 'webServer', 'opendbRegistry', 'opendbTasks', 'opendbApprovals', 'opendbMetrics', 'opendbDictionary'];
 
 type RpcResult = { ok: true; value: unknown } | { ok: false; error: { code: string; message: string; details: Record<string, unknown> } };
 
@@ -113,6 +113,39 @@ export function apply(ctx: Context): void {
             lastAt: Number(row.last_time),
           }));
           return { ok: true, value: { sessions } };
+        }
+        // ── W5.5：节点监控详情（最新指标 + 24h 降采样趋势 + 字典变更）────
+        case 'nodes/detail': {
+          if (typeof payload?.nodeId !== 'string') return bad('nodeId required');
+          const nodes = await registry.listNodes();
+          const node = nodes.find((n: any) => n.id === payload.nodeId);
+          if (node === undefined) return bad(`node ${payload.nodeId} not found`);
+          const latest = await anyCtx.opendbMetrics.latest(node.id);
+          // 24h 趋势：15 分钟桶均值（通用 SQL，不依赖 time_bucket）
+          const SERIES_METRICS = ['db.sessions.active', 'db.sessions.idle', 'db.waiting_locks', 'db.connections_used_ratio'];
+          const sr = await tasks.pool.query(
+            `SELECT metric,
+                    floor(extract(epoch FROM time) / 900) * 900 AS bucket,
+                    avg(value) AS v
+             FROM opendb_metrics
+             WHERE node_id = $1 AND metric = ANY($2) AND time > now() - interval '24 hours'
+             GROUP BY metric, bucket ORDER BY bucket`,
+            [node.id, SERIES_METRICS],
+          );
+          const series: Record<string, { t: number; v: number }[]> = {};
+          for (const row of sr.rows) {
+            (series[row.metric] ??= []).push({ t: Number(row.bucket) * 1000, v: Number(row.v) });
+          }
+          const changes = await anyCtx.opendbDictionary.changes({ nodeId: node.id, sinceHours: 24 * 7, limit: 30 });
+          return {
+            ok: true,
+            value: {
+              node,
+              latest: latest.map((m: any) => ({ metric: m.metric, value: m.value, time: m.time })),
+              series,
+              dictChanges: changes.map((c: any) => ({ time: c.time, change: c.change, kind: c.kind, object: `${c.sch}.${c.name}` })),
+            },
+          };
         }
         // ── W4：任务与审批 ─────────────────────────────────────────────
         case 'tasks/types':
