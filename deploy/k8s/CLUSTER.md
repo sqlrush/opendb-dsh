@@ -178,3 +178,11 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - markStale 修复（同事务把死 pod 在途 queued 行取消 admit）单测 4/4 + 本 e2e 实战双验证。
 - 注意 v4-flash 速度：三步任务 ~10s 就跑完，e2e 里固定延时杀会错过 mid-turn，必须事件驱动定杀点。
 - collector 杀无需专测（重启即全量快照是设计行为）；host 单副本重启=UI 重连（P3 才做多副本）。
+
+## 2026-08-19 W6 KEDA 扩缩上线（实测通过）
+- keda operator 装在 `keda` ns；chart `templates/keda.yaml`：Secret(连接串**必须全限定** `svc.<ns>.svc`，
+  operator 跨 ns 解析) + TriggerAuthentication + 每个带 `autoscale` 的 runtime class 一个 ScaledObject
+  （postgresql scaler 直查该 class 待认领队列深度，target=每 pod 2 条；autoscale 时 helm 不回写 replicas）。
+- **关键发现：runtime-worker 原来无并发上限**——每 tick 认领一条且并行跑，2 pod 十秒吸干 12 条队列，
+  深度归零 → KEDA 信号失真。已加 `maxConcurrent`（默认 2，env OPENDB_MAX_CONCURRENT）。
+- 实测：12 条排队 → 副本 2→4→5（10s 级响应），队列 20s 清空；缩容走 HPA 稳定窗口（~5min）回 min=2。
