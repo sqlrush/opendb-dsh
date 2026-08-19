@@ -234,3 +234,18 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **skill-pg**：四技能（og-slow-query-triage / og-lock-diagnosis / og-capacity-review /
   og-ddl-change-audit），e2e：模型加载 og-lock-diagnosis 严格按路径三步执行+补充判读要点核查，
   且能正确区分任务会话/普通会话（不乱交 task_report）。
+
+## 2026-08-19 P2 W3 上线：知识与检索
+- **knowledge-pg**（opendbKnowledge seam）：008 迁移（docs+chunks，vector(1024) hnsw，source 唯一幂等）；
+  chunkText 段落聚合切块（~800 字符+100 重叠）；ingest 批量 embed 尽力而为（失败落 NULL 回退 ILIKE）；
+  agent_id 空=全局知识。**知识 vs 记忆分界：知识=外部资料，记忆=平台自身经历。**
+- **tool-knowledge**：knowledge_search / knowledge_ingest（会话灌入是主路径——纲领 §15）。
+  e2e：会话粘贴备份规程→模型 ingest（标题/来源/全局全对）→新会话检索精确引用（gs_basebackup 命令、
+  周日 02:00、PITR 目标点全命中）。
+- **ui-knowledge / ui-memory**：设置页新增「知识库」「记忆」两段（settings.section order 61/62），
+  双半边自有通道 /opendb-knowledge、/opendb-memory；memory-pg 补 list/remove（additive）。
+- **session-query-pg**：/opendb-sessions search——ILIKE 扫 user/assistant 消息文本按会话聚合
+  （命中数/标题/首条摘录）；侧栏搜索框 ≥2 字符 400ms 防抖出「内容命中」区（标题过滤之外的正文检索）。
+  MVP ILIKE 够用（万级事件毫秒级），P3 数据量大再上 pg_trgm。
+- puppeteer 经验：dsh 设置入口/段切换要**真实鼠标坐标点击**（getBoundingClientRect→mouse.click），
+  evaluate 里 el.click() 对官方 React 组件常不生效；文本断言防假阳性（侧栏摘录会包含目标关键词）。
