@@ -83,9 +83,11 @@ export function makeMonitorTaskType(pool: pg.Pool | undefined): TaskType<Monitor
         await pool.query(`DELETE FROM opendb_monitor_snapshots WHERE task_id = $1 AND time < now() - interval '48 hours'`, [task.id]);
       };
       await sweep().catch((cause) => process.stderr.write(`[monitor-dashboard] first sweep failed: ${String((cause as Error).message ?? cause)}\n`));
+      // 双保险兜底（引擎已规范化 config，这里再防 NaN——NaN 会让 setInterval 退化成毫秒级循环）
+      const intervalMs = Math.max(15, Number(c.intervalSeconds) || 60) * 1000;
       const timer = setInterval(() => {
         void sweep().catch((cause) => process.stderr.write(`[monitor-dashboard] sweep failed: ${String((cause as Error).message ?? cause)}\n`));
-      }, Math.max(15, c.intervalSeconds) * 1000);
+      }, intervalMs);
       return () => clearInterval(timer);
     },
   };

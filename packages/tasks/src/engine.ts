@@ -96,7 +96,10 @@ export class TaskEngine {
       const type = this.d.types.get(task.type);
       if (type?.startService === undefined) continue;
       try {
-        const stop = await type.startService(task, this.d.buildCtx);
+        // config 过 schema 规范化再交给实例（SQL 直插/历史行缺省字段会拿到默认值——
+        // 实测教训：config={} 时 intervalSeconds=undefined → setInterval(fn, NaN)=毫秒级疯狂循环）
+        const normalized: TaskRecord = { ...task, config: type.configSchema(task.config ?? {}) };
+        const stop = await type.startService(normalized, this.d.buildCtx);
         this.services.set(id, { stop, fingerprint: serviceFingerprint(task) });
         process.stderr.write(`[tasks] service started: ${task.name} (${id})\n`);
       } catch (cause) {
