@@ -52,6 +52,8 @@ export default class MetricsService extends Service {
     try {
       await this.pool.query('CREATE EXTENSION IF NOT EXISTS timescaledb');
       await this.pool.query("SELECT create_hypertable('opendb_metrics', 'time', if_not_exists => true, migrate_data => true)");
+      // P3 规模治理：2000 节点 ≈ 6000 万行/天——7 天保留（趋势图只用 24h；if_not_exists 幂等）
+      await this.pool.query("SELECT add_retention_policy('opendb_metrics', INTERVAL '7 days', if_not_exists => true)").catch(() => { /* 无 timescale 时跳过 */ });
       this.hypertable = true;
     } catch (cause) {
       process.stderr.write(`[opendb-metrics] timescaledb unavailable, staying on plain table: ${String((cause as Error).message)}\n`);
