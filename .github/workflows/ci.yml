@@ -1,0 +1,41 @@
+# W6 CI 门：构建 + dump-config（PENDING=0）+ patch lint + 单测（timescale PG service）
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      pg:
+        image: timescale/timescaledb-ha:pg16
+        env: { POSTGRES_USER: dsh, POSTGRES_PASSWORD: dsh, POSTGRES_DB: dsh_test }
+        ports: ['5434:5432']
+        options: >-
+          --health-cmd "pg_isready -U dsh" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build all packages
+        run: pnpm build
+      - name: Patch wiring lint
+        run: bash scripts/ci/check-patch-wiring.sh
+      - name: dump-config conformance (PENDING gate, all profiles)
+        run: |
+          set -euo pipefail
+          for prof in host runtime collector; do
+            out=$(OPENDB_PG_URL=x node_modules/.bin/dsh --profile "$prof" --dump-config)
+            pending=$(printf '%s' "$out" | grep -c PENDING || true)
+            echo "profile=$prof pending=$pending"
+            [ "$pending" = "0" ] || { printf '%s\n' "$out" | grep PENDING; exit 1; }
+          done
+      - name: Unit tests (PG-backed)
+        env: { PG_URL: 'postgres://dsh:dsh@localhost:5434/dsh_test' }
+        run: pnpm test
