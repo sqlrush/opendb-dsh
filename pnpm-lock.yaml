@@ -52,6 +52,31 @@ importers:
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-agent@0.1.0-rc.6(b0514d7a320728b6d8f5a31eb3960e10))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-llm@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))))
 
+  packages/alert-ddl:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
+      '@opendb-dsh/tasks':
+        specifier: workspace:*
+        version: link:../tasks
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   packages/approvals:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -122,6 +147,9 @@ importers:
       '@opendb-dsh/agent-loop-dispatch':
         specifier: workspace:*
         version: link:../agent-loop-dispatch
+      '@opendb-dsh/alert-ddl':
+        specifier: workspace:*
+        version: link:../alert-ddl
       '@opendb-dsh/approvals':
         specifier: workspace:*
         version: link:../approvals
@@ -137,6 +165,12 @@ importers:
       '@opendb-dsh/embeddings-openai-compat':
         specifier: workspace:*
         version: link:../embeddings-openai-compat
+      '@opendb-dsh/knowledge-pg':
+        specifier: workspace:*
+        version: link:../knowledge-pg
+      '@opendb-dsh/memory-graph':
+        specifier: workspace:*
+        version: link:../memory-graph
       '@opendb-dsh/memory-ingest':
         specifier: workspace:*
         version: link:../memory-ingest
@@ -158,12 +192,21 @@ importers:
       '@opendb-dsh/session-persistence-pg':
         specifier: workspace:*
         version: link:../session-persistence-pg
+      '@opendb-dsh/session-query-pg':
+        specifier: workspace:*
+        version: link:../session-query-pg
       '@opendb-dsh/storage-pg':
         specifier: workspace:*
         version: link:../storage-pg
+      '@opendb-dsh/task-incident':
+        specifier: workspace:*
+        version: link:../task-incident
       '@opendb-dsh/task-inspection':
         specifier: workspace:*
         version: link:../task-inspection
+      '@opendb-dsh/task-monitor-dashboard':
+        specifier: workspace:*
+        version: link:../task-monitor-dashboard
       '@opendb-dsh/task-sql-audit':
         specifier: workspace:*
         version: link:../task-sql-audit
@@ -176,6 +219,15 @@ importers:
       '@opendb-dsh/ui-harness':
         specifier: workspace:*
         version: link:../ui-harness
+      '@opendb-dsh/ui-knowledge':
+        specifier: workspace:*
+        version: link:../ui-knowledge
+      '@opendb-dsh/ui-memory':
+        specifier: workspace:*
+        version: link:../ui-memory
+      '@opendb-dsh/ui-node-monitor':
+        specifier: workspace:*
+        version: link:../ui-node-monitor
       '@opendb-dsh/ui-opendb':
         specifier: workspace:*
         version: link:../ui-opendb
@@ -203,9 +255,15 @@ importers:
       '@opendb-dsh/instructions-pg':
         specifier: workspace:*
         version: link:../instructions-pg
+      '@opendb-dsh/knowledge-pg':
+        specifier: workspace:*
+        version: link:../knowledge-pg
       '@opendb-dsh/memory-context':
         specifier: workspace:*
         version: link:../memory-context
+      '@opendb-dsh/memory-graph':
+        specifier: workspace:*
+        version: link:../memory-graph
       '@opendb-dsh/memory-pg':
         specifier: workspace:*
         version: link:../memory-pg
@@ -221,12 +279,21 @@ importers:
       '@opendb-dsh/session-persistence-pg':
         specifier: workspace:*
         version: link:../session-persistence-pg
+      '@opendb-dsh/skill-pg':
+        specifier: workspace:*
+        version: link:../skill-pg
       '@opendb-dsh/spill-s3':
         specifier: workspace:*
         version: link:../spill-s3
+      '@opendb-dsh/task-incident':
+        specifier: workspace:*
+        version: link:../task-incident
       '@opendb-dsh/task-inspection':
         specifier: workspace:*
         version: link:../task-inspection
+      '@opendb-dsh/task-monitor-dashboard':
+        specifier: workspace:*
+        version: link:../task-monitor-dashboard
       '@opendb-dsh/task-sql-audit':
         specifier: workspace:*
         version: link:../task-sql-audit
@@ -239,6 +306,9 @@ importers:
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../tool-db
+      '@opendb-dsh/tool-knowledge':
+        specifier: workspace:*
+        version: link:../tool-knowledge
       '@opendb-dsh/tool-memory':
         specifier: workspace:*
         version: link:../tool-memory
@@ -373,6 +443,25 @@ importers:
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))
 
+  packages/knowledge-pg:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/embeddings-openai-compat':
+        specifier: workspace:*
+        version: link:../embeddings-openai-compat
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
+
   packages/memory-context:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -394,6 +483,31 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-attachment@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-timeout@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))
+
+  packages/memory-graph:
+    dependencies:
+      '@deepseek-ai/dsh-tools':
+        specifier: ^0.1.0-rc.6
+        version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
 
   packages/memory-ingest:
     dependencies:
@@ -552,6 +666,47 @@ importers:
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-brand@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))(@deepseek-ai/dsh-session@0.1.0-rc.6(6fd26f59436a18b115f326d6060415e6))(@deepseek-ai/dsh-timeout@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)))
 
+  packages/session-query-pg:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
+  packages/skill-pg:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   packages/spill-s3:
     dependencies:
       '@aws-sdk/client-s3':
@@ -602,11 +757,58 @@ importers:
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
 
+  packages/task-incident:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/tasks':
+        specifier: workspace:*
+        version: link:../tasks
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   packages/task-inspection:
     dependencies:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/tasks':
+        specifier: workspace:*
+        version: link:../tasks
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
+  packages/task-monitor-dashboard:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
@@ -673,10 +875,19 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
         version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
+      pg:
+        specifier: ^8.13.1
+        version: 8.23.0
 
   packages/tool-db:
     dependencies:
@@ -689,6 +900,25 @@ importers:
       '@opendb-dsh/registry':
         specifier: workspace:*
         version: link:../registry
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-tools':
+        specifier: ^0.1.0-rc.6
+        version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
+
+  packages/tool-knowledge:
+    dependencies:
+      '@opendb-dsh/knowledge-pg':
+        specifier: workspace:*
+        version: link:../knowledge-pg
+      '@opendb-dsh/registry':
+        specifier: workspace:*
+        version: link:../registry
+      '@opendb-dsh/tool-db':
+        specifier: workspace:*
+        version: link:../tool-db
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -804,6 +1034,71 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1
 
+  packages/ui-knowledge:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
+  packages/ui-memory:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
+  packages/ui-node-monitor:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   packages/ui-opendb:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -861,6 +1156,9 @@ importers:
       '@opendb-dsh/agent-loop-dispatch':
         specifier: workspace:*
         version: link:../../packages/agent-loop-dispatch
+      '@opendb-dsh/alert-ddl':
+        specifier: workspace:*
+        version: link:../../packages/alert-ddl
       '@opendb-dsh/approvals':
         specifier: workspace:*
         version: link:../../packages/approvals
@@ -879,6 +1177,12 @@ importers:
       '@opendb-dsh/embeddings-openai-compat':
         specifier: workspace:*
         version: link:../../packages/embeddings-openai-compat
+      '@opendb-dsh/knowledge-pg':
+        specifier: workspace:*
+        version: link:../../packages/knowledge-pg
+      '@opendb-dsh/memory-graph':
+        specifier: workspace:*
+        version: link:../../packages/memory-graph
       '@opendb-dsh/memory-ingest':
         specifier: workspace:*
         version: link:../../packages/memory-ingest
@@ -900,12 +1204,21 @@ importers:
       '@opendb-dsh/session-persistence-pg':
         specifier: workspace:*
         version: link:../../packages/session-persistence-pg
+      '@opendb-dsh/session-query-pg':
+        specifier: workspace:*
+        version: link:../../packages/session-query-pg
       '@opendb-dsh/storage-pg':
         specifier: workspace:*
         version: link:../../packages/storage-pg
+      '@opendb-dsh/task-incident':
+        specifier: workspace:*
+        version: link:../../packages/task-incident
       '@opendb-dsh/task-inspection':
         specifier: workspace:*
         version: link:../../packages/task-inspection
+      '@opendb-dsh/task-monitor-dashboard':
+        specifier: workspace:*
+        version: link:../../packages/task-monitor-dashboard
       '@opendb-dsh/task-sql-audit':
         specifier: workspace:*
         version: link:../../packages/task-sql-audit
@@ -918,6 +1231,15 @@ importers:
       '@opendb-dsh/ui-harness':
         specifier: workspace:*
         version: link:../../packages/ui-harness
+      '@opendb-dsh/ui-knowledge':
+        specifier: workspace:*
+        version: link:../../packages/ui-knowledge
+      '@opendb-dsh/ui-memory':
+        specifier: workspace:*
+        version: link:../../packages/ui-memory
+      '@opendb-dsh/ui-node-monitor':
+        specifier: workspace:*
+        version: link:../../packages/ui-node-monitor
       '@opendb-dsh/ui-opendb':
         specifier: workspace:*
         version: link:../../packages/ui-opendb
@@ -948,9 +1270,15 @@ importers:
       '@opendb-dsh/instructions-pg':
         specifier: workspace:*
         version: link:../../packages/instructions-pg
+      '@opendb-dsh/knowledge-pg':
+        specifier: workspace:*
+        version: link:../../packages/knowledge-pg
       '@opendb-dsh/memory-context':
         specifier: workspace:*
         version: link:../../packages/memory-context
+      '@opendb-dsh/memory-graph':
+        specifier: workspace:*
+        version: link:../../packages/memory-graph
       '@opendb-dsh/memory-pg':
         specifier: workspace:*
         version: link:../../packages/memory-pg
@@ -966,12 +1294,21 @@ importers:
       '@opendb-dsh/session-persistence-pg':
         specifier: workspace:*
         version: link:../../packages/session-persistence-pg
+      '@opendb-dsh/skill-pg':
+        specifier: workspace:*
+        version: link:../../packages/skill-pg
       '@opendb-dsh/spill-s3':
         specifier: workspace:*
         version: link:../../packages/spill-s3
+      '@opendb-dsh/task-incident':
+        specifier: workspace:*
+        version: link:../../packages/task-incident
       '@opendb-dsh/task-inspection':
         specifier: workspace:*
         version: link:../../packages/task-inspection
+      '@opendb-dsh/task-monitor-dashboard':
+        specifier: workspace:*
+        version: link:../../packages/task-monitor-dashboard
       '@opendb-dsh/task-sql-audit':
         specifier: workspace:*
         version: link:../../packages/task-sql-audit
@@ -984,6 +1321,9 @@ importers:
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../../packages/tool-db
+      '@opendb-dsh/tool-knowledge':
+        specifier: workspace:*
+        version: link:../../packages/tool-knowledge
       '@opendb-dsh/tool-memory':
         specifier: workspace:*
         version: link:../../packages/tool-memory
