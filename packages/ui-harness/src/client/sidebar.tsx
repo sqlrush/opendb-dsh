@@ -1,21 +1,32 @@
 /**
- * opendb-harness 侧栏（替换官方 sidebar.workspaces hole，W5.5 批次1）：
- * 品牌行 + agent 切换器（default agent 低调显示，可新建）+ 四资源导航（任务/数据库/资源角标）
- * + 当前 agent 的会话列表（sessions/list RPC；点击 ctx.sessions.open）。
+ * opendb-harness 侧栏（sidebar.workspaces hole）：agent 切换下拉（含低频的"新建 agent"，
+ * 藏在下拉底部——user 定案）+ 四资源导航 + 当前 agent 的会话列表。
+ * 侧栏右缘经 ResizeObserver 写入 store，主区页面贴齐渲染。
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { getState, setState, subscribe, type HarnessView } from './state.ts';
 
 interface AgentRow { id: string; name: string; nodeCount: number; status: string }
 interface SessionRow { sessionId: string; title: string; lastAt: number }
 
+/** 数据库圆柱图标（currentColor 细线，替换 emoji —— user 反馈）。 */
+function DbIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" style={{ flexShrink: 0 }}>
+      <ellipse cx="8" cy="3.5" rx="5.5" ry="2.2" />
+      <path d="M2.5 3.5v9c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2v-9" />
+      <path d="M2.5 8c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2" />
+    </svg>
+  );
+}
+
 export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown) => Promise<any>) {
   const S: Record<string, React.CSSProperties> = {
-    wrap: { display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 10px', color: 'var(--dsw-alias-label-primary)', fontSize: 13, height: '100%', overflow: 'hidden' },
-    brand: { fontWeight: 700, fontSize: 14, letterSpacing: 0.3 },
-    brandSub: { color: 'var(--dsw-alias-label-tertiary)', fontSize: 11 },
-    agentRow: { display: 'flex', gap: 6, alignItems: 'center' },
-    select: { flex: 1, background: 'var(--dsw-alias-bg-layer-1)', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, color: 'var(--dsw-alias-label-primary)', padding: '4px 6px', fontSize: 13 },
+    wrap: { display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 10px', color: 'var(--dsw-alias-label-primary)', fontSize: 13, height: '100%', overflow: 'hidden', position: 'relative' as const },
+    agentBtn: { display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 8, cursor: 'pointer', border: '1px solid var(--dsw-alias-border-l1)', userSelect: 'none' as const },
+    menu: { position: 'absolute' as const, top: 40, left: 10, right: 10, zIndex: 20, background: 'var(--dsw-alias-bg-layer-1)', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.25)', overflow: 'hidden' },
+    menuItem: { padding: '8px 10px', cursor: 'pointer' },
+    menuDivider: { borderTop: '1px solid var(--dsw-alias-border-l1)' },
     navItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 8, cursor: 'pointer', userSelect: 'none' as const },
     navActive: { background: 'var(--dsw-alias-interactive-bg-hover)' },
     badge: { marginLeft: 'auto', fontSize: 11, borderRadius: 8, padding: '0 6px', background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-secondary)' },
@@ -28,19 +39,29 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     input: { background: 'var(--dsw-alias-bg-layer-1)', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, color: 'var(--dsw-alias-label-primary)', padding: '4px 8px', fontSize: 13, width: '100%', boxSizing: 'border-box' as const },
   };
 
-  function statusDot(a: AgentRow): string {
-    if (a.nodeCount === 0) return '○';
-    return '●';
-  }
-
   return function HarnessSidebar() {
     const hs = useSyncExternalStore(subscribe, getState);
+    const wrapRef = useRef<HTMLDivElement | null>(null);
     const [agents, setAgents] = useState<AgentRow[]>([]);
     const [sessions, setSessions] = useState<SessionRow[]>([]);
     const [pendingAcks, setPendingAcks] = useState(0);
     const [offlineNodes, setOfflineNodes] = useState(0);
+    const [menuOpen, setMenuOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
+
+    // 侧栏右缘实时上报（主区页面贴齐渲染，不盖侧栏）
+    useEffect(() => {
+      const measure = () => {
+        const el = wrapRef.current;
+        if (el !== null) setState({ sidebarRight: Math.round(el.getBoundingClientRect().right) });
+      };
+      measure();
+      const ro = new ResizeObserver(measure);
+      if (wrapRef.current !== null) ro.observe(wrapRef.current);
+      window.addEventListener('resize', measure);
+      return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+    }, []);
 
     const refresh = async () => {
       try {
@@ -53,11 +74,9 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
           const s = await call('sessions/list', { agentName: current.name, limit: 30 });
           setSessions(s.sessions);
         }
-        const ap = await call('approvals/list', { status: 'pending' });
-        setPendingAcks(ap.approvals.length);
-        const n = await call('nodes/list', {});
-        setOfflineNodes(n.nodes.filter((x: any) => x.status === 'offline').length);
-      } catch { /* sidebar stays with last data; next poll retries */ }
+        setPendingAcks((await call('approvals/list', { status: 'pending' })).approvals.length);
+        setOfflineNodes((await call('nodes/list', {})).nodes.filter((x: any) => x.status === 'offline').length);
+      } catch { /* keep last data; next poll retries */ }
     };
     useEffect(() => {
       void refresh();
@@ -65,12 +84,9 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
       return () => clearInterval(t);
     }, [hs.agentId]);
 
-    const nav = (view: HarnessView, icon: string, label: string, badge?: { n: number; warn: boolean }) => (
-      <div
-        style={{ ...S.navItem, ...(hs.view === view ? S.navActive : {}) }}
-        onClick={() => setState({ view })}
-      >
-        <span>{icon}</span><span>{label}</span>
+    const nav = (view: HarnessView, icon: React.ReactNode, label: string, badge?: { n: number; warn: boolean }) => (
+      <div style={{ ...S.navItem, ...(hs.view === view ? S.navActive : {}) }} onClick={() => setState({ view })}>
+        <span style={{ display: 'inline-flex', width: 16, justifyContent: 'center' }}>{icon}</span><span>{label}</span>
         {badge !== undefined && badge.n > 0 && <span style={{ ...S.badge, ...(badge.warn ? S.badgeWarn : {}) }}>{badge.n}</span>}
       </div>
     );
@@ -79,12 +95,11 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
       const name = newName.trim();
       if (name === '') return;
       try {
-        // registry 建 agent + 官方 workspaces.create 建对应工作区（路径约定 /agents/<name>）
         await call('agents/create', { name });
-        await ctx.workspaces.create({ path: `/var/lib/dsh/agents/${name}` }).catch(() => { /* 目录流兜底：首次 startSession 时也会建 */ });
-        setCreating(false); setNewName('');
+        await ctx.workspaces.create({ path: `/var/lib/dsh/agents/${name}` }).catch(() => { /* 首次开会话时兜底创建 */ });
+        setCreating(false); setNewName(''); setMenuOpen(false);
         await refresh();
-      } catch { /* 下轮刷新可见错误状态 */ }
+      } catch { /* 保持表单让用户重试 */ }
     };
 
     const openSession = (id: string) => { setState({ view: 'chat' }); ctx.sessions.open(id); };
@@ -96,37 +111,42 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
       } catch { /* ignore */ }
     };
 
-    return (
-      <div style={S.wrap}>
-        <div>
-          <div style={S.brand}>opendb-harness</div>
-          <div style={S.brandSub}>数据库集群自动化运维</div>
-        </div>
+    const current = agents.find((a) => a.id === hs.agentId);
 
-        <div style={S.agentRow}>
-          {agents.length <= 1
-            ? <span title="agent">{agents[0] !== undefined ? `${statusDot(agents[0])} ${agents[0].name}` : '…'}</span>
-            : (
-              <select style={S.select} value={hs.agentId} onChange={(e) => {
-                const a = agents.find((x) => x.id === e.target.value);
-                if (a !== undefined) setState({ agentId: a.id, agentName: a.name });
-              }}>
-                {agents.map((a) => <option key={a.id} value={a.id}>{a.name}（{a.nodeCount} 节点）</option>)}
-              </select>
-            )}
-          <button style={S.btn} title="新建 agent" onClick={() => setCreating(!creating)}>＋</button>
+    return (
+      <div ref={wrapRef} style={S.wrap}>
+        {/* agent 切换器：低频的"新建"藏在下拉底部（user 定案：不做常驻按钮） */}
+        <div style={S.agentBtn} onClick={() => { setMenuOpen(!menuOpen); setCreating(false); }}>
+          <span>●</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{current?.name ?? '…'}</span>
+          <span style={{ ...S.dim, marginLeft: 'auto' }}>▾</span>
         </div>
-        {creating && (
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input style={S.input} placeholder="新 agent 名称" value={newName} onChange={(e) => setNewName(e.target.value)} />
-            <button style={S.btn} onClick={() => void createAgent()}>建</button>
+        {menuOpen && (
+          <div style={S.menu}>
+            {agents.map((a) => (
+              <div key={a.id} style={{ ...S.menuItem, ...(a.id === hs.agentId ? S.navActive : {}) }}
+                onClick={() => { setState({ agentId: a.id, agentName: a.name }); setMenuOpen(false); }}>
+                {a.name} <span style={S.dim}>· {a.nodeCount} 节点</span>
+              </div>
+            ))}
+            <div style={S.menuDivider} />
+            {!creating
+              ? <div style={{ ...S.menuItem, ...S.dim }} onClick={(e) => { e.stopPropagation(); setCreating(true); }}>＋ 新建 agent…</div>
+              : (
+                <div style={{ padding: 8, display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                  <input style={S.input} autoFocus placeholder="agent 名称" value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void createAgent(); }} />
+                  <button style={S.btn} onClick={() => void createAgent()}>建</button>
+                </div>
+              )}
           </div>
         )}
 
         <div>
           {nav('chat', '💬', '会话')}
           {nav('tasks', '📋', '任务', { n: pendingAcks, warn: pendingAcks > 0 })}
-          {nav('databases', '🗄', '数据库', { n: offlineNodes, warn: offlineNodes > 0 })}
+          {nav('databases', <DbIcon />, '数据库', { n: offlineNodes, warn: offlineNodes > 0 })}
           {nav('resources', '📊', '资源')}
         </div>
 
