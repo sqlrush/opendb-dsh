@@ -219,3 +219,18 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   5 agent 全触发，真实环境无此现象）→ 5 份诊断报告全 ok（模型自己识破"演练脚本特征：每 20 节点一组
   间隔 10-16s 批量执行"，甚至点破"多逻辑节点映射同一物理实例导致重复上报"）→ 5 张签收单自动补建。
 - 教训：psql 里带反斜杠的嵌套引号在 zsh heredoc 三层转义下极易碎——复杂查询写 .sql 文件再 `psql < file`。
+
+## 2026-08-19 P2 W2 上线：runMode:'service' 落地 + 常驻监控大盘 + 技能包
+- **service 契约（G1 预留位落地，全部 additive）**：TaskType.runMode 扩 'service' + startService(task,ctx)→stop；
+  引擎每 tick reconcile（缺启/多停/指纹变更重启；指纹=name+config+timeoutMs）；Host 重启首轮 tick
+  自动拉起（跨重启存活实证）；停机 stopAllServices；session 触发路径对 service 型直接拒绝。
+- **task-monitor-dashboard**：60s 阈值快照（fleetOverview 聚合→连接率/等待锁/覆盖率判定）写自有表
+  opendb_monitor_snapshots（48h 保留）；client 经自有 /opendb-monitor 通道渲染实时大盘
+  （状态大牌/水位条带阈值刻度/24h 色带/异常榜）。
+- **两个实测事故**：① SQL 直插任务 config={} 未过 schema → intervalSeconds=undefined →
+  **setInterval(fn, NaN)=毫秒级循环**，1 分钟 1.8 万行快照——修复=引擎 reconcile 统一
+  configSchema 规范化 + 插件侧 Number()||60 双保险；② dsh runtime skill 注册端 validateRuntimeSkill
+  不校验 source，模型 invoke 加载时才报 "source must be a string"——**注册 skill 必须带 source:'runtime'**。
+- **skill-pg**：四技能（og-slow-query-triage / og-lock-diagnosis / og-capacity-review /
+  og-ddl-change-audit），e2e：模型加载 og-lock-diagnosis 严格按路径三步执行+补充判读要点核查，
+  且能正确区分任务会话/普通会话（不乱交 task_report）。
