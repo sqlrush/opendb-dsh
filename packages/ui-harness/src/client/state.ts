@@ -65,3 +65,16 @@ export function getResourcePanel(): ResourcePanelComponent | undefined { return 
 if (typeof window !== 'undefined' && window.__opendbHarness__ !== undefined) {
   (window.__opendbHarness__ as any).registerResourcePanel = registerResourcePanel;
 }
+
+/** 节点监控详情面板（ui-node-monitor 插件注册；W6 拆包——ui-harness 内置实现降级备用）。 */
+export type NodePanelComponent = (props: { nodeId: string }) => any;
+let nodePanel: NodePanelComponent | undefined;
+export function registerNodePanel(panel: NodePanelComponent): () => void {
+  nodePanel = panel;
+  for (const fn of listeners) fn();
+  return () => { nodePanel = undefined; };
+}
+export function getNodePanel(): NodePanelComponent | undefined { return nodePanel; }
+if (typeof window !== 'undefined' && window.__opendbHarness__ !== undefined) {
+  (window.__opendbHarness__ as any).registerNodePanel = registerNodePanel;
+}

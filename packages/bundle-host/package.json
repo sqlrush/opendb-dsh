@@ -25,6 +25,7 @@
     "@opendb-dsh/memory-ingest": "workspace:*",
     "@opendb-dsh/ui-harness": "workspace:*",
     "@opendb-dsh/platform-status": "workspace:*",
-    "@opendb-dsh/onboarding": "workspace:*"
+    "@opendb-dsh/onboarding": "workspace:*",
+    "@opendb-dsh/ui-node-monitor": "workspace:*"
   }
 }

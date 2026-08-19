@@ -5,7 +5,7 @@
  * 经 registerTaskPanel(typeKey, Panel) 注册专属 UI；未注册的类型用默认面板（运行历史+报告）。
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { getState, setState, subscribe, getTaskPanel, getResourcePanel } from './state.ts';
+import { getState, setState, subscribe, getTaskPanel, getResourcePanel, getNodePanel } from './state.ts';
 
 const hsSel = () => getState().selectedTaskId;
 
@@ -244,12 +244,14 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     const refresh = async () => { try { setNodes((await call('nodes/list', {})).nodes); } catch { /* retry */ } };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 20_000); return () => clearInterval(t); }, []);
     if (hs.selectedNodeId !== '' && nodes.some((n) => n.id === hs.selectedNodeId)) {
+      // W6 拆包：优先 ui-node-monitor 插件注册的面板；内置实现保留为降级备用
+      const Panel = getNodePanel() ?? NodeDetail;
       return (
         <div>
           <div style={{ marginBottom: 12 }}>
             <span style={{ ...S.dim, fontSize: 13, cursor: 'pointer' }} onClick={() => setState({ selectedNodeId: '' })}>← 节点列表</span>
           </div>
-          <NodeDetail nodeId={hs.selectedNodeId} />
+          <Panel nodeId={hs.selectedNodeId} />
         </div>
       );
     }

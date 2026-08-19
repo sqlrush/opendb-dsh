@@ -111,3 +111,7 @@
 - insert:
     - id: onboarding
       name: '@opendb-dsh/onboarding'
+# ── 插件地图：ui-node-monitor（节点监控面板，client-only，W6 拆包还债）─────────
+- insert:
+    - id: ui-node-monitor
+      name: '@opendb-dsh/ui-node-monitor'
