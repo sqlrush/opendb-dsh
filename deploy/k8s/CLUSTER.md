@@ -112,3 +112,17 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 **排障口诀**：集群网络发疯 → 先 `pmset -g log` 看是不是刚睡醒 → 是则 `orb restart k8s-cp k8s-w1 k8s-w2 k8s-w3` + `kubectl -n kube-system rollout restart deploy/traefik`。
 **预防**：实验期间插电 + 不合盖（或设置"接通电源时显示器关闭不睡眠"）。
 **顺带记录**：OrbStack 出站流量走本机代理 127.0.0.1:1082（vmgr 日志可见）——拉镜像慢/失败时检查该代理状态。mac 上另有 pgracbench 两台重型 VM 常驻（与 k8s 集群共享虚拟化资源）。
+
+## 网络战役完整复盘（2026-08-19，"页面出不来"三层根因全歼）
+
+**根因链（由表及里）**：
+1. mac 合盖睡眠 + Wi-Fi→iPhone 热点切换 → OrbStack 的 192.168.139.0/24 路由被热点网关(172.20.10.1)挤掉 → mac→VM v4 直连全断；
+2. 更深一层：睡眠唤醒后 OrbStack 虚拟交换层 **VM 间 UDP 40% 随机丢包**（各尺寸均 3/5；ICMP 0% 丢、TCP 靠重传能活）→ flannel **vxlan（UDP:8472 封装）跨节点瘫痪**：同节点 pod 744KB 秒传、跨节点 48KB 卡死 → 前端大资产拉不下来 =「页面出不来」；traefik 连接坏态是并发症；
+3. 另有独立 bug：build14 用 innerHTML 换 logo 破坏 React DOM 致整页崩溃（已改纯 CSS + ErrorBoundary 加固）。
+
+**根治**：
+- **flannel vxlan → host-gw**（`/etc/rancher/k3s/config.yaml: flannel-backend: host-gw` + 重启 k3s/k3s-agent×3；四节点同 L2 满足条件）：pod 跨节点改纯路由（`10.42.x.0/24 via 192.168.139.x`），TCP 直达自带重传，永久免疫 UDP 丢包。效果：跨节点 744KB 0.21s×3 ✅。
+- **访问路径 = socat-over-orb**（orb exec 走 vsock 不走 TCP/IP，对一切网络折腾免疫）：mac 上
+  `socat TCP4-LISTEN:18080,fork,reuseaddr,bind=127.0.0.1 EXEC:'orb -m k8s-cp socat - TCP4:127.0.0.1:80'`（v6 同理 bind=[::1]）→ 浏览器 **http://localhost:18080/**。注意 8080 被 OrbStack 内 Cloud CLI Proxy 容器占用（Chrome 经 ::1 撞上过）。fence 已加白 localhost:18080/127.0.0.1:18080。
+- kubectl 稳定化：`kubectl config set-cluster opendb-dsh --server=https://k8s-cp.orb.local:6443`（orb.local=v6 且由 OrbStack resolver 保证）；注意 OrbStack 重启会把 current-context 切到内置 `orbstack`，用 `kubectl config use-context opendb-dsh` 切回。
+- 诊断方法论：分层采样（mac→ingress / 节点内 traefik / 跨节点 pod / 同节点 pod / 裸 TCP / UDP echo / ICMP-DF）+ **UI 改动必须 headless Chrome 自验**（puppeteer-core 连 --remote-debugging-port，DCL 超时时用请求追踪找挂住的资源；截图 Read 亲眼看——本次靠它发现端口冲突渲染了别人的页面）。
