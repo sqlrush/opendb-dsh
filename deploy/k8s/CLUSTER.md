@@ -104,3 +104,11 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **DB 图标**：emoji → currentColor 圆柱 SVG。
 - **任务面板插槽契约（user 定案：不同任务对应不同插件，UI 统一进主区）**：`registerTaskPanel(typeKey, Panel)`（ui-harness 导出）；任务页=列表+详情框架，选中任务渲染 `getTaskPanel(type) ?? DefaultTaskPanel`（默认=运行历史+报告+操作）。未来任务类型插件的 client 半边注册专属面板即可进驻，零框架改动。
 - 访问方式定案：**IP 直连 http://192.168.139.164/**（user 弃域名；ingress 无 host 兜底规则 + fence 信任 IP）。.local/mDNS 域名坑记录在案。
+
+## 环境事故复盘：mac 合盖睡眠 = 集群网络"退化"元凶（2026-08-19）
+
+**症状**（全天间歇出现）：kubectl 偶发 "no route to host"；HTTP 小请求通但大文件在 32KB 处卡死；traefik 收请求 0 字节不响应；页面资产拉不下来（浏览器"页面出不来"）。
+**根因**：宿主 MacBook 合盖睡眠（Clamshell Sleep，电池供电）→ OrbStack 共享内核 VM 被冻结（machines 的 uptime 会一起归零，因为所有 machine 共享一个内核）→ 唤醒后虚拟网络处于坏状态且**不自愈**。`pmset -g log | grep -E "Entering Sleep|Wake from"` 可对时间线。caffeinate 拦不住合盖睡眠。
+**排障口诀**：集群网络发疯 → 先 `pmset -g log` 看是不是刚睡醒 → 是则 `orb restart k8s-cp k8s-w1 k8s-w2 k8s-w3` + `kubectl -n kube-system rollout restart deploy/traefik`。
+**预防**：实验期间插电 + 不合盖（或设置"接通电源时显示器关闭不睡眠"）。
+**顺带记录**：OrbStack 出站流量走本机代理 127.0.0.1:1082（vmgr 日志可见）——拉镜像慢/失败时检查该代理状态。mac 上另有 pgracbench 两台重型 VM 常驻（与 k8s 集群共享虚拟化资源）。
