@@ -1,9 +1,36 @@
 {{- if .Values.ingress.enabled }}
+{{- if .Values.auth.enabled }}
+# P2 W4 connection-auth 简版：traefik basicAuth 统一护住全部入口（域名 + IP 直连 + socat 通道）。
+# 内部调用（tasks 引擎/fence 信任的 127.0.0.1 自调）不经 ingress，不受影响。
+# 完整 token/IdP 版在暂缓池（connection-auth 升级）。
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-console-auth
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  users: {{ .Values.auth.htpasswd | quote }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Release.Name }}-console-auth
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  basicAuth:
+    secret: {{ .Release.Name }}-console-auth
+---
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ .Release.Name }}-host
   labels: {{- include "opendb.labels" . | nindent 4 }}
+  {{- if .Values.auth.enabled }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-{{ .Release.Name }}-console-auth@kubernetescrd
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   rules:

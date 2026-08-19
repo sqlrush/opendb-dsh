@@ -85,3 +85,10 @@ keda:
   enabled: true
   pollingInterval: 10       # 秒，队列深度查询频率
   cooldownPeriod: 120       # 秒，缩容冷却
+
+# ── P2 W4: 控制台登录（connection-auth 简版=traefik basicAuth；token/IdP 版在暂缓池）──
+auth:
+  enabled: true
+  # htpasswd 行（apr1/bcrypt）；lab 实际值经 --set-string 注入（mac ~/opendb-k8s/console-htpasswd.txt），
+  # 明文密码在 mac ~/opendb-k8s/console-password.txt——都不进 git
+  htpasswd: ""
