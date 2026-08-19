@@ -53,7 +53,7 @@ const SKILLS: { name: string; description: string; content: string }[] = [
       '## 路径',
       '1. 节点多时先 `metrics_fleet_overview` 拿全舰队水位与异常榜；单节点用 `metrics_recent`；',
       '2. 连接：db.connections_used_ratio 时间线（>0.7 关注，>0.9 危险）；构成看 db.sessions.active/idle 比例；',
-      '3. 空间：db.size_bytes.* 各库大小；`db_query` 查 Top 表：`SELECT relname, pg_total_relation_size(oid) FROM pg_class WHERE relkind='r' ORDER BY 2 DESC LIMIT 10;`',
+      "3. 空间：db.size_bytes.* 各库大小；`db_query` 查 Top 表：`SELECT relname, pg_total_relation_size(oid) FROM pg_class WHERE relkind = 'r' ORDER BY 2 DESC LIMIT 10;`",
       '',
       '## 判读要点',
       '- idle 会话占比高且连接率高 → 连接池配置问题（建议收紧应用池），不是容量问题。',
