@@ -136,7 +136,8 @@ export default class DbService extends Service {
   private poolFor(node: DbNodeRecord): pg.Pool {
     const existing = this.pools.get(node.id);
     if (existing !== undefined) return existing;
-    const cred = this.credentials.get(node.name) ?? {};
+    // 精确名优先；'*' 为缺省凭据（W6 规模场景：950 节点共用平台只读账号，不必逐节点登记）
+    const cred = this.credentials.get(node.name) ?? this.credentials.get('*') ?? {};
     const pool = new pg.Pool({
       host: node.host,
       port: node.port,

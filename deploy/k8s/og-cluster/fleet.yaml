@@ -1,0 +1,27 @@
+# W6 规模验收：og 舰队（独立 og-k8s 集群，user 定案与平台集群分离）
+# 20 个真实 openGauss-lite 单机 pod；NodePort 30001-30020 暴露给平台集群。
+# 别名节点（og-sim-*）在平台注册表轮流指向这 20 个端口，凑 950 节点。
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: og-node
+spec:
+  serviceName: og-node
+  replicas: 20
+  podManagementPolicy: Parallel
+  selector: { matchLabels: { app: og-node } }
+  template:
+    metadata: { labels: { app: og-node } }
+    spec:
+      containers:
+        - name: og
+          image: docker.io/enmotech/opengauss-lite:5.0.3
+          imagePullPolicy: Never
+          env:
+            - { name: GS_PASSWORD, value: "Root@1234" }
+            - { name: TZ, value: Asia/Shanghai }
+            - name: GS_NODENAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe: { tcpSocket: { port: 5432 }, initialDelaySeconds: 20, periodSeconds: 10 }
+          resources: { requests: { cpu: 100m, memory: 300Mi }, limits: { memory: 1Gi } }
