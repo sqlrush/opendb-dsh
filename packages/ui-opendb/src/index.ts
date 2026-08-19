@@ -82,32 +82,36 @@ export function apply(ctx: Context): void {
           );
           return { ok: true, value: { workspaceId: r.rows[0]?.key } };
         }
-        // ── W5.5：会话列表（自研侧栏用；标题/时间从会话事件聚合）────────
+        // ── W5.5：会话列表（自研侧栏用）。归属真相 = workspace kv 的 sessionIds
+        //（持久化的 request/header 只含 tools，没有 cwd —— 不能用 cwd 过滤）。
         case 'sessions/list': {
           const limit = Math.min(Number(payload?.limit ?? 30), 100);
+          const agentName = typeof payload?.agentName === 'string' ? payload.agentName : undefined;
+          const scope = agentName !== undefined
+            ? `JOIN (SELECT jsonb_array_elements_text(value->'sessionIds') AS sid
+                     FROM dsh_kv_records
+                     WHERE unit = 'workspace' AND tbl = 'workspaces'
+                       AND value->>'path' ~ ('/agents/' || $2 || '/?$')) ws ON ws.sid = e.session_id`
+            : '';
+          const vals: unknown[] = agentName !== undefined ? [limit, agentName] : [limit];
           const r = await tasks.pool.query(
             `SELECT e.session_id,
                     max(e.time) AS last_time,
                     (SELECT t.data->>'title' FROM dsh_session_events t
                      WHERE t.session_id = e.session_id AND t.type = 'session/title'
-                     ORDER BY t.seq DESC LIMIT 1) AS title,
-                    (SELECT h.data->>'cwd' FROM dsh_session_events h
-                     WHERE h.session_id = e.session_id AND h.type = 'request/header'
-                     ORDER BY h.seq ASC LIMIT 1) AS cwd
+                     ORDER BY t.seq DESC LIMIT 1) AS title
              FROM dsh_session_events e
+             ${scope}
              GROUP BY e.session_id
              ORDER BY max(e.time) DESC
              LIMIT $1`,
-            [limit],
+            vals,
           );
-          const agentName = typeof payload?.agentName === 'string' ? payload.agentName : undefined;
-          const sessions = r.rows
-            .filter((row: any) => agentName === undefined || new RegExp(`/agents/${agentName}/?$`).test(String(row.cwd ?? '')))
-            .map((row: any) => ({
-              sessionId: row.session_id,
-              title: row.title ?? '(未命名会话)',
-              lastAt: Number(row.last_time),
-            }));
+          const sessions = r.rows.map((row: any) => ({
+            sessionId: row.session_id,
+            title: row.title ?? '(未命名会话)',
+            lastAt: Number(row.last_time),
+          }));
           return { ok: true, value: { sessions } };
         }
         // ── W4：任务与审批 ─────────────────────────────────────────────
