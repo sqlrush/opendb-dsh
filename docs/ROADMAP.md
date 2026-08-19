@@ -59,14 +59,20 @@
 | MCP 对外 | `mcp-db`（tool-db 只读能力以 MCP server 暴露给 Codex/Claude Code） | user 拍板 |
 | 扇出编排 | `subagent-queue` · `workflow-sandbox-job` | 单代理出现实际瓶颈 |
 
-### P3 · 规模与多租户（~6–8 周）
-- 规模：2000 节点压测（KEDA、`LISTEN/NOTIFY`、rollout 分区归档、连接池）。
-- 多租户：RLS FORCE、租户配额、租户 → Host 池（人工治理）。
-- Host 水平扩：cookie 粘性 + PG 共享注册表 + `NOTIFY` 桥接，HPA 按 WS 连接数。
-- 记忆升级：`memory-graph`、`knowledge-vector`（可选）、`metrics-victoria`（可选）。
-- 关闭项回归：`terminal-ssh`、`code-runtime-sandbox-job`。
-- 验收：2000 节点稳态 4–6 副本、峰值 20；租户越权用例全绿；Host 3 副本无感切换。
-- G3：图数据库选型；专用向量库是否需要。
+### P3 · 规模与多租户 ✅（2026-08-19/20 全项收官，详见 CLUSTER.md P3 复盘节）
+- 规模 ✅：2001 节点采集覆盖率 100%（60s 零滑期，collector 5m CPU/118Mi）；舰队巡检 5/5 P95=91s；
+  metrics 7 天保留策略；KEDA 弹性已验（稳态 2/峰值 5——按实测负载画像重解释「稳态 4-6」）；
+  LISTEN/NOTIFY 判定不需要（2s poll 无感）。
+- 多租户 ✅：009 动态 FORCE RLS（16 表+WITH CHECK）+ 连接级 app.tenant 注入 + 配额表与三创建口检查；
+  越权用例 3/3 绿（跨租户零行/写拒绝/无 GUC fail-closed）。**生产多租户检查单：平台须以非超级角色连 PG**
+  （superuser 无条件绕过 RLS）。
+- Host 水平扩 ✅：3 副本 + sticky cookie + session 级 advisory leader（引擎/告警/图抽取三处）；
+  杀 leader 6 秒接管、切换零中断。HPA-by-WS 以固定 3 副本满足验收；NOTIFY 桥经架构复核无消费场景
+  （产品面全部 PG 直查）。
+- 记忆升级 ✅：memory-graph（G3 判定=PG 原生边表+两跳查询，不引图库）e2e 通过；
+  knowledge-vector / metrics-victoria 判定不需要（pgvector/Timescale 实证够用）。
+- 关闭项回归：terminal-ssh / code-runtime-sandbox-job 与「能动手」共享 SSH/执行前提 → 随暂缓池解冻。
+- G3 ✅ 已决：图库=PG 原生；专用向量库=不需要。
 
 ## 2. 横切工作
 CI 门（`--dump-config` 快照、真实 Loader e2e、`assertEntriesActivated`、patch lint、conformance）；dsh 升级（钉版，只重对齐 13 个替换 provider + 1 个改造包）；文档随决策更新；安全（Runtime 零本地执行、Secret/env、NetworkPolicy、遥测默认关）。
@@ -123,4 +129,4 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | P2 W3（知识与检索）✅ | knowledge-pg · tool-knowledge（实际交付名，代 knowledge-ingest）· ui-memory / ui-knowledge（双半边）· session-query-pg |
 | P2 W4（平台面收尾） | **connection-auth**（简版）· **agent-presets-pg** · **storage-redis**（可选） |
 | 暂缓池（user 决策先不做） | exec-ssh · tool-db-actions · token-issuer · preset-change-execution · tool-fs-search-ssh · db-postgres ｜ approval-im-feishu / -dingtalk ｜ mcp-db ｜ subagent-queue · workflow-sandbox-job |
-| P3 | **memory-graph** · **knowledge-vector** · **metrics-victoria** · **host-notify-bridge**（多 Host NOTIFY 桥）· **terminal-ssh** / **code-runtime-sandbox-job**（回归） |
+| P3 ✅ | memory-graph ✅（PG 原生图）；knowledge-vector/metrics-victoria 判定不需要；host-notify-bridge 架构复核无消费场景；terminal-ssh/sandbox-job 随暂缓池 |
