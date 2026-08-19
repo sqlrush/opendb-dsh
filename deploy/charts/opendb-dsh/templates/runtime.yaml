@@ -6,7 +6,9 @@ metadata:
   labels: {{- include "opendb.labels" $ | nindent 4 }}
     opendb.runtimeClass: {{ .name }}
 spec:
+  {{- if not (and $.Values.keda.enabled .autoscale) }}
   replicas: {{ .replicas }}
+  {{- end }}{{/* autoscale 时 replicas 交给 KEDA/HPA，helm 不再回写（会互相打架） */}}
   selector: { matchLabels: { app: {{ $.Release.Name }}-runtime, opendb.runtimeClass: {{ .name }} } }
   template:
     metadata: { labels: { app: {{ $.Release.Name }}-runtime, opendb.runtimeClass: {{ .name }} } }

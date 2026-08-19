@@ -1,0 +1,45 @@
+{{- if .Values.keda.enabled }}
+# W6: runtime 池按队列深度扩缩（KEDA postgresql scaler 直查 dsh_thread_queue，设计 §9）
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Release.Name }}-keda-pg
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  connection: {{ include "opendb.pgUrl" . | trim | quote }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ .Release.Name }}-keda-pg
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: connection
+      name: {{ .Release.Name }}-keda-pg
+      key: connection
+{{- range .Values.runtime.classes }}
+{{- if .autoscale }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $.Release.Name }}-runtime-{{ .name }}
+  labels: {{- include "opendb.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef: { name: {{ $.Release.Name }}-runtime-{{ .name }} }
+  minReplicaCount: {{ .autoscale.min }}
+  maxReplicaCount: {{ .autoscale.max }}
+  pollingInterval: {{ $.Values.keda.pollingInterval }}
+  cooldownPeriod: {{ $.Values.keda.cooldownPeriod }}
+  triggers:
+    - type: postgresql
+      metadata:
+        # 待认领队列深度（该 class）：每 pod 承担 targetPending 条 → 深度/target = 期望副本数
+        query: "SELECT count(*) FROM dsh_thread_queue q JOIN dsh_threads t USING (session_id) WHERE q.admitted_at IS NULL AND q.kind = 'queued' AND t.runtime_class = '{{ .name }}'"
+        targetQueryValue: {{ .autoscale.targetPending | quote }}
+      authenticationRef: { name: {{ $.Release.Name }}-keda-pg }
+{{- end }}
+{{- end }}
+{{- end }}
