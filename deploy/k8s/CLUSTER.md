@@ -249,3 +249,16 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   MVP ILIKE 够用（万级事件毫秒级），P3 数据量大再上 pg_trgm。
 - puppeteer 经验：dsh 设置入口/段切换要**真实鼠标坐标点击**（getBoundingClientRect→mouse.click），
   evaluate 里 el.click() 对官方 React 组件常不生效；文本断言防假阳性（侧栏摘录会包含目标关键词）。
+
+## 2026-08-19 P2 W4 上线：控制台登录（P2 全周期收官）
+- **connection-auth 简版 = traefik basicAuth**：chart `auth.enabled` → Secret+Middleware+ingress 注解，
+  护住全部入口（域名/IP 直连/socat 18080）。凭据：账号 opendb，明文在 mac `~/opendb-k8s/console-password.txt`、
+  htpasswd 在 `console-htpasswd.txt`（helm --set-string 注入，均不进 git）。三态实测 401/401/200。
+  内部自调（tasks 引擎 127.0.0.1）不经 ingress 不受影响。token/IdP 完整版在暂缓池。
+- **工具链适配**：e2e 脚本 curl 统一 `-u`（读密码文件，缺文件裸连兼容）；puppeteer 用
+  **URL 内嵌凭据** `http://opendb:PW@localhost:18080/`（p.authenticate/setExtraHTTPHeaders 均会挂，
+  别再试）。⚠️ 三种认证法连环超时时先怀疑 **Chrome 僵死**（本次实为 Chrome 假死误导 40 分钟）——
+  probe 本地导航 10s 不回就 pkill 重拉，别急着换认证姿势。
+- **顺延判定（诚实工程）**：agent-presets-pg——dsh preset 机制强绑文件目录树（preset root 逃逸校验），
+  做 PG provider 复杂度高而单租户收益≈0，ConfigMap 方案已可版本管理 → 顺延暂缓池；
+  storage-redis——950 节点规模下 PG kv 无瓶颈实证 → 顺延；UI 视觉第二轮等 user 反馈驱动。

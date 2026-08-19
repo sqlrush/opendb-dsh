@@ -5,9 +5,13 @@
 set -uo pipefail
 NS=opendb-dsh
 BASE=http://localhost:18080
+# 控制台开了 basicAuth（P2 W4）：凭据在 mac ~/opendb-k8s/console-password.txt（无文件则裸连）
+AUTH_FILE="$HOME/opendb-k8s/console-password.txt"
+CURL_AUTH=()
+[ -f "$AUTH_FILE" ] && CURL_AUTH=(-u "opendb:$(cut -d' ' -f3 "$AUTH_FILE")")
 WSID=$(kubectl -n $NS exec opendb-dsh-postgres-0 -- psql -U dsh -d dsh -tAc \
   "SELECT key FROM dsh_kv_records WHERE unit='workspace' AND tbl='workspaces' AND value->>'path' LIKE '%/agents/%' LIMIT 1" | tr -d ' ')
-api() { curl -s -X POST "$BASE/api/$1" -H content-type:application/json -H "origin: $BASE" \
+api() { curl -s "${CURL_AUTH[@]}" -X POST "$BASE/api/$1" -H content-type:application/json -H "origin: $BASE" \
   -d "{\"type\":\"client-request\",\"rpcId\":\"e2e-$RANDOM\",\"method\":\"$1\",\"payload\":$2}"; }
 psq() { kubectl -n $NS exec opendb-dsh-postgres-0 -- psql -U dsh -d dsh -tAc "$1"; }
 

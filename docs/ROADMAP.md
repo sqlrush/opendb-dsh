@@ -47,7 +47,7 @@
 | W1 ✅（2026-08-19，全链路演练通过） | 事件驱动运维 | alert-ddl（水位扫描→按 agent 触发，冷却+判重+任务自举）+ task-incident 双半边（诊断 prompt+事故面板）+ 引擎报告催交补救；演练：真实 DDL→检出→5 agent 并发诊断→报告全 ok→签收单自动补建 |
 | W2 ✅（2026-08-19，service 契约落地+技能实战验证） | 常驻监控 + 技能 | runMode:'service' 引擎生命周期（reconcile/指纹重启/跨重启存活实证）+ task-monitor-dashboard 双半边（60s 阈值快照+实时大盘：状态大牌/水位条/24h 色带/异常榜）+ skill-pg 四技能（模型实战加载并严格循 SOP） |
 | W3 ✅（2026-08-19，会话灌入→检索引用 e2e 通过） | 知识与检索 | knowledge-pg（切块+pgvector+source 幂等）+ tool-knowledge（knowledge_ingest/search 会话主路径）+ ui-knowledge/ui-memory 设置管理段（双半边自有通道）+ session-query-pg 会话全文检索+侧栏内容命中区 |
-| W4 | 平台面收尾 | `connection-auth`（简版账号认证即可，不强依赖 IdP——现在控制台裸奔靠 IP 信任）；`agent-presets-pg`（预设落库）；`storage-redis`（可选，PG 无瓶颈则顺延）；UI 视觉第二轮微调（随 user 反馈） |
+| W4 ✅（2026-08-19，P2 收官） | 平台面收尾 | connection-auth 简版上线（traefik basicAuth 护全入口，三态 401/401/200 实测；凭据 mac 本地不进 git；e2e/puppeteer 工具链适配）；agent-presets-pg 顺延（dsh preset 强绑文件树，ConfigMap 已等效）；storage-redis 顺延（PG 无瓶颈实证）；UI 二轮等 user 反馈 |
 - 验收：DDL 告警→自动诊断→报告→签收闭环端到端；常驻监控任务跨重启存活；知识库可灌可查可管；控制台需登录。
 - 扇出（`subagent-queue`/`workflow-sandbox-job`）暂缓：950 节点验收未暴露单代理瓶颈，出现瓶颈时再激活。
 
