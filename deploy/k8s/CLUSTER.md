@@ -186,3 +186,21 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **关键发现：runtime-worker 原来无并发上限**——每 tick 认领一条且并行跑，2 pod 十秒吸干 12 条队列，
   深度归零 → KEDA 信号失真。已加 `maxConcurrent`（默认 2，env OPENDB_MAX_CONCURRENT）。
 - 实测：12 条排队 → 副本 2→4→5（10s 级响应），队列 20s 清空；缩容走 HPA 稳定窗口（~5min）回 min=2。
+
+## 2026-08-19 W6 规模验收通过（950 节点 / 5 agent，超额完成 100 节点目标）
+- **环境**：独立 og-k8s 集群（user 定案与平台分离；OrbStack VM 192.168.139.207，单节点 k3s）：
+  og-node StatefulSet×20（enmotech/opengauss-lite:5.0.3，NodePort 30001-30020）+ 930 逻辑别名轮转指向
+  = 950 节点（og5 加入共 951）。凭据：db 包 '*' 缺省回退 + secret 通配条目，20 实例同一 opendb_ro。
+- **数据**：采集 951/951 覆盖率 100%，60s 周期零滑期（每轮 ~20k 行指标）；collector 55m CPU/89Mi；
+  舰队巡检 5/5 succeeded，单任务 22-66s（P95=66s，标准 <3min）；KEDA 扩容 2→5 实测、缩回 min。
+- **舰队巡检模式**：>10 节点自动切聚合 prompt——metrics_fleet_overview（一条 SQL 聚合 950 节点：
+  覆盖率/每指标 min-avg-max/异常 Top-N/无数据名单）→ 模型只钻取可疑 ≤5 个 → fleet 级 findings。
+- **三连环事故与根治**（都是规模才暴露的真问题，巡检报告自己发现的）：
+  ① 镜像里 db 包没编译（Dockerfile 只 COPY lib）→ '*' 回退未生效 → 巡检钻取用空凭据打 og
+  → **防呆脚本 deploy/k8s/build-image.sh（全量 pnpm build 再 bake，以后一律用它）**；
+  ② 空凭据反复重试触发 og failed_login_attempts 锁账号；
+  ③ og-lite 1Gi limit 在 ~47 路采集连接/实例下 OOMKilled，且无卷 pod 重启即 initdb **连账号一起抹掉**
+  （14/20 账号消失之谜）→ 2Gi limit + volumeClaimTemplates 持久卷 + failed_login_attempts=0（实验环境）。
+- og 手册：账号建立 `su - omm -c "LD_LIBRARY_PATH=... gsql -c ..."`；og 节点名禁连字符（GS_NODENAME 固定值）；
+  psql16 对 og 报 "unsupported frontend protocol 3.9999" 是客户端协商噪音，node pg 驱动正常。
+- 排程：5 舰队巡检 cron 0 8 * * *（与 og5 巡检 07:00/审核 18:00 并存）。
