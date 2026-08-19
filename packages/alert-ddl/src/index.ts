@@ -73,6 +73,7 @@ export function apply(ctx: Context, config: AlertDdlConfig): void {
         task = await tasks.createTask({
           agentId, type: 'incident', name: `${agent.name ?? agentId}DDL事故响应`,
           config: { lookbackMinutes: 120, focus: '' }, enabled: true,
+          requiresApproval: true,   // 闭环最后一环：事故报告必须人工签收（纲领 §15 的人类监督例外）
         });
         process.stderr.write(`[alert-ddl] bootstrapped incident task for agent ${agentId}\n`);
       }
