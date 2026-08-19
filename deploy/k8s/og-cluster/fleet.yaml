@@ -24,4 +24,12 @@ spec:
             - { name: GS_NODENAME, value: ognode }
           ports: [{ containerPort: 5432 }]
           readinessProbe: { tcpSocket: { port: 5432 }, initialDelaySeconds: 20, periodSeconds: 10 }
-          resources: { requests: { cpu: 100m, memory: 300Mi }, limits: { memory: 1Gi } }
+          # 2Gi：1Gi 在 ~47 路采集连接/实例下 OOMKilled（2026-08-19 实测，且无卷时重启即 initdb 抹掉账号）
+          resources: { requests: { cpu: 100m, memory: 500Mi }, limits: { memory: 2Gi } }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/opengauss }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 2Gi } }
