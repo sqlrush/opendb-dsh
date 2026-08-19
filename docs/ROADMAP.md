@@ -80,3 +80,37 @@ P0：接力 100%、回灌延迟 < 1s、PENDING=0；P1：100 节点巡检成功�
 
 ## 6. 不在范围
 MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS 化；移动端。
+
+## 7. 插件地图（万物皆插件——每个节点的插件交付清单，2026-08-19 增补）
+
+### 插件界定原则（CLAUDE.md 同步）
+- 一切功能落为 cordis 插件；**任务类型 = 双半边插件**（server 半边注册 TaskType，client 半边 registerTaskPanel 注册专属大盘）。
+- 领域 UI 面板独立成 client 插件；`ui-harness`（产品壳）与 `ui-opendb`（通用 RPC 通道）只做平台底座，不吸领域功能。
+- seam（Definition）先行，provider 可替换：db/metrics/dictionary/tasks/approvals/memory/embeddings 均已成 seam。
+
+### 已交付插件（26 个，P0–W5.5）
+| seam/层 | 插件 |
+|---|---|
+| 内核适配 | session-persistence-pg · agent-loop-dispatch · runtime-worker · bundle-host/runtime/collector |
+| 存储 | storage-pg · attachment-s3 · spill-s3(+read_spill) · tool-read-spill |
+| 平台 | registry · tenant-context · directory-picker-agent · instructions-pg |
+| 数据库能力 | db(seam+pg基线) · db-opengauss · tool-db |
+| 采集 | metrics-timescale · dictionary-pg · collector · tool-metrics |
+| 任务/审批 | tasks(引擎+契约) · approvals · task-inspection · task-sql-audit · tool-task-report · tool-task-admin |
+| 记忆 | embeddings-openai-compat · memory-pg · memory-ingest · memory-context · tool-memory |
+| UI 底座 | ui-opendb(RPC) · ui-harness(壳) |
+
+### 剩余节点 → 插件交付
+| 节点 | 需开发插件 |
+|---|---|
+| W5.5·任务大盘 | **task-inspection/client**、**task-sql-audit/client**（双半边补全：registerTaskPanel 专属面板——findings 分组/severity 徽标/SQL 建议卡片） |
+| W5.5·节点监控 | ui-node-monitor（先内聚 ui-opendb+ui-harness 交付 ✅，W6 拆独立 client 插件还债） |
+| W5.5·资源大盘 | **platform-status**（Host：k8s 只读 RBAC + pod 拓扑 RPC + 模型 token 用量统计；client 半边：全局大盘面板） |
+| W5.5·首开向导 | **onboarding**（Host 检测零 agent + client 向导页：default 智能体命名/节点/模型） |
+| W6·扩缩 | KEDA ScaledObject（k8s 配置，PG scaler 直查 thread_queue，无需插件） |
+| W6·收口 | conformance 测试资产（非插件）；ui-node-monitor 拆包还债 |
+| P2 W1-2 | **exec-ssh**（gsql/gs_ctl/gs_om 白名单）· **tool-db-actions**（动作类，经审批）· **db-postgres**（含 pgrac 方言）· **preset-change-execution** · **token-issuer**（一次性令牌） |
+| P2 W3 | **subagent-queue** · **workflow-sandbox-job** |
+| P2 W4 | **task-monitor-dashboard**（双半边：runMode:'service' 首个实践）· **task-incident**（双半边）· **alert-ddl** |
+| P2 W5 | **connection-auth** · **approval-im-feishu** / **approval-im-dingtalk**（ApprovalProvider seam 首批外部 provider）· **agent-presets-pg** · **session-query-pg** · **knowledge-ingest** · **ui-memory** / **ui-knowledge** · **storage-redis** · **skill-pg** · **mcp-db**（tool-db 以 MCP 对外） |
+| P3 | **memory-graph** · **knowledge-vector** · **metrics-victoria** · **host-notify-bridge**（多 Host NOTIFY 桥）· **terminal-ssh** / **code-runtime-sandbox-job**（回归） |
