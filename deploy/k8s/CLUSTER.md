@@ -283,3 +283,9 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **判定入档**：knowledge-vector 不需要（pgvector 实证够用）；metrics-victoria 不需要（Timescale+
   retention 够用）；terminal-ssh / code-runtime-sandbox-job 与「能动手」共享 SSH/执行前提 → 随暂缓池；
   HPA-by-WS 以固定 3 副本满足验收；LISTEN/NOTIFY 以 2s poll 满足（队列唤醒延迟无感）。
+
+## 2026-08-20 盘点更正：preset ConfigMap 从未落地
+- W5 roadmap 里的「preset ConfigMap」是计划名词，实际未做（盘点时误记为已有）。真实现状：
+  预设 = dsh 内置 standard（镜像内 @deepseek-ai/dsh-agent-presets 包），零自定义；
+  用户自定义 root 是 `$DSH_HOME/.agent-presets`（pod 内 /var/lib/dsh/.agent-presets，实测不存在）。
+  将来要自定义预设：ConfigMap 挂到该路径（host 现为 emptyDir，直接写会随重启丢）。
