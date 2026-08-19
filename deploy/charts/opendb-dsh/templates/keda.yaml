@@ -7,7 +7,12 @@ metadata:
   labels: {{- include "opendb.labels" . | nindent 4 }}
 type: Opaque
 stringData:
-  connection: {{ include "opendb.pgUrl" . | trim | quote }}
+  {{- if .Values.postgres.builtin }}
+  # keda operator 在自己的 namespace 跑，必须用全限定服务名
+  connection: "postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Release.Name }}-postgres.{{ .Release.Namespace }}.svc:5432/{{ .Values.postgres.database }}"
+  {{- else }}
+  connection: {{ .Values.postgres.externalUrl | quote }}
+  {{- end }}
 ---
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
