@@ -17,6 +17,7 @@
 2. **热更**（10 秒通道，dsh 每请求读盘）：
    `kubectl -n opendb-dsh cp packages/ui-harness/lib/client.js <host-pod>:/app/packages/ui-harness/lib/client.js -c host`
 3. **浏览器级自验后才能交付**：mac 上 headless Chrome + puppeteer-core（脚本在 mac `/tmp/puppw/`，
+   交互类改动必须跑行为测试（verify-hover.mjs 模式：真实鼠标轨迹断言 hover/点击/残留），不能只截图；
    CDP 端口 9333），检查 DOM 关键词 + console 零错误 + **截图 scp 回来亲眼看**（`Read` 图片）。
    一次性 `--dump-dom` 会被 SPA 的 WS 挂住，不可用。
 4. 热更后必须跟一次镜像构建固化，否则 pod 重启回退。
