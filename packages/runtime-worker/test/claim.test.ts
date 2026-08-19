@@ -44,6 +44,8 @@ test('release sets idle; stale running threads become interrupted', { skip: !PG_
 });
 
 test('stale reclaim un-admits the dead pod in-flight queue row (W4 debt)', { skip: !PG_URL }, async () => {
+  // isolate from earlier tests: the fixed markStale re-offers their stale rows, which claimNext would pick first
+  await pool.query('TRUNCATE dsh_questions, dsh_thread_queue, dsh_threads, dsh_session_events, dsh_sessions');
   await seed('t3');
   const claimed = await claimNext(pool, 'default', 'podDead');
   assert.ok(claimed);
