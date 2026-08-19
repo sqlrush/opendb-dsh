@@ -228,13 +228,6 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
 
     return (
       <div ref={wrapRef} style={S.wrap}>
-        {/* logo：数据库图标 + opendb 粗字 + HARNESS 胶囊（官方海豚行已 CSS 隐藏） */}
-        <div style={S.logoRow}>
-          {I.db(T.text as string, 22)}
-          <span style={S.logoText}>opendb</span>
-          <span style={S.pill}>HARNESS</span>
-        </div>
-
         {/* 小节头：智能体 + 搜索/分类切换/新建 */}
         <div style={{ ...S.secRow, position: 'relative' }}>
           <span style={S.secTitle}>智能体</span>
@@ -268,7 +261,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
                     {open && (
                       <div style={{ marginLeft: 14 }}>
                         {typeHead(I.chat(T.dim), '会话', <IconBtn title="新会话" onClick={() => void newSession(a.name)}>{I.plus('currentColor')}</IconBtn>)}
-                        {sessions.map(sessionRow)}
+                        <div style={{ maxHeight: 300, overflowY: 'auto' }}>{sessions.map(sessionRow)}</div>
                         {typeHead(I.task(T.dim), '任务')}
                         {tasks.filter((t) => t.agentId === a.id).map(taskRow)}
                         {typeHead(I.db(T.dim as string, 15), '数据库')}
@@ -281,7 +274,7 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
             : (
               <div>
                 {typeHead(I.chat(T.dim), '会话', <IconBtn title="新会话" onClick={() => void newSession(hs.agentName)}>{I.plus('currentColor')}</IconBtn>)}
-                {sessions.map(sessionRow)}
+                <div style={{ maxHeight: 300, overflowY: 'auto' }}>{sessions.map(sessionRow)}</div>
                 {typeHead(I.task(T.dim), '任务', pendingAcks > 0 ? <span style={{ ...S.meta, background: '#c9862d', color: '#fff', borderRadius: 8, padding: '0 6px', fontSize: 11 }}>{pendingAcks}</span> : undefined)}
                 {tasks.map(taskRow)}
                 {typeHead(I.db(T.dim as string, 15), '数据库')}

@@ -39,10 +39,12 @@ function takeOverBranding(): void {
     document.title = 'opendb-harness';
     const style = document.createElement('style');
     style.setAttribute('data-opendb-harness', 'brand');
+    // 官方 logo 行原位替换：隐藏海豚 svg 与 deepseek 字（保留右侧折叠按钮），
+    // ::before 注入整行 opendb 版 SVG（db 圆柱 + opendb 粗字 + HARNESS 黑胶囊）。
+    const logoSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="196" height="26" viewBox="0 0 196 26"><g fill="none" stroke="%23111" stroke-width="1.7" stroke-linecap="round"><ellipse cx="12" cy="6.8" rx="8.6" ry="3.3"/><path d="M3.4 6.8v12.4c0 1.8 3.85 3.3 8.6 3.3s8.6-1.5 8.6-3.3V6.8"/><path d="M3.4 13c0 1.8 3.85 3.3 8.6 3.3s8.6-1.5 8.6-3.3"/></g><text x="28" y="19.5" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" font-weight="700" fill="%23111">opendb</text><rect x="97" y="5.5" width="64" height="16" rx="4" fill="%23111"/><text x="129" y="17" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" letter-spacing="1.2" fill="%23fff">HARNESS</text></svg>';
     style.textContent = [
-      // 官方海豚 logo 行整体隐藏（我们在自己的侧栏顶部画 opendb 版 logo）
-      '[class*="logoRow"] { display: none !important; }',
-
+      '[class*="logoRow"] svg, [class*="logoRow"] img, [class*="logoRow"] span, [class*="logoRow"] a { display: none !important; }',
+      `[class*="logoRow"]::before { content: ""; display: block; width: 196px; height: 26px; margin-right: auto; background: url('data:image/svg+xml;utf8,${logoSvg}') no-repeat left center / contain; }`,
     ].join('\n');
     document.head.appendChild(style);
   } catch { /* branding is cosmetic — never block boot */ }
