@@ -14,7 +14,7 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 {{- define "opendb.s3Endpoint" -}}http://{{ .Release.Name }}-minio:9000{{- end -}}
 {{- define "opendb.trustedHosts" -}}
 {{- $hosts := list -}}
-{{- if .Values.ingress.enabled }}{{ $hosts = append $hosts .Values.ingress.host }}{{ end -}}
+{{- if .Values.ingress.enabled }}{{ $hosts = append $hosts .Values.ingress.host }}{{ range .Values.ingress.extraHosts }}{{ $hosts = append $hosts . }}{{ end }}{{ end -}}
 {{- $hosts = append $hosts (printf "127.0.0.1:%d" (int .Values.host.port)) -}}
 {{- $hosts = append $hosts (printf "%s-host:%d" .Release.Name (int .Values.host.port)) -}}
 {{- $hosts = append $hosts (printf "%s-host.%s.svc:%d" .Release.Name .Release.Namespace (int .Values.host.port)) -}}

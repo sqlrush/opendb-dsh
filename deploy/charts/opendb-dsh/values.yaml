@@ -63,6 +63,7 @@ ingress:
   enabled: true
   className: traefik
   host: opendb.local
+  extraHosts: [opendb.lab]      # .local 是 macOS mDNS 特殊域，部分浏览器/代理绕过 hosts——备用域名
   tls: false
 
 debug:
