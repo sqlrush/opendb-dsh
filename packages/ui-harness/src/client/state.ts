@@ -46,3 +46,9 @@ export function registerTaskPanel(typeKey: string, component: TaskPanelComponent
 export function getTaskPanel(typeKey: string): TaskPanelComponent | undefined {
   return taskPanels.get(typeKey);
 }
+
+// ── 跨 client 插件桥：任务类型插件的 client 半边经 window 注册面板（与加载顺序无关）──
+declare global { interface Window { __opendbHarness__?: { registerTaskPanel: typeof registerTaskPanel } } }
+if (typeof window !== 'undefined') {
+  window.__opendbHarness__ = { registerTaskPanel };
+}
