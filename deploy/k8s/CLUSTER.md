@@ -158,3 +158,16 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - mac 无头 Chrome（9333 端口）会随睡眠/重启消失，跑 puppeteer 前先 `curl 127.0.0.1:9333/json/version` 探活，
   掉了就 `--headless=new --remote-debugging-port=9333 --user-data-dir=/tmp/chrome-odb` 重拉；
   新 profile 首次打开 dsh 会弹「内测声明」，脚本先点「继续」再断言。
+
+## 2026-08-19 sessionIds 裁光事故根治（W6，根因修正版）
+- **真实根因不是 storage-pg 吞错**（loadAll/list 全硬抛，dsh 域层也不吞）：host pod 无卷 →
+  `/var/lib/dsh/agents/<name>` 目录随重启消失 → dsh workspace 启动 indexHeader 对 header.cwd 做
+  realpath+stat 校验失败 → 全部历史会话进 invalidSessionPaths → **dsh 的 mutate() 每次写都按
+  cwd 索引过滤 sessionIds**（dsh-workspace lib mutate 内 filter）→ 重启后第一次 attach/改名等
+  mutate 就把裁剪结果持久化。「PG 不可达」只是当日巧合时间线。
+- 根治：① chart host 挂 `agents-dir` PVC（RWO + **strategy: Recreate** 防滚动抢卷；SSA 从
+  RollingUpdate 切换需先 kubectl patch 删 rollingUpdate 字段）② ui-opendb 启动幂等重建全部
+  agent 目录（兜底 PVC 丢失）③ 修复脚本 `deploy/k8s/repair-workspace-sessionids.sql`
+  （从 dsh_sessions.header.cwd 反推归属；**跑完必须立刻重启 host**，否则内存旧记录下次 mutate 覆盖回去）。
+- 回归证据：修复+重启后 session.create（workspaceId og-lab）→ sessionIds 24→25 追加不裁剪。
+- Host /api 直调格式：POST /api/<method>，body `{"type":"client-request","rpcId":"...","method":"...","payload":{...}}`（还需 origin 头过 fence）。
