@@ -140,3 +140,9 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **侧栏单滚动**：会话列表限 12 条+「显示全部 N 条」展开，任务/数据库/资源恒可见。
 - **新建智能体弹页**（稀缺弹页场景）：全窗覆盖设置页风格——名称/管理数据库多选/插件技能清单（MVP 全量挂载）/模型下拉；提交= agents/create+nodes/assign+agents/update(model)+workspace 创建。截图自验通过。
 - 常驻任务现状：og5手动巡检（每天 07:00）、og5每日SQL审核（每天 18:00）——每天各消耗一次任务会话 token，属预期生产节奏。
+
+## 双半边任务插件首践 ✅（2026-08-19）
+
+- task-inspection/client + task-sql-audit/client：任务类型插件补齐 client 半边（dsh.client 声明 + esbuild bundle + host 重启被 client-modules 扫描）。面板经 **window 桥**（`window.__opendbHarness__.registerTaskPanel`）注册——跨 client 插件共享注册表，与加载顺序无关（250ms×40 轮询兜底）。
+- 面板遵守纲领：纯展示无按钮。巡检=severity 徽标+findings 按节点分组+近10次运行时间线；SQL审核=SQL 代码块+问题/建议/依据卡片。
+- 行为自验：两面板渲染断言全过、默认视图已被专属面板替换、零 JS 错误。
