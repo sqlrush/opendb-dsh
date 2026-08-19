@@ -132,3 +132,11 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **侧栏定形（user 定案）**：会话/任务/数据库三分区各挂子列表（dsh 原版树形态）——会话不断新增、任务不断添加（监控大盘/SQL 审核…）、数据库挂节点；点分区头开总览、点条目直达（任务→详情面板，节点→数据库页选中）。自验+截图确认，零 JS 错误。
 - **UI 热更新通道（提速 30 倍）**：client bundle 是 dsh **每请求读盘**的 —— `kubectl cp packages/ui-harness/lib/client.js <host-pod>:/app/packages/ui-harness/lib/client.js -c host` 即时生效，UI 迭代从 5 分钟镜像重建降到 10 秒。仅前端改动时使用；host/runtime 代码仍需镜像。
 - **workspace sessionIds 覆盖事故**：某次 PG 不可达窗口 host 重启，workspace 服务疑似以空状态启动后回写覆盖 kv（`dsh_kv_records unit='workspace'` 的 sessionIds 只剩 1 条；会话事件数据无损）。恢复：从 dsh_session_events 重建数组（SQL 见 git log fixws）。**欠账（W6）**：排查 storage-pg loadAll 失败路径是否被吞（应让服务启动失败而非以空态运行）。
+
+## 交互纲领落地（2026-08-19，设计 §15）
+
+- **tool-task-admin**（Runtime）：task_create / task_update / task_list——会话即任务管理。e2e：一句话「把巡检改成每天 7 点+需签收；再建每天 18 点的 og5 SQL 审核扫 top10」→ 模型 task_list→task_update(0 7 * * *)→task_create(0 18 * * *, topN10)→复核，全对。
+- **任务大盘去按钮化**：DefaultTaskPanel 移除立即运行/启停按钮，提示「调整任务直接在会话里说」；审批签收控件保留（人类监督例外）。
+- **侧栏单滚动**：会话列表限 12 条+「显示全部 N 条」展开，任务/数据库/资源恒可见。
+- **新建智能体弹页**（稀缺弹页场景）：全窗覆盖设置页风格——名称/管理数据库多选/插件技能清单（MVP 全量挂载）/模型下拉；提交= agents/create+nodes/assign+agents/update(model)+workspace 创建。截图自验通过。
+- 常驻任务现状：og5手动巡检（每天 07:00）、og5每日SQL审核（每天 18:00）——每天各消耗一次任务会话 token，属预期生产节奏。
