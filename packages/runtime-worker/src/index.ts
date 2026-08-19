@@ -18,6 +18,7 @@ export interface RuntimeWorkerConfig {
   heartbeatMs: number;
   staleMs: number;
   healthPort: number;
+  maxConcurrent: number;
 }
 
 interface AgentHandleLike {
@@ -45,6 +46,8 @@ export default class RuntimeWorker extends Service {
     heartbeatMs: z.number().default(5000),
     staleMs: z.number().default(30000),
     healthPort: z.number().default(9090),
+    // 每 pod 并发 turn 上限：不设限会把整个队列瞬间吸干，队列深度归零 → KEDA 扩缩信号失真（W6 实测）
+    maxConcurrent: z.number().default(2),
   });
 
   private stopping = false;
@@ -72,10 +75,12 @@ export default class RuntimeWorker extends Service {
         if (this.stopping) return;
         try {
           await markStale(this.pool, this.config.staleMs);
-          const claimed = await claimNext(this.pool, this.config.runtimeClass, this.config.podName);
-          if (claimed) {
-            const p = this.run(claimed).finally(() => this.inFlight.delete(p));
-            this.inFlight.add(p);
+          if (this.inFlight.size < this.config.maxConcurrent) {
+            const claimed = await claimNext(this.pool, this.config.runtimeClass, this.config.podName);
+            if (claimed) {
+              const p = this.run(claimed).finally(() => this.inFlight.delete(p));
+              this.inFlight.add(p);
+            }
           }
         } catch (err) {
           process.stderr.write(`[runtime-worker] tick failed: ${String(err)}\n`);

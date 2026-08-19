@@ -46,6 +46,7 @@
         runtimeClass: !!js process.env.OPENDB_RUNTIME_CLASS ?? 'default'
         podName: !!js process.env.OPENDB_POD_NAME ?? process.env.HOSTNAME ?? 'runtime-local'
         pollMs: 2000
+        maxConcurrent: !!js Number(process.env.OPENDB_MAX_CONCURRENT ?? 2)
         heartbeatMs: 5000
         staleMs: 30000
         healthPort: !!js Number(process.env.OPENDB_HEALTH_PORT ?? 9090)
