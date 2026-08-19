@@ -95,3 +95,9 @@
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: memory-ingest
       name: '@opendb-dsh/memory-ingest'
+# ── W5.5 批次1: opendb-harness 产品壳（自研侧栏替换官方工作区区块 + 主区页面）──
+- id: ui-workspace
+  disabled: true
+- insert:
+    - id: ui-harness
+      name: '@opendb-dsh/ui-harness'

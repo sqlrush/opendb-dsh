@@ -61,6 +61,55 @@ export function apply(ctx: Context): void {
           await registry.assignNode(payload.nodeId, typeof payload.agentId === 'string' ? payload.agentId : null);
           return { ok: true, value: {} };
         }
+        // ── W5.5：agent 创建与工作区定位（自研侧栏用）──────────────────
+        case 'agents/create': {
+          if (typeof payload?.name !== 'string' || payload.name.trim() === '') return bad('name required');
+          const name = payload.name.trim();
+          if (!/^[\w-]{1,40}$/.test(name)) return bad('名称只能包含字母/数字/下划线/连字符（≤40 字符）');
+          const agent = await registry.createAgent({ name });
+          const { mkdir } = await import('node:fs/promises');
+          const { join } = await import('node:path');
+          await mkdir(join(process.env.DSH_HOME ?? '/var/lib/dsh', 'agents', name), { recursive: true, mode: 0o700 });
+          return { ok: true, value: { agent } };
+        }
+        case 'workspaces/find': {
+          if (typeof payload?.agentName !== 'string') return bad('agentName required');
+          const r = await tasks.pool.query(
+            `SELECT key FROM dsh_kv_records
+             WHERE unit = 'workspace' AND tbl = 'workspaces' AND value->>'path' ~ ('/agents/' || $1 || '/?$')
+             LIMIT 1`,
+            [payload.agentName],
+          );
+          return { ok: true, value: { workspaceId: r.rows[0]?.key } };
+        }
+        // ── W5.5：会话列表（自研侧栏用；标题/时间从会话事件聚合）────────
+        case 'sessions/list': {
+          const limit = Math.min(Number(payload?.limit ?? 30), 100);
+          const r = await tasks.pool.query(
+            `SELECT e.session_id,
+                    max(e.time) AS last_time,
+                    (SELECT t.data->>'title' FROM dsh_session_events t
+                     WHERE t.session_id = e.session_id AND t.type = 'session/title'
+                     ORDER BY t.seq DESC LIMIT 1) AS title,
+                    (SELECT h.data->>'cwd' FROM dsh_session_events h
+                     WHERE h.session_id = e.session_id AND h.type = 'request/header'
+                     ORDER BY h.seq ASC LIMIT 1) AS cwd
+             FROM dsh_session_events e
+             GROUP BY e.session_id
+             ORDER BY max(e.time) DESC
+             LIMIT $1`,
+            [limit],
+          );
+          const agentName = typeof payload?.agentName === 'string' ? payload.agentName : undefined;
+          const sessions = r.rows
+            .filter((row: any) => agentName === undefined || new RegExp(`/agents/${agentName}/?$`).test(String(row.cwd ?? '')))
+            .map((row: any) => ({
+              sessionId: row.session_id,
+              title: row.title ?? '(未命名会话)',
+              lastAt: Number(row.last_time),
+            }));
+          return { ok: true, value: { sessions } };
+        }
         // ── W4：任务与审批 ─────────────────────────────────────────────
         case 'tasks/types':
           return { ok: true, value: { types: tasks.listTypes() } };

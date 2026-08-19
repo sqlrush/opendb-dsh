@@ -1,4 +1,4 @@
-# opendb-dsh
+# opendb-harness（仓库名 opendb-dsh）
 
 基于 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 二次开发的 PostgreSQL 集群自动化管理平台，部署在 Kubernetes 上。
 

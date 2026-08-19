@@ -1,0 +1,19 @@
+{
+  "name": "@opendb-dsh/ui-harness",
+  "version": "0.0.1",
+  "description": "opendb-harness product shell: custom sidebar (agent switcher + resource nav + sessions) replacing ui-workspace, plus full-screen tasks/databases/resources pages",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib"],
+  "dsh": { "client": { "platform": "web" } },
+  "scripts": { "build": "tsc -p tsconfig.json && node build-client.mjs", "test": "echo no tests" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "dependencies": {},
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
+}
