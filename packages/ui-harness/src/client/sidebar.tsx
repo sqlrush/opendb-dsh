@@ -294,13 +294,12 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
 
         </div>
 
-        {/* 资源：与「智能体」同级的全局入口（k8s 集群 Pod 与组件资源大盘） */}
-        <div
-          style={{ ...S.secRow, cursor: 'pointer', borderTop: `1px solid `, paddingTop: 10 }}
-          onClick={() => setState({ view: 'resources' })}
-        >
-          {I.chart(T.sub as string)}
-          <span style={{ fontSize: 14, color: T.sub }}>资源</span>
+        {/* 资源：与「智能体」同级的全局入口——交互与列表条目一致（hover 反馈 + 紧凑圆角选中态） */}
+        <div style={{ paddingTop: 4, paddingBottom: 2 }}>
+          <Row active={hs.view === 'resources'} onClick={() => setState({ view: 'resources' })}>
+            {I.chart(T.sub as string)}
+            <span style={S.itemTitle}>资源</span>
+          </Row>
         </div>
       </div>
     );
