@@ -53,9 +53,9 @@ function makePanel(call: (endpoint: string, payload?: unknown) => Promise<any>) 
               <div style={{ fontWeight: 600, marginBottom: 8 }}>{GROUP_LABEL[g] ?? g}</div>
               {pods.map((p) => (
                 <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 12.5 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 4, background: p.ready ? '#3fa552' : p.phase === 'Pending' ? '#c9862d' : '#d64545', flexShrink: 0 }} />
+                  <span style={{ width: 8, height: 8, borderRadius: 4, background: p.ready ? '#3fa552' : p.phase === 'Succeeded' ? 'var(--dsw-alias-label-tertiary)' : p.phase === 'Pending' ? '#c9862d' : '#d64545', flexShrink: 0 }} />
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={p.name}>{p.name.replace(/^opendb-dsh-/, '')}</span>
-                  <span style={{ color: T.dim, flexShrink: 0 }}>{p.node} · {age(p.startedAt)}{p.restarts > 0 ? ` · 重启${p.restarts}` : ''}</span>
+                  <span style={{ color: T.dim, flexShrink: 0 }}>{p.phase === 'Succeeded' ? '已完成 · ' : ''}{p.node} · {age(p.startedAt)}{p.restarts > 0 ? ` · 重启${p.restarts}` : ''}</span>
                 </div>
               ))}
             </div>
