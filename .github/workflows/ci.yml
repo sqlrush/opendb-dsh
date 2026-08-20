@@ -40,6 +40,13 @@ jobs:
             echo "profile=$prof pending=$pending"
             [ "$pending" = "0" ] || { printf '%s\n' "$out" | grep PENDING; exit 1; }
           done
+      - name: Conformance boot (real Loader + assertEntriesActivated, all profiles)
+        env: { OPENDB_PG_URL: 'postgres://dsh:dsh@localhost:5434/dsh_test' }
+        run: |
+          set -euo pipefail
+          for prof in collector runtime host; do
+            node scripts/ci/conformance-boot.mjs "$prof"
+          done
       - name: Unit tests (PG-backed)
         env: { PG_URL: 'postgres://dsh:dsh@localhost:5434/dsh_test' }
         run: pnpm test
