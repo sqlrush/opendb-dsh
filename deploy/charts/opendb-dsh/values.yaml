@@ -47,7 +47,7 @@ runtime:
     - name: default               # runtime class (== OPENDB_RUNTIME_CLASS); pool = one Deployment per class
       profile: runtime            # dsh profile dir under /app/profiles
       replicas: 2
-      autoscale: { min: 2, max: 8, targetPending: 2 }   # W6: KEDA 按待认领队列深度扩缩
+      autoscale: { min: 2, max: 20, targetPending: 2 }   # W6 KEDA 队列扩缩；P3 字面验收 max=20（原验收"峰值 20"）
       resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
     - name: collector             # W3: 采集池（无 agent loop；指标每分钟、字典每 10 分钟）
       profile: collector
