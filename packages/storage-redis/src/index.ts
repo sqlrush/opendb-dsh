@@ -1,7 +1,7 @@
 import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import { StorageError, UNIT_NAME_RE, storageBackendServiceKey } from '@deepseek-ai/dsh-storage';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 
 export const BACKEND_NAME = 'redis';
 
@@ -35,7 +35,7 @@ class RedisKvUnit {
     for (const t of this.descriptor.tables) {
       const raw = await this.redis.hgetall(this.tblKey(t));
       const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(raw)) out[k] = JSON.parse(v);
+      for (const [k, v] of Object.entries(raw)) out[k] = JSON.parse(String(v));
       tables[t] = out;
     }
     const g = await this.redis.get(`kv:${this.descriptor.name}:__global__`);
@@ -105,7 +105,7 @@ export const Config = z.object({ url: z.string().required().description('redis:/
 /** Register the `redis` backend on the storage hub（与 storage-pg 同法）。 */
 export function apply(ctx: Context, config: { url: string }): void {
   const redis = new Redis(config.url, { lazyConnect: false, maxRetriesPerRequest: 3, enableOfflineQueue: true });
-  redis.on('error', (err) => process.stderr.write(`[storage-redis] ${String(err.message)}\n`));
+  redis.on('error', (err: Error) => process.stderr.write(`[storage-redis] ${String(err.message)}\n`));
   const backend = new RedisStorageBackend(redis);
   const anyCtx = ctx as any;
   ctx.effect(() => {
