@@ -93,3 +93,8 @@ auth:
   # htpasswd 行（apr1/bcrypt）；lab 实际值经 --set-string 注入（mac ~/opendb-k8s/console-htpasswd.txt），
   # 明文密码在 mac ~/opendb-k8s/console-password.txt——都不进 git
   htpasswd: ""
+
+# ── P3: storage-redis（kv 低敏 domain 后端；workspace 留 pg）─────────────────
+redis:
+  enabled: true
+  image: redis:7-alpine

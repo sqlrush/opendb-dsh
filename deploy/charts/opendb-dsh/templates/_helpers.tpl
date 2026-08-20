@@ -25,6 +25,10 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 {{- define "opendb.commonEnv" -}}
 - name: OPENDB_PG_URL
   value: {{ include "opendb.pgUrl" . | quote }}
+{{- if .Values.redis.enabled }}
+- name: OPENDB_REDIS_URL
+  value: "redis://{{ .Release.Name }}-redis:6379/0"
+{{- end }}
 - name: OPENDB_S3_ENDPOINT
   value: {{ include "opendb.s3Endpoint" . | quote }}
 - name: OPENDB_S3_BUCKET

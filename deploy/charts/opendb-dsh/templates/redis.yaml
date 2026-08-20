@@ -1,0 +1,45 @@
+{{- if .Values.redis.enabled }}
+# P3 storage-redis：kv 低敏 domain（投影缓存/评分）的存储后端。AOF 持久化。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: {{ .Release.Name }}-redis } }
+  template:
+    metadata: { labels: { app: {{ .Release.Name }}-redis } }
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image }}
+          args: ["redis-server", "--appendonly", "yes", "--dir", "/data"]
+          ports: [{ containerPort: 6379 }]
+          readinessProbe: { tcpSocket: { port: 6379 }, initialDelaySeconds: 3, periodSeconds: 5 }
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 512Mi } }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-redis-data }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-redis-data
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  selector: { app: {{ .Release.Name }}-redis }
+  ports: [{ port: 6379, targetPort: 6379 }]
+{{- end }}

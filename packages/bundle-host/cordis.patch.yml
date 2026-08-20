@@ -33,6 +33,11 @@
 - id: storage-domain
   config:
     backend: pg
+    # P3 storage-redis：低敏可重建 domain 走 redis（投影缓存丢了自动重算、feedback 量为零）；
+    # workspace（sessionIds 真相）绝不离开 pg——正确性金贵（2026-08-19 裁剪事故）
+    routes:
+      session_projcache: redis
+      message_feedback: redis
 - id: attachment-local
   disabled: true
 - insert:
@@ -40,6 +45,10 @@
       name: '@opendb-dsh/storage-pg'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+    - id: storage-redis
+      name: '@opendb-dsh/storage-redis'
+      config:
+        url: !!js process.env.OPENDB_REDIS_URL ?? 'redis://localhost:6379/0'
     - id: attachment-s3
       name: '@opendb-dsh/attachment-s3'
     - id: tenant-context
