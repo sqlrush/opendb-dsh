@@ -89,7 +89,7 @@ keda:
 
 # ── P2 W4: 控制台登录（connection-auth 简版=traefik basicAuth；token/IdP 版在暂缓池）──
 auth:
-  enabled: true
+  enabled: false   # user 2026-08-20：本机验证阶段关闭登录；正式启用改 true 并 --set-string auth.htpasswd 注入
   # htpasswd 行（apr1/bcrypt）；lab 实际值经 --set-string 注入（mac ~/opendb-k8s/console-htpasswd.txt），
   # 明文密码在 mac ~/opendb-k8s/console-password.txt——都不进 git
   htpasswd: ""
