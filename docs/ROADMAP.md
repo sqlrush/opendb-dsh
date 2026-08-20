@@ -103,17 +103,46 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 - 领域 UI 面板独立成 client 插件；`ui-harness`（产品壳）与 `ui-opendb`（通用 RPC 通道）只做平台底座，不吸领域功能。
 - seam（Definition）先行，provider 可替换：db/metrics/dictionary/tasks/approvals/memory/embeddings 均已成 seam。
 
-### 已交付插件（26 个，P0–W5.5）
-| seam/层 | 插件 |
+### 已交付插件全量清单（2026-08-20 · 自研 51 包 + dsh 原样约 150 + 配置级改动约 10；dsh 源码零修改，钉版 rc.6）
+
+**来源分类**：A=完全继承 dsh（原样加载）；B=继承 dsh 只改配置/禁用（patch 行，不改源码）；C=继承 dsh 的 seam（接口保留，Provider 自研）；D=全新开发（自有 seam 与功能）。
+
+#### A · 完全继承 dsh（约 150 包，代表项）
+| 代表包 | 作用 |
 |---|---|
-| 内核适配 | session-persistence-pg · agent-loop-dispatch · runtime-worker · bundle-host/runtime/collector |
-| 存储 | storage-pg · attachment-s3 · spill-s3(+read_spill) · tool-read-spill |
-| 平台 | registry · tenant-context · directory-picker-agent · instructions-pg |
-| 数据库能力 | db(seam+pg基线) · db-opengauss · tool-db |
-| 采集 | metrics-timescale · dictionary-pg · collector · tool-metrics |
-| 任务/审批 | tasks(引擎+契约) · approvals · task-inspection · task-sql-audit · tool-task-report · tool-task-admin |
-| 记忆 | embeddings-openai-compat · memory-pg · memory-ingest · memory-context · tool-memory |
-| UI 底座 | ui-opendb(RPC) · ui-harness(壳) |
+| cordis · cosmokit · schemastery | 插件内核框架、schema 校验 |
+| dsh-agent-loop（Runtime 侧） | 真正的 agent 执行循环（Host 侧才换派发） |
+| dsh-llm · llm-deepseek | 模型接入（DeepSeek 直连，key 走 Secret→env） |
+| dsh-web-app 全套（30+ 包） | 控制台 UI：会话视图/工具树/设置页/schema 表单 |
+| dsh-tools · dsh-skills · dsh-agent-presets | 工具注册表、技能注册表、预设机制 |
+| dsh-permission-presets · dsh-subagents · plan-mode · compaction | 权限档、子代理、计划、上下文压缩 |
+
+#### B · 继承 dsh、只改配置或禁用（patch 方式，约 10 行）
+| dsh 行 | 改动 |
+|---|---|
+| webserver / connection | 端口 env 化；trust fence 加部署地址名单 |
+| storage-domain | backend=pg + 低敏 domain（projcache/feedback）路由 redis |
+| agent-loop(Host) · session-persistence-jsonl · storage-json · attachment-local · hmr · ui-workspace · directory-picker | 禁用，由 C/D 类插件替换 |
+
+#### C · dsh seam 的自研 Provider（9 个）
+| 插件 | 作用 |
+|---|---|
+| session-persistence-pg | 会话事件持久化 → PG（平台真相源基石） |
+| agent-loop-dispatch ⭐ | Host 侧 agent 工厂槽位 → PG 队列派发（P0 核心架构件） |
+| runtime-worker ⭐ | Runtime 侧领取/接力/心跳/stale 重放/NOTIFY 即时唤醒（P0 核心架构件） |
+| storage-pg / storage-redis | dsh kv 存储 → PG / Redis 双后端 |
+| attachment-s3 / spill-s3 | 附件、大文本溢出 → MinIO |
+| directory-picker-agent | "选目录"语义改造为"选智能体" |
+| agent-presets-pg | 预设落库：PG 真相物化到 dsh 原生 preset 目录 |
+
+#### D · 全新开发（42 个）
+| 域 | 插件 |
+|---|---|
+| 数据库能力与采集（7） | db（方言 seam+只读三防线）· db-opengauss（dbe_perf 诊断）· tool-db · metrics-timescale（hypertable+舰队聚合+7d 保留）· dictionary-pg（字典快照 diff）· collector（无 LLM 采集树，2001 节点 60s）· tool-metrics（含 metrics_fleet_overview） |
+| 任务与审批（10，任务功能重做中逐个重审） | tasks（G1 契约+引擎：cron/CAS/催交/service 生命周期/leader 竞选）· approvals（报告签收）· tool-task-report · tool-task-admin（create/update/list/propose）· alert-ddl（水位告警器）· task-inspection · task-sql-audit · task-incident · task-monitor-dashboard（四个双半边任务类型）|
+| 记忆与知识（9） | embeddings-openai-compat（Ollama+bge-m3）· memory-pg · memory-context（会话注入）· memory-ingest（报告自动入库）· tool-memory · memory-graph（实体共现图+两跳查询）· knowledge-pg（切块+pgvector）· tool-knowledge · knowledge-vector（Qdrant 加速层，pgvector 兜底） |
+| 产品面 UI（8） | ui-opendb（/opendb RPC+管理段）· ui-harness（产品壳：侧栏/主区/task-resource-node 三面板桥）· ui-node-monitor · platform-status（资源大盘+HPA 指标路由）· ui-memory · ui-knowledge · onboarding · session-query-pg（会话全文检索） |
+| 平台与基建（8） | registry（租户/agent/节点注册表）· tenant-context（RLS 越权用例）· instructions-pg（常驻指令注入）· host-notify-bridge（NOTIFY 总线+毫秒唤醒链）· tool-read-spill · skill-pg（四运维技能）· bundle-host/runtime/collector（三 profile 组合包） |
 
 ### 剩余节点 → 插件交付
 | 节点 | 需开发插件 |
