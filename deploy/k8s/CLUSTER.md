@@ -289,3 +289,21 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   预设 = dsh 内置 standard（镜像内 @deepseek-ai/dsh-agent-presets 包），零自定义；
   用户自定义 root 是 `$DSH_HOME/.agent-presets`（pod 内 /var/lib/dsh/.agent-presets，实测不存在）。
   将来要自定义预设：ConfigMap 挂到该路径（host 现为 emptyDir，直接写会随重启丢）。
+
+## 2026-08-20 判定项全量落地（user 复议：除 metrics-victoria 全部实现）
+- **host-notify-bridge + LISTEN/NOTIFY ✅（合一）**：opendbNotify 总线（专用 LISTEN 连接+断线重连+
+  懒挂频道+at-most-once 语义）；两条唤醒链——thread 入队→worker 即时领取（**实测 58ms**，原 poll
+  均值 1s/最差 2s）、task runNow→引擎即时 tick（原最差 30s）。poll 保底全保留。
+- **HPA-by-WS ✅**：platform-status 裸指标路由 /opendb/metrics.json（node getConnections）+
+  host KEDA metrics-api ScaledObject（min3/max6/target50，缩容 600s 稳窗护 sticky）。SO Ready+Active。
+- **storage-redis ✅**：Redis kv backend（hash per table + AOF + PVC）；storage-domain routes 把
+  session_projcache/message_feedback 路由 redis（可重建低敏域）；**workspace 铁定留 pg**。
+  实测两 unit version 键落 Redis、平台无恙。坑：build-image.sh 输出接 `| tail` 会吃掉退出码——
+  验证构建成功要看 `image built & pushed` 行或单独 echo rc。
+- **knowledge-vector ✅**：Qdrant v1.12（chart 部署+PVC）+ 加速层服务（60s 全量对账同步含删除、
+  chunk id→UUID 映射、agent 过滤）+ knowledge-pg 检索接入（ready 优先 Qdrant，任何故障回退
+  pgvector——**PG chunks 永远是唯一真相**）。实测 points_count 与 chunks 一致。
+- **agent-presets-pg ✅**：011 表为真相 → 60s 物化到 $DSH_HOME/.agent-presets（dsh 原生 user root，
+  机制零改动）；删除对账只清带 .managed-by-opendb 标记的目录；/opendb-presets 管理通道。
+  实测：INSERT→70s 内两副本各自物化；DELETE→目录清除。psql 种子数据仍要走 .sql 文件（引号地狱口诀）。
+- metrics-victoria 维持跳过（user 指定例外）。

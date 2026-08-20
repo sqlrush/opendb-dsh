@@ -129,4 +129,5 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | P2 W3（知识与检索）✅ | knowledge-pg · tool-knowledge（实际交付名，代 knowledge-ingest）· ui-memory / ui-knowledge（双半边）· session-query-pg |
 | P2 W4（平台面收尾） | **connection-auth**（简版）· **agent-presets-pg** · **storage-redis**（可选） |
 | 暂缓池（user 决策先不做） | exec-ssh · tool-db-actions · token-issuer · preset-change-execution · tool-fs-search-ssh · db-postgres ｜ approval-im-feishu / -dingtalk ｜ mcp-db ｜ subagent-queue · workflow-sandbox-job |
+| P3 判定项（2026-08-20 user 复议全落地） | host-notify-bridge ✅（opendbNotify 总线+58ms 唤醒链）· HPA-by-WS ✅（KEDA metrics-api）· storage-redis ✅（低敏域路由）· knowledge-vector ✅（Qdrant 加速层回退 pgvector）· agent-presets-pg ✅（PG 真相物化 .agent-presets）｜ metrics-victoria 维持跳过 |
 | P3 ✅ | memory-graph ✅（PG 原生图）；knowledge-vector/metrics-victoria 判定不需要；host-notify-bridge 架构复核无消费场景；terminal-ssh/sandbox-job 随暂缓池 |
