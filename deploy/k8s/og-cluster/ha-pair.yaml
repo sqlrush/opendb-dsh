@@ -57,7 +57,7 @@ spec:
           lifecycle:
             postStart:
               exec:
-                command: ["bash", "-c", "for i in $(seq 1 90); do H=/var/lib/opengauss/data/pg_hba.conf; if [ -f $H ]; then grep -q 'replication omm' $H || { echo 'host replication omm 10.42.0.0/16 trust' >> $H; su - omm -c 'LD_LIBRARY_PATH=/usr/local/opengauss/lib /usr/local/opengauss/bin/gs_ctl reload -D /var/lib/opengauss/data' || true; }; exit 0; fi; sleep 2; done"]
+                command: ["bash", "-c", "for i in $(seq 1 90); do H=/var/lib/opengauss/data/pg_hba.conf; if [ -f $H ]; then grep -q 'replication omm' $H || echo 'host replication omm 10.42.0.0/16 trust' >> $H; break; fi; sleep 2; done; for i in $(seq 1 150); do PEER_IP=$(getent hosts og-ha-standby-hl.default.svc.cluster.local | head -1 | cut -d' ' -f1); if [ -n \"$PEER_IP\" ]; then C=/var/lib/opengauss/data/postgresql.conf; grep -q \"remotehost=$PEER_IP \" $C || { sed -i \"s|remotehost=[0-9.]* |remotehost=$PEER_IP |\" $C; su - omm -c 'LD_LIBRARY_PATH=/usr/local/opengauss/lib /usr/local/opengauss/bin/gs_ctl reload -D /var/lib/opengauss/data' || true; }; exit 0; fi; sleep 2; done; exit 0"]
           env:
             - { name: GS_PASSWORD, value: "Root@1234" }
             - { name: SERVER_MODE, value: primary }
