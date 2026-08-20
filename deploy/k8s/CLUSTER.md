@@ -307,3 +307,25 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   机制零改动）；删除对账只清带 .managed-by-opendb 标记的目录；/opendb-presets 管理通道。
   实测：INSERT→70s 内两副本各自物化；DELETE→目录清除。psql 种子数据仍要走 .sql 文件（引号地狱口诀）。
 - metrics-victoria 维持跳过（user 指定例外）。
+
+## 2026-08-20 缺口清单补完（user 指令：除 UI 二轮全部补）
+- **task_propose ✅**：提案→ask_user 确认→task_update 启用的显式环（草案=enabled:false 真实任务，面板可见）。
+- **conformance 两小件 ✅**：scripts/ci/conformance-boot.mjs——dsh-app-boot 编程式 boot（真实 Loader）
+  + assertEntriesActivated，三 profile 全过并入 CI（第七道门）。坑：profiles 的 cordis.yml 是 dsh 启动期
+  合成的，脚本先经 dump-config 生成；外设（redis/qdrant/minio）缺失时插件必须降级 ACTIVE——本身就是韧性断言。
+- **og 一主一备 ✅（五连坑实录）**：manifest deploy/k8s/og-cluster/ha-pair.yaml。
+  ① 全量 enmotech/opengauss:5.0.3 的 MOT 引擎在容器 NUMA 下 FATAL——换 og-lite（同支持 SERVER_MODE/REPL_CONN_INFO）；
+  ② k8s 默认 /dev/shm 64MB——og 要 Memory emptyDir；③ 模式要 `gaussdb -M primary/standby` 命令行参数（env 只写配置）；
+  ④ replconninfo 端口不能用 port+1（5433 内部保留）——5434+localservice/remoteservice；
+  ⑤ og 内核禁初始用户远程连接（trust/md5 都拒），唯一豁免=**来源地址在 replconninfo 白名单**——
+  remotehost 必须写对端**真实 pod IP**（headless DNS 解析；Service IP 不行）。
+  备库首次 init 由 entrypoint 自动 full build（主库须已 ready 且 hba 放行 omm replication——postStart 补）；
+  运行中 gs_ctl build 会杀 PID1，重建备库走"删 deploy+pvc→主库白名单刷新→重建"运维手册。
+  终态实证：**Streaming|Sync**，主写 repl_proof 5 秒备读到；opendb_ro 建于主自动复制到备；
+  两节点注册平台（NodePort 30021/30022），collector 各 42 指标采集正常——复制指标有了真实数据源。
+  遗留债：pod 漂移后对端白名单刷新是手册操作（自动化需 operator 级编排，超 MVP）。
+- **多租户实体端到端 ✅**：012 host_pool 列；acme 租户+配额(2/10/5)+专属 agent；集群级非特权探针实测
+  acme=1 行/default=5 行/无身份=0 行。生产池路由待多池部署形态。
+- **文档收尾 ✅**：设计文档 artifact 同步 v0.9（同 URL）；新增交付全景演示页（P0-P3 数据/事故/暂缓池）。
+- 负载字面验收（稳态 4-6/峰值 20）：脚本 /tmp/load-accept.sh 首跑撞上 mac 网络退化（kubectl IPv6 no-route
+  ——观测挂、发送未知），待网络恢复重跑。
