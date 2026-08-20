@@ -32,6 +32,7 @@
     "@opendb-dsh/host-notify-bridge": "workspace:*",
     "@opendb-dsh/knowledge-pg": "workspace:*",
     "@opendb-dsh/knowledge-vector": "workspace:*",
+    "@opendb-dsh/agent-presets-pg": "workspace:*",
     "@opendb-dsh/tool-knowledge": "workspace:*",
     "@opendb-dsh/memory-context": "workspace:*",
     "@opendb-dsh/tool-memory": "workspace:*"

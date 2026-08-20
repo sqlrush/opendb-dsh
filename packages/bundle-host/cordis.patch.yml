@@ -171,3 +171,9 @@
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
         qdrantUrl: !!js process.env.OPENDB_QDRANT_URL ?? ''
+# ── P3：agent-presets-pg（预设落库：PG 真相物化到 .agent-presets，dsh 原生扫描）──
+- insert:
+    - id: agent-presets-pg
+      name: '@opendb-dsh/agent-presets-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
