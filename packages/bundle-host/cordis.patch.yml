@@ -164,3 +164,10 @@
       name: '@opendb-dsh/host-notify-bridge'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+# ── P3：knowledge-vector（Qdrant 加速层——PG 真相，故障回退 pgvector）───────────
+- insert:
+    - id: opendb-vector-search
+      name: '@opendb-dsh/knowledge-vector'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+        qdrantUrl: !!js process.env.OPENDB_QDRANT_URL ?? ''

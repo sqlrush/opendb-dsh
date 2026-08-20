@@ -1,0 +1,44 @@
+{{- if .Values.qdrant.enabled }}
+# P3 knowledge-vector：专用向量库（检索加速层；PG chunks 表仍是真相，故障自动回退 pgvector）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-qdrant
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: {{ .Release.Name }}-qdrant } }
+  template:
+    metadata: { labels: { app: {{ .Release.Name }}-qdrant } }
+    spec:
+      containers:
+        - name: qdrant
+          image: {{ .Values.qdrant.image }}
+          ports: [{ containerPort: 6333 }]
+          readinessProbe: { httpGet: { path: /readyz, port: 6333 }, initialDelaySeconds: 5, periodSeconds: 5 }
+          resources: { requests: { cpu: 100m, memory: 128Mi }, limits: { memory: 1Gi } }
+          volumeMounts:
+            - { name: data, mountPath: /qdrant/storage }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: {{ .Release.Name }}-qdrant-data }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-qdrant-data
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 2Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-qdrant
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  selector: { app: {{ .Release.Name }}-qdrant }
+  ports: [{ port: 6333, targetPort: 6333 }]
+{{- end }}

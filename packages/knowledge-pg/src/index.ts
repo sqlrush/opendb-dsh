@@ -129,6 +129,29 @@ export default class KnowledgeService extends Service {
     if (this.embeddings.available === true) {
       try {
         const [vec] = await this.embeddings.embed([input.query]);
+        // P3 knowledge-vector：Qdrant 加速层优先（ctx.get 安全读可选服务；未装/未就绪/出错都回退 pgvector）
+        const vs = (this.ctx as any).get?.('opendbVectorSearch');
+        if (vs?.ready === true) {
+          try {
+            const hits: { chunkId: string; score: number }[] = await vs.search(vec, topK, input.agentId);
+            if (hits.length > 0) {
+              const r = await this.pool.query(
+                `SELECT c.id, c.doc_id, d.title, d.source, c.seq, c.content
+                 FROM opendb_knowledge_chunks c JOIN opendb_knowledge_docs d ON d.id = c.doc_id
+                 WHERE c.id = ANY($1)`, [hits.map((h) => h.chunkId)]);
+              const byId = new Map(r.rows.map((row) => [row.id, row]));
+              return hits
+                .map((h) => ({ row: byId.get(h.chunkId), score: h.score }))
+                .filter((x) => x.row !== undefined)
+                .map((x) => ({
+                  docId: x.row.doc_id, title: x.row.title, source: x.row.source ?? undefined,
+                  seq: x.row.seq, content: x.row.content, distance: 1 - x.score,
+                }));
+            }
+          } catch (cause) {
+            process.stderr.write(`[knowledge] qdrant 检索失败，回退 pgvector：${String((cause as Error).message ?? cause)}\n`);
+          }
+        }
         const vals: unknown[] = [this.tenant, toVectorLiteral(vec), topK];
         if (input.agentId !== undefined) vals.push(input.agentId);
         const r = await this.pool.query(

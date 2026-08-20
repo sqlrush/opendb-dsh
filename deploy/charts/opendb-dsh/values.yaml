@@ -98,3 +98,8 @@ auth:
 redis:
   enabled: true
   image: redis:7-alpine
+
+# ── P3: knowledge-vector（Qdrant 检索加速层；PG 真相不动，故障回退 pgvector）──
+qdrant:
+  enabled: true
+  image: qdrant/qdrant:v1.12.4

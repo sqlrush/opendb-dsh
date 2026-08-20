@@ -29,6 +29,10 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 - name: OPENDB_REDIS_URL
   value: "redis://{{ .Release.Name }}-redis:6379/0"
 {{- end }}
+{{- if .Values.qdrant.enabled }}
+- name: OPENDB_QDRANT_URL
+  value: "http://{{ .Release.Name }}-qdrant:6333"
+{{- end }}
 - name: OPENDB_S3_ENDPOINT
   value: {{ include "opendb.s3Endpoint" . | quote }}
 - name: OPENDB_S3_BUCKET
