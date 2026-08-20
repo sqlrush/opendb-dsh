@@ -51,7 +51,7 @@ spec:
         - name: og
           image: docker.io/enmotech/opengauss-lite:5.0.3
           imagePullPolicy: Never
-          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); export REPL_CONN_INFO=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.2 remoteport=5434 remoteservice=5432'\"; exec /entrypoint.sh gaussdb -M primary"]
+          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); export REPL_CONN_INFO=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.2 remoteport=5434 remoteservice=5432'\"; C=/var/lib/opengauss/data/postgresql.conf; [ -f $C ] && sed -i \"s|^replconninfo1 = .*|replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.2 remoteport=5434 remoteservice=5432'|\" $C; exec /entrypoint.sh gaussdb -M primary"]
           # og-lite 的备库 build 以 OS 用户 omm 连 replication，entrypoint 只给 repuser 放行——补 omm（幂等）
           lifecycle:
             postStart:
@@ -94,7 +94,7 @@ spec:
         - name: og
           image: docker.io/enmotech/opengauss-lite:5.0.3
           imagePullPolicy: Never
-          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); export REPL_CONN_INFO=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.1 remoteport=5434 remoteservice=5432'\"; exec /entrypoint.sh gaussdb -M standby"]
+          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); export REPL_CONN_INFO=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.1 remoteport=5434 remoteservice=5432'\"; C=/var/lib/opengauss/data/postgresql.conf; [ -f $C ] && sed -i \"s|^replconninfo1 = .*|replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.1 remoteport=5434 remoteservice=5432'|\" $C; exec /entrypoint.sh gaussdb -M standby"]
           env:
             - { name: GS_PASSWORD, value: "Root@1234" }
             - { name: SERVER_MODE, value: standby }
