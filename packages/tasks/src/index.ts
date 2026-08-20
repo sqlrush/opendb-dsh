@@ -28,7 +28,7 @@ function reportRow(r: any): TaskReportRecord {
  */
 export default class TasksService extends Service {
   // metrics/dictionary 供 TaskBuildContext；直接列 inject（构造器内探测未注入服务会被 cordis 拒绝，P0 已踩过）
-  static inject = ['opendbRegistry', 'opendbMetrics', 'opendbDictionary', 'opendbApprovals'];
+  static inject = ['opendbRegistry', 'opendbMetrics', 'opendbDictionary', 'opendbApprovals', 'opendbNotify'];
   static Config = z.object({
     connectionString: z.string().required(),
     engine: z.boolean().default(false),
@@ -77,7 +77,16 @@ export default class TasksService extends Service {
       const tickMs = config.tickMs ?? 30_000;
       ctx.effect(() => {
         const timer = setInterval(() => { void this.ready.then(() => this.engine!.tick()).catch(() => {}); }, tickMs);
+        // P3 LISTEN/NOTIFY：runNow/事件入队即拍醒引擎（500ms 节流；30s tick 保底，非 leader 副本收到也只是空转一轮）
+        let lastKick = 0;
+        const unsubscribe = anyCtx.opendbNotify.subscribe('opendb_task_wake', () => {
+          const now = Date.now();
+          if (now - lastKick < 500) return;
+          lastKick = now;
+          void this.ready.then(() => this.engine!.tick()).catch(() => {});
+        });
         return async () => {
+          unsubscribe();
           clearInterval(timer);
           await this.engine!.stopAllServices();   // 热重载/停机时不留孤儿 service 实例
           await this.engine!.releaseLeader();     // 优雅让位（P3 多副本：接管零等待）
@@ -167,7 +176,9 @@ export default class TasksService extends Service {
   async runNow(taskId: string, kind: 'manual' | 'event' = 'manual'): Promise<TaskRunRecord> {
     await this.ready;
     if (this.engine === undefined) throw new Error('本实例未启用任务引擎（engine:false）');
-    return this.engine.runNow(taskId, kind);
+    const run = await this.engine.runNow(taskId, kind);
+    await (this.ctx as any).opendbNotify.publish('opendb_task_wake', taskId).catch(() => { /* poll 保底 */ });
+    return run;
   }
   async listRuns(filter: { taskId?: string; limit?: number } = {}): Promise<TaskRunRecord[]> {
     await this.ready;

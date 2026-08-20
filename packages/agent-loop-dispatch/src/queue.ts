@@ -5,9 +5,12 @@ export async function ensureThread(pool: pg.Pool, sessionId: string, runtimeClas
 }
 export async function enqueue(pool: pg.Pool, sessionId: string, payload: unknown): Promise<void> {
   await pool.query(`INSERT INTO dsh_thread_queue (session_id, kind, payload) VALUES ($1, 'queued', $2)`, [sessionId, JSON.stringify(payload)]);
+  // P3 LISTEN/NOTIFY：入队即拍醒 runtime-worker（毫秒级领取；2s poll 保底——信号 at-most-once）
+  await pool.query(`SELECT pg_notify('opendb_thread_wake', $1)`, [sessionId]).catch(() => { /* 提示信号，丢了有 poll */ });
 }
 export async function interrupt(pool: pg.Pool, sessionId: string): Promise<void> {
   await pool.query(`INSERT INTO dsh_thread_queue (session_id, kind) VALUES ($1, 'interrupt')`, [sessionId]);
+  await pool.query(`SELECT pg_notify('opendb_thread_wake', $1)`, [sessionId]).catch(() => { /* same */ });
 }
 export async function threadStatus(pool: pg.Pool, sessionId: string): Promise<'idle' | 'running' | 'interrupted' | undefined> {
   const r = await pool.query<{ status: 'idle' | 'running' | 'interrupted' }>('SELECT status FROM dsh_threads WHERE session_id = $1', [sessionId]);

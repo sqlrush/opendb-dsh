@@ -37,7 +37,7 @@ interface AgentHandleLike {
  * wait for idle, release. Heartbeats while running; marks stale threads; drains on dispose.
  */
 export default class RuntimeWorker extends Service {
-  static inject = ['agents', 'sessions', 'sessionPersistence', 'userQuestions'];
+  static inject = ['agents', 'sessions', 'sessionPersistence', 'userQuestions', 'opendbNotify'];   // notify：P3 即时唤醒（构造器读服务必须列 inject——W4 教训）
   static Config = z.object({
     connectionString: z.string().required(),
     runtimeClass: z.string().default('default'),
@@ -87,9 +87,21 @@ export default class RuntimeWorker extends Service {
         }
         if (!this.stopping) timer = setTimeout(tick, this.config.pollMs);
       };
+      // P3 LISTEN/NOTIFY 即时唤醒：入队信号一到就把下一次 poll 提前到现在（200ms 节流；2s poll 保底）
+      let lastKick = 0;
+      const unsubscribe = anyCtx.opendbNotify !== undefined
+        ? anyCtx.opendbNotify.subscribe('opendb_thread_wake', () => {
+            const now = Date.now();
+            if (now - lastKick < 200 || this.stopping) return;
+            lastKick = now;
+            if (timer !== undefined) clearTimeout(timer);
+            void this.ready.then(tick).catch(() => {});
+          })
+        : undefined;
       this.ready = runMigrations(this.pool);
       this.ready.then(tick).catch((err) => process.stderr.write(`[runtime-worker] migrations failed: ${String(err)}\n`));
       return async () => {
+        unsubscribe?.();
         // drain: stop claiming, wait for in-flight turns, then close resources
         this.stopping = true;
         if (timer) clearTimeout(timer);
