@@ -51,7 +51,8 @@ spec:
         - name: og
           image: docker.io/enmotech/opengauss-lite:5.0.3
           imagePullPolicy: Never
-          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); export REPL_CONN_INFO=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.2 remoteport=5434 remoteservice=5432'\"; C=/var/lib/opengauss/data/postgresql.conf; [ -f $C ] && sed -i \"s|^replconninfo1 = .*|replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.2 remoteport=5434 remoteservice=5432'|\" $C; exec /entrypoint.sh gaussdb -M primary"]
+          # og 内核只对 replconninfo 白名单地址豁免 initial-user 远程禁令——remotehost 必须是对端真实 pod IP
+          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); for i in $(seq 1 30); do PEER_IP=$(getent hosts og-ha-standby-hl.default.svc.cluster.local | head -1 | cut -d' ' -f1); [ -n \"$PEER_IP\" ] && break; sleep 2; done; PEER_IP=${PEER_IP:-10.43.230.2}; R=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=$PEER_IP remoteport=5434 remoteservice=5432'\"; export REPL_CONN_INFO=\"$R\"; C=/var/lib/opengauss/data/postgresql.conf; [ -f $C ] && sed -i \"s|^replconninfo1 = .*|$R|\" $C; exec /entrypoint.sh gaussdb -M primary"]
           # og-lite 的备库 build 以 OS 用户 omm 连 replication，entrypoint 只给 repuser 放行——补 omm（幂等）
           lifecycle:
             postStart:
@@ -94,7 +95,7 @@ spec:
         - name: og
           image: docker.io/enmotech/opengauss-lite:5.0.3
           imagePullPolicy: Never
-          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); export REPL_CONN_INFO=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.1 remoteport=5434 remoteservice=5432'\"; C=/var/lib/opengauss/data/postgresql.conf; [ -f $C ] && sed -i \"s|^replconninfo1 = .*|replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.1 remoteport=5434 remoteservice=5432'|\" $C; exec /entrypoint.sh gaussdb -M standby"]
+          command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); for i in $(seq 1 60); do PEER_IP=$(getent hosts og-ha-primary-hl.default.svc.cluster.local | head -1 | cut -d' ' -f1); [ -n \"$PEER_IP\" ] && break; sleep 2; done; [ -z \"$PEER_IP\" ] && { echo 'primary unresolvable'; exit 1; }; R=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=$PEER_IP remoteport=5434 remoteservice=5432'\"; export REPL_CONN_INFO=\"$R\"; C=/var/lib/opengauss/data/postgresql.conf; [ -f $C ] && sed -i \"s|^replconninfo1 = .*|$R|\" $C; exec /entrypoint.sh gaussdb -M standby"]
           env:
             - { name: GS_PASSWORD, value: "Root@1234" }
             - { name: SERVER_MODE, value: standby }
@@ -117,3 +118,19 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata: { name: og-ha-standby-data }
 spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 4Gi } } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: og-ha-primary-hl }
+spec:
+  clusterIP: None
+  selector: { app: og-ha, role: primary }
+  ports: [{ port: 5432 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: og-ha-standby-hl }
+spec:
+  clusterIP: None
+  selector: { app: og-ha, role: standby }
+  ports: [{ port: 5432 }]
