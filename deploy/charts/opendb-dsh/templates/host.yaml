@@ -4,7 +4,9 @@ metadata:
   name: {{ .Release.Name }}-host
   labels: {{- include "opendb.labels" . | nindent 4 }}
 spec:
+  {{- if not (and .Values.keda.enabled .Values.host.autoscale) }}
   replicas: {{ .Values.host.replicas }}
+  {{- end }}{{/* autoscale 时副本数交给 KEDA/HPA，helm 不回写 */}}
   # P3 多副本：agents-dir 改 emptyDir+initContainer 重建（RWO PVC 与多副本不兼容），恢复滚动更新
   strategy: { type: RollingUpdate }
   selector: { matchLabels: { app: {{ .Release.Name }}-host } }

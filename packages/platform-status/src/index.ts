@@ -46,6 +46,20 @@ export function apply(ctx: Context, config: { connectionString: string }): void 
   const pool: pg.Pool = createPool(config.connectionString);
   ctx.effect(() => () => { void pool.end(); }, 'platform-status.pool');
 
+  // P3 HPA-by-WS：裸 HTTP 指标路由（KEDA metrics-api scaler 集群内直拉，不经 ingress/认证）。
+  // 连接数取 node server.getConnections（含 WS 长连接——负载近似信号，够 HPA 用）。
+  ctx.effect(() => anyCtx.webServer.register({
+    kind: 'exact',
+    path: '/opendb/metrics.json',
+    handler: async (_req: unknown, res: any) => {
+      const connections = await new Promise<number>((resolve) => {
+        anyCtx.webServer.server.getConnections((err: Error | null, n: number) => resolve(err ? 0 : n));
+      });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ connections, pod: process.env.HOSTNAME ?? 'unknown' }));
+    },
+  }), 'platform-status.metricsRoute');
+
   ctx.effect(() => anyCtx.connection.rpc.handle('/opendb-status', async (endpoint: string, _payload: any): Promise<any> => {
     try {
       if (endpoint !== 'overview') return { ok: false, error: { code: 'bad-request', message: `unknown endpoint ${endpoint}`, details: {} } };

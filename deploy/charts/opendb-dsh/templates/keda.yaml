@@ -48,3 +48,28 @@ spec:
 {{- end }}
 {{- end }}
 {{- end }}
+{{- if and .Values.keda.enabled .Values.host.autoscale }}
+---
+# P3 HPA-by-WS：Host 按连接数扩缩（platform-status 的 /opendb/metrics.json 裸指标路由）
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Release.Name }}-host
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { name: {{ .Release.Name }}-host }
+  minReplicaCount: {{ .Values.host.autoscale.min }}
+  maxReplicaCount: {{ .Values.host.autoscale.max }}
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 600   # sticky 用户体验：缩容前长稳窗，避免频繁断粘
+  triggers:
+    - type: metrics-api
+      metadata:
+        url: "http://{{ .Release.Name }}-host.{{ .Release.Namespace }}.svc:{{ .Values.host.port }}/opendb/metrics.json"
+        valueLocation: "connections"
+        targetValue: {{ .Values.host.autoscale.targetConnections | quote }}
+{{- end }}
