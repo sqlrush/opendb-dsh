@@ -61,10 +61,14 @@ spec:
           ports: [{ containerPort: 5432 }, { containerPort: 5433 }]
           readinessProbe: { tcpSocket: { port: 5432 }, initialDelaySeconds: 30, periodSeconds: 10 }
           resources: { requests: { cpu: 200m, memory: 1Gi }, limits: { memory: 4Gi } }
-          volumeMounts: [{ name: data, mountPath: /var/lib/opengauss }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/opengauss }
+            - { name: shm, mountPath: /dev/shm }
       volumes:
         - name: data
           persistentVolumeClaim: { claimName: og-ha-primary-data }
+        - name: shm
+          emptyDir: { medium: Memory, sizeLimit: 4Gi }
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -95,10 +99,14 @@ spec:
           ports: [{ containerPort: 5432 }, { containerPort: 5433 }]
           readinessProbe: { tcpSocket: { port: 5432 }, initialDelaySeconds: 30, periodSeconds: 10 }
           resources: { requests: { cpu: 200m, memory: 1Gi }, limits: { memory: 4Gi } }
-          volumeMounts: [{ name: data, mountPath: /var/lib/opengauss }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/opengauss }
+            - { name: shm, mountPath: /dev/shm }
       volumes:
         - name: data
           persistentVolumeClaim: { claimName: og-ha-standby-data }
+        - name: shm
+          emptyDir: { medium: Memory, sizeLimit: 4Gi }
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
