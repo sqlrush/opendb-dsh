@@ -19,7 +19,24 @@ const req = createRequire(join(profileDir, 'package.json'));
 const appBootEntry = pathToFileURL(req.resolve('@deepseek-ai/dsh-app-boot', { paths: [req.resolve('@deepseek-ai/dsh/package.json')] })).href;
 const { boot, assertEntriesActivated } = await import(appBootEntry);
 
+// cordis.yml 由 dsh 启动期从 profile 模板+patch 合成——先经 CLI dump-config 让它生成（幂等）
+const { spawnSync } = await import('node:child_process');
+const { existsSync } = await import('node:fs');
 const configPath = join(profileDir, 'cordis.yml');
+if (!existsSync(configPath)) {
+  const home = process.env.DSH_HOME ?? join(repoRoot, '.dsh-conformance-home');
+  const { mkdirSync, symlinkSync, rmSync } = await import('node:fs');
+  mkdirSync(join(home, 'profiles'), { recursive: true });
+  rmSync(join(home, 'profiles', profile), { force: true });
+  symlinkSync(profileDir, join(home, 'profiles', profile));
+  const r = spawnSync(join(repoRoot, 'node_modules', '.bin', 'dsh'), ['--profile', profile, '--dump-config'], {
+    env: { ...process.env, DSH_HOME: home }, stdio: ['ignore', 'ignore', 'inherit'],
+  });
+  if (r.status !== 0 || !existsSync(configPath)) {
+    process.stderr.write(`conformance FAIL: dump-config 未能生成 ${configPath}\n`);
+    process.exit(1);
+  }
+}
 const timeout = setTimeout(() => {
   process.stderr.write(`conformance FAIL: ${profile} boot did not reach active within 120s\n`);
   process.exit(1);
