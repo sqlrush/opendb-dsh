@@ -52,6 +52,11 @@ spec:
           image: docker.io/enmotech/opengauss-lite:5.0.3
           imagePullPolicy: Never
           command: ["bash", "-c", "export SELF_IP=$(hostname -I | cut -d' ' -f1); export REPL_CONN_INFO=\"replconninfo1 = 'localhost=$SELF_IP localport=5434 localservice=5432 remotehost=10.43.230.2 remoteport=5434 remoteservice=5432'\"; exec /entrypoint.sh gaussdb -M primary"]
+          # og-lite 的备库 build 以 OS 用户 omm 连 replication，entrypoint 只给 repuser 放行——补 omm（幂等）
+          lifecycle:
+            postStart:
+              exec:
+                command: ["bash", "-c", "for i in $(seq 1 90); do H=/var/lib/opengauss/data/pg_hba.conf; if [ -f $H ]; then grep -q 'replication omm' $H || { echo 'host replication omm 10.42.0.0/16 trust' >> $H; su - omm -c 'LD_LIBRARY_PATH=/usr/local/opengauss/lib /usr/local/opengauss/bin/gs_ctl reload -D /var/lib/opengauss/data' || true; }; exit 0; fi; sleep 2; done"]
           env:
             - { name: GS_PASSWORD, value: "Root@1234" }
             - { name: SERVER_MODE, value: primary }
