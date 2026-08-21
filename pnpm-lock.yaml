@@ -235,15 +235,9 @@ importers:
       '@opendb-dsh/task-incident':
         specifier: workspace:*
         version: link:../task-incident
-      '@opendb-dsh/task-inspection':
-        specifier: workspace:*
-        version: link:../task-inspection
       '@opendb-dsh/task-monitor-dashboard':
         specifier: workspace:*
         version: link:../task-monitor-dashboard
-      '@opendb-dsh/task-sql-audit':
-        specifier: workspace:*
-        version: link:../task-sql-audit
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../task-sqlreview
@@ -337,15 +331,9 @@ importers:
       '@opendb-dsh/task-incident':
         specifier: workspace:*
         version: link:../task-incident
-      '@opendb-dsh/task-inspection':
-        specifier: workspace:*
-        version: link:../task-inspection
       '@opendb-dsh/task-monitor-dashboard':
         specifier: workspace:*
         version: link:../task-monitor-dashboard
-      '@opendb-dsh/task-sql-audit':
-        specifier: workspace:*
-        version: link:../task-sql-audit
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../task-sqlreview
@@ -1481,15 +1469,9 @@ importers:
       '@opendb-dsh/task-incident':
         specifier: workspace:*
         version: link:../../packages/task-incident
-      '@opendb-dsh/task-inspection':
-        specifier: workspace:*
-        version: link:../../packages/task-inspection
       '@opendb-dsh/task-monitor-dashboard':
         specifier: workspace:*
         version: link:../../packages/task-monitor-dashboard
-      '@opendb-dsh/task-sql-audit':
-        specifier: workspace:*
-        version: link:../../packages/task-sql-audit
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../../packages/task-sqlreview
@@ -1586,15 +1568,9 @@ importers:
       '@opendb-dsh/task-incident':
         specifier: workspace:*
         version: link:../../packages/task-incident
-      '@opendb-dsh/task-inspection':
-        specifier: workspace:*
-        version: link:../../packages/task-inspection
       '@opendb-dsh/task-monitor-dashboard':
         specifier: workspace:*
         version: link:../../packages/task-monitor-dashboard
-      '@opendb-dsh/task-sql-audit':
-        specifier: workspace:*
-        version: link:../../packages/task-sql-audit
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../../packages/task-sqlreview

@@ -107,11 +107,7 @@
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
         engine: false
-- insert:
-    - id: task-inspection
-      name: '@opendb-dsh/task-inspection'
-    - id: task-sql-audit
-      name: '@opendb-dsh/task-sql-audit'
+# task-inspection / task-sql-audit 已下线（2026-08-21 user 拍板：被 task-health / task-sqlreview 取代）
 - insert:
     - id: tool-task-report
       name: '@opendb-dsh/tool-task-report'

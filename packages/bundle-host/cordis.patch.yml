@@ -85,11 +85,7 @@
         connectionString: !!js process.env.OPENDB_PG_URL
         engine: true
         tickMs: 30000
-- insert:
-    - id: task-inspection
-      name: '@opendb-dsh/task-inspection'
-    - id: task-sql-audit
-      name: '@opendb-dsh/task-sql-audit'
+# task-inspection / task-sql-audit 已下线（2026-08-21 user 拍板：被 task-health / task-sqlreview 取代）
 # ── P1 W5: 记忆层（Host 侧：embeddings + memory + 报告入记忆）────────────────
 - insert:
     - id: opendb-embeddings
