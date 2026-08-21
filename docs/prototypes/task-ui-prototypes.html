@@ -1,0 +1,868 @@
+<title>opendb-harness 任务大盘原型</title>
+<style>
+/* ─── opendb-harness 产品视觉 R3：token 全部取自控制台实测（dsh 原生 light）
+   字体栈/主蓝 #4176E6/选中底 #E4EDFD/文字三级 0F1115·61666B·81858C/侧栏 F9FAFB/
+   边框 rgba(0,0,0,.08)/圆角 8px 主导/阴影 0 4px 12px .02 + 0 2px 8px .04/字重仅 400·500(·600 数据强调) ─── */
+:root{
+  --bg:#f9fafb; --panel:#ffffff; --line:rgba(0,0,0,.08); --line2:rgba(0,0,0,.14);
+  --ink:#0f1115; --sub:#61666b; --dim:#81858c;
+  --blue:#4176e6; --blue-soft:#e4edfd; --blue-ink:#0e3074;
+  --ok:#3fa552; --ok-soft:#e8f5ec;
+  --notice:#c9862d; --notice-soft:#faf3e5;
+  --warn:#e07a1f; --warn-soft:#fdf0e3;
+  --crit:#d64545; --crit-soft:#fdecec;
+  --shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);
+  --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--panel);color:var(--ink);
+  font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+
+/* ─── 顶部：原型切换 + 裁决点图例 ─── */
+.topbar{position:sticky;top:0;z-index:50;background:var(--panel);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.topbar .t{font-weight:600;font-size:14px;margin-right:6px}
+.tabs{display:flex;gap:6px}
+.tab{border:none;background:transparent;color:var(--sub);border-radius:0;padding:6px 2px 8px;margin:0 7px;font-size:14px;cursor:pointer;border-bottom:2px solid transparent;font-family:inherit}
+.tab.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:500}
+.tab:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.legend{margin-left:auto;font-size:12px;color:var(--dim)}
+.idea{display:inline-flex;align-items:center;gap:4px;background:#7A5AF8;color:#fff;font-size:10.5px;font-weight:600;border-radius:5px;padding:1px 7px;vertical-align:2px;white-space:nowrap;letter-spacing:.02em}
+
+/* ─── 仿真外壳：侧栏 + 主区 ─── */
+.shell{display:flex;min-height:calc(100vh - 47px)}
+.side{width:230px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);padding:14px 12px;font-size:14px}
+.newSession{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 0;font-size:14px;color:var(--ink);margin:2px 0 16px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.logo{display:flex;align-items:center;gap:7px;padding:2px 8px 14px}
+.logo b{font-size:16.5px;letter-spacing:-.01em}
+.hpill{font-size:9px;font-weight:600;letter-spacing:.6px;color:#fff;background:#1a1a1a;border-radius:4px;padding:2px 6px}
+.srow{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;color:var(--ink);cursor:default}
+.srow.dim{color:var(--dim);font-size:12px;padding-top:12px}
+.srow.on{background:#f2f3f5;color:var(--ink);font-weight:500}
+.srow .dot{width:7px;height:7px;border-radius:4px;margin-left:auto}
+.main{flex:1;min-width:0;padding:22px 34px 70px;max-width:1120px}
+.crumb{font-size:13px;color:var(--dim);margin-bottom:12px}
+.crumb b{color:var(--ink);font-weight:500}
+/* dsh 式页头：大标题 + 灰色辅助信息 + 文字 tab（蓝下划线） */
+.pgHead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:2px}
+.pgTitle{font-size:17px;font-weight:600;color:var(--ink)}
+.pgMeta{font-size:13px;color:var(--dim)}
+.ptabs{display:flex;gap:22px;border-bottom:1px solid var(--line);margin:10px 0 20px}
+.pt{font-size:14px;color:var(--sub);padding:4px 1px 9px;border-bottom:2px solid transparent;cursor:pointer}
+.pt.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:500}
+.pt.aux{margin-left:auto;font-size:12px;color:var(--dim);cursor:default}
+
+/* ─── 通用面板部件 ─── */
+.panel{display:none}
+.panel.on{display:block}
+.band{display:flex;gap:16px;align-items:stretch;flex-wrap:wrap;margin-bottom:16px}
+.statusCard{border-radius:12px;padding:18px 22px;color:#fff;min-width:210px;display:flex;flex-direction:column;justify-content:center;gap:4px}
+.statusCard .big{font-size:26px;font-weight:600;letter-spacing:1px}
+.statusCard .drv{font-size:12px;opacity:.92;max-width:230px;line-height:1.5}
+.metaCol{flex:1;min-width:260px;display:flex;flex-direction:column;gap:8px;justify-content:center}
+.anchor{display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--ok-soft);color:var(--ok);border-radius:6px;padding:3px 10px;font-weight:500;width:fit-content}
+.anchor.badv{background:var(--warn-soft);color:var(--warn)}
+.metaline{font-size:12px;color:var(--dim)}
+.metaline b{color:var(--sub);font-weight:500}
+.h2{font-size:14px;font-weight:500;margin:28px 0 12px;display:flex;align-items:center;gap:8px}
+.h2 .cnt{font-size:12px;color:var(--dim);font-weight:400}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.card,.findCard,.tblwrap,.tl,.statBox,.dimCell,.wdrKeep,.statusCard{box-shadow:var(--shadow)}
+.sev{display:inline-block;width:8px;height:8px;border-radius:4px}
+.sev.g{background:var(--ok)}.sev.y{background:var(--notice)}.sev.o{background:var(--warn)}.sev.r{background:var(--crit)}
+.codeTag{font:600 10.5px var(--mono);background:var(--bg);border:1px solid var(--line2);border-radius:5px;padding:1px 6px;color:var(--sub);letter-spacing:.02em}
+.riskTag{font-size:11px;font-weight:600;border-radius:5px;padding:1px 7px}
+.riskTag.lo{background:var(--ok-soft);color:var(--ok)}
+.riskTag.md{background:var(--notice-soft);color:var(--notice)}
+.riskTag.hi{background:var(--crit-soft);color:var(--crit)}
+.manual{font-size:11px;color:var(--dim);border:1px dashed var(--line2);border-radius:5px;padding:1px 7px}
+.digLink{font-size:12px;color:var(--blue);cursor:pointer}
+.digLink::before{content:"💬 "}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{color:var(--dim);font-weight:500;font-size:12px;text-align:left;padding:7px 10px;border-bottom:1px solid var(--line2);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.tblwrap{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.mono{font-family:var(--mono);font-size:12px}
+.sqlblock{background:#f7f8fa;border:none;border-radius:10px;padding:14px 16px;font:12px/1.7 var(--mono);overflow-x:auto;white-space:pre;color:var(--ink)}
+.notesFold{font-size:12px;color:var(--dim);background:var(--panel);border:1px dashed var(--line2);border-radius:8px;padding:8px 14px;margin-top:14px}
+
+/* 健康环 + 矩阵 */
+.hcTop{display:grid;grid-template-columns:250px 1fr;gap:16px;align-items:stretch}
+@media(max-width:900px){.hcTop{grid-template-columns:1fr}}
+.ring{position:relative;width:190px;height:190px;margin:6px auto}
+.ring svg{transform:rotate(-90deg)}
+.ring .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.ring .mid b{font-size:21px;color:var(--warn)}
+.ring .mid span{font-size:12px;color:var(--dim)}
+.matrix{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:9px}
+.dimCell{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;transition:border-color .1s}
+.dimCell:hover{border-color:var(--blue)}
+.dimCell .nm{font-size:12px;color:var(--sub);display:flex;align-items:center;gap:6px}
+.dimCell .kv{font-size:13px;font-weight:600;margin-top:3px}
+.dimCell .kv small{font-weight:400;color:var(--dim);font-size:11px}
+.thbar{position:relative;height:6px;border-radius:3px;background:#eceef3;margin:8px 0 4px;max-width:280px}
+.thbar>i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.thbar>u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--warn)}
+.thbar>s{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--crit)}
+.prio{display:flex;gap:10px;flex-wrap:wrap}
+.prio .card{flex:1;min-width:240px}
+.prio .pTag{font-size:11px;font-weight:600;color:var(--sub);letter-spacing:.05em}
+.trend{display:flex;gap:3px;align-items:flex-end;height:26px}
+.trend i{flex:1;max-width:16px;border-radius:3px;height:100%}
+.findCard{background:var(--panel);border:1px solid var(--line);border-left-width:3px;border-radius:8px;padding:13px 16px;margin-bottom:10px}
+.findCard.r{border-left-color:var(--crit)}.findCard.o{border-left-color:var(--warn)}.findCard.y{border-left-color:var(--notice)}
+.findHead{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.findHead b{font-size:13px}
+.findBody{font-size:13px;color:var(--sub);margin-top:7px;display:grid;gap:4px}
+.findBody .lab{color:var(--dim);font-size:12px;margin-right:6px}
+.findFoot{display:flex;gap:10px;align-items:center;margin-top:9px;flex-wrap:wrap}
+
+/* 审核统计卡 */
+.statRow{display:flex;gap:10px;flex-wrap:wrap}
+.statBox{flex:1;min-width:120px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.statBox b{font-size:22px;font-weight:600}
+.statBox span{display:block;font-size:12px;color:var(--dim);margin-top:1px}
+.costCompare{display:grid;gap:6px;margin:8px 0;max-width:520px}
+.costRow{display:grid;grid-template-columns:64px 1fr 92px;gap:10px;align-items:center;font-size:12px}
+.costRow .bar{height:14px;border-radius:4px}
+.verified{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--ok);background:var(--ok-soft);border-radius:6px;padding:2px 10px}
+.rejected{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--dim);background:var(--bg);border:1px solid var(--line2);border-radius:6px;padding:2px 10px}
+
+/* WDR */
+.tl{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px 10px}
+.tlAxis{position:relative;height:44px;margin:4px 8px}
+.tlAxis .rail{position:absolute;left:0;right:0;top:19px;height:2px;background:var(--line2)}
+.tlAxis .win{position:absolute;top:8px;height:24px;background:var(--blue-soft);border:1px solid var(--blue);border-radius:6px;opacity:.85}
+.tlAxis .snap{position:absolute;top:15px;width:10px;height:10px;border-radius:5px;background:#fff;border:2.5px solid var(--dim)}
+.tlAxis .snap.in{border-color:var(--blue)}
+.tlLabels{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin:2px 8px 6px}
+.loadStack{display:flex;height:26px;border-radius:6px;overflow:hidden;max-width:680px;border:1px solid var(--line)}
+.loadStack i{display:flex;align-items:center;justify-content:center;font-size:10.5px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden}
+.lg{display:flex;gap:14px;font-size:12px;color:var(--sub);margin-top:6px;flex-wrap:wrap}
+.lg i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.attr{font-size:11px;font-weight:600;border-radius:5px;padding:1px 7px;white-space:nowrap}
+.attr.cpu{background:#e8edff;color:#4658c9}.attr.io{background:#e5f4f1;color:#1d7d6d}
+.attr.tmp{background:var(--warn-soft);color:var(--warn)}.attr.blk{background:var(--crit-soft);color:var(--crit)}
+.delta-up{color:var(--crit);font-weight:600}.delta-dn{color:var(--ok);font-weight:600}
+.wdrKeep{display:flex;align-items:center;gap:10px;background:#f7f8fa;border:none;border-radius:10px;padding:12px 16px;font-size:12px;color:var(--sub)}
+.aside-note{font-size:12px;color:var(--dim);margin:6px 0 0}
+a{color:var(--blue);text-decoration:none}
+
+/* ─── R4：dsh 原版组件风格上的功能组件（按钮 / 图表 / 交互） ─── */
+.btnPrimary{display:inline-flex;align-items:center;gap:6px;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:8px 20px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit}
+.btnPrimary:hover{background:#3565d0}
+.btnGhost{display:inline-flex;align-items:center;gap:6px;background:var(--panel);color:var(--ink);border:1px solid var(--line2);border-radius:10px;padding:8px 20px;font-size:14px;cursor:pointer;font-family:inherit}
+.btnGhost:hover{background:#f7f8fa}
+.signBar{display:flex;align-items:center;gap:12px;background:#f7f8fa;border-radius:12px;padding:12px 18px;margin:14px 0 0;flex-wrap:wrap}
+.donutLeg{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--sub)}
+.donutLeg i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.hiddenRow{display:none}
+.tblwrap.showAll .hiddenRow{display:table-row}
+.moreLink{font-size:13px;color:var(--blue);cursor:pointer;padding:9px 16px;display:inline-block}
+.hideInst{display:none!important}
+#instGrid.instShow .hideInst{display:block!important}
+.inputMock{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 18px rgba(0,0,0,.05);padding:12px 14px;margin-top:24px}
+.inputMock .plus{width:32px;height:32px;border-radius:50%;background:#f2f3f5;display:flex;align-items:center;justify-content:center;font-size:17px;color:var(--sub);flex:none}
+.inputMock .ph{color:#adb2b8;font-size:14px;flex:1}
+.inputMock .selChip{font-size:13px;color:var(--sub);white-space:nowrap}
+.inputMock .send{width:34px;height:34px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:none}
+</style>
+
+<div class="topbar">
+  <span class="t">🎛️ 任务大盘 UI 原型 · 修订 R4（对齐原版 dsh 实拍 + 组件全景）</span>
+  <div class="tabs">
+    <button class="tab on" data-p="p1">① 健康检查</button>
+    <button class="tab" data-p="p2">② SQL 审核与优化</button>
+    <button class="tab" data-p="p3">③ WDR 报告与解读</button>
+    <button class="tab" data-p="p4">④ 集群汇总形态</button>
+    <button class="tab" data-p="p5">⑤ 会话内嵌形态</button>
+  </div>
+  <span class="legend"><span class="idea">裁决点</span> = 待你拍板的设计想法，编号回复"要 / 不要 / 改"即可</span>
+</div>
+
+<div class="shell">
+  <!-- 仿真侧栏：让融合效果可感（静态装饰） -->
+  <aside class="side">
+    <div class="logo">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4176e6" stroke-width="1.8"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/><path d="M4 11.5v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
+      <b>opendb</b><span class="hpill">HARNESS</span>
+    </div>
+    <div class="newSession">⊕ 新会话</div>
+    <div class="srow dim">智能体</div>
+    <div class="srow">▾ 🤖 og-lab</div>
+    <div class="srow dim">会话</div>
+    <div class="srow" id="s0">og5 慢查询这事…</div>
+    <div class="srow dim">任务</div>
+    <div class="srow on" id="s1">og5 健康检查 <span class="dot" style="background:var(--warn)"></span></div>
+    <div class="srow" id="s2">og5 SQL 审核与优化 <span class="dot" style="background:var(--crit)"></span></div>
+    <div class="srow" id="s3">og5 WDR 报告 <span class="dot" style="background:var(--ok)"></span></div>
+    <div class="srow" id="s4">og-cluster-a 集群体检 <span class="dot" style="background:var(--crit)"></span></div>
+    <div class="srow dim">数据库</div>
+    <div class="srow">og5 <span class="dot" style="background:var(--ok)"></span></div>
+    <div class="srow dim" style="margin-top:18px">📈 资源　　⚙️ 设置</div>
+  </aside>
+
+  <main class="main">
+
+  <!-- ═══════════════════════ 原型 ① 健康检查 ═══════════════════════ -->
+  <section class="panel on" id="p1">
+    <div class="pgHead"><span class="pgTitle">og5 健康检查</span><span class="pgMeta">任务 · 每日 08:00 · 调整周期或维度，在会话里说一句即可</span></div>
+    <div class="ptabs"><span class="pt on">报告</span><span class="pt">历史</span><span class="pt">配置</span><span class="pt aux">本次 #run-8f31</span></div>
+
+    <div class="band">
+      <div class="statusCard" style="background:linear-gradient(135deg,#e07a1f,#c9640f)">
+        <span style="font-size:11px;opacity:.8;letter-spacing:.1em">总体状态</span>
+        <span class="big">🟠 告警</span>
+        <span class="drv">驱动：长事务持锁 2h14m 卡住 vacuum → 死元组膨胀正在扩散</span>
+      </div>
+      <div class="metaCol">
+        <span class="anchor">✓ 已锚定 · 9 条确定性发现全覆盖 · 无夸大 · 无遗漏</span>
+        <span class="metaline">检查对象 <b>og5</b> · 完成于 <b>2026-08-21 08:00:42</b> · 采集耗时 <b class="num">38s</b> · 触发 <b>每日 08:00</b></span>
+        <span class="metaline">12 维全部采集成功 · 0 维降级 · 证据包 <a>#run-8f31</a></span>
+        <span class="metaline" style="color:var(--warn)">⏳ 报告待签收</span>
+      </div>
+    </div>
+
+    <!-- 决策控件：审批签收是交互纲领里唯一保留的显式控件（dsh 原版按钮风格） -->
+    <div class="signBar">
+      <span style="font-size:13px">⏳ <b style="font-weight:500">本报告待签收</b> · 签收=确认已阅并入库归档；有异议直接在会话里说，驳回会自动带上下文开新会话</span>
+      <span style="margin-left:auto;display:flex;gap:10px">
+        <button class="btnPrimary" onclick="signOff(this)">✓ 签收</button>
+        <button class="btnGhost">✗ 驳回 · 到会话说原因</button>
+      </span>
+    </div>
+
+    <!-- 裁决点① 健康环 vs 维度矩阵：两种形态并排给你选（也可以并存：环做总览、矩阵做导航） -->
+    <div class="h2">十二维体检 <span class="idea">裁决点①</span><span class="cnt">左环右阵二选一，或并存（环=总览重心，阵=点击下钻）</span></div>
+    <div class="hcTop">
+      <div class="card" style="display:flex;flex-direction:column;align-items:center">
+        <div class="ring">
+          <svg width="190" height="190" viewBox="0 0 190 190">
+            <!-- 12 段环，每段一维；参考 DBbrain 健康环但拒绝编造分数：中心是确定性状态字 -->
+            <g fill="none" stroke-width="14" stroke-linecap="butt">
+              <circle cx="95" cy="95" r="76" stroke="#eceef3"/>
+              <!-- 每段 26.5° 留 3.3° 缝：周长477，每段35弧长 -->
+              <circle cx="95" cy="95" r="76" stroke="#3fa552" stroke-dasharray="35 442" stroke-dashoffset="0"/>
+              <circle cx="95" cy="95" r="76" stroke="#c9862d" stroke-dasharray="35 442" stroke-dashoffset="-39.75"/>
+              <circle cx="95" cy="95" r="76" stroke="#e07a1f" stroke-dasharray="35 442" stroke-dashoffset="-79.5"/>
+              <circle cx="95" cy="95" r="76" stroke="#d64545" stroke-dasharray="35 442" stroke-dashoffset="-119.25"/>
+              <circle cx="95" cy="95" r="76" stroke="#e07a1f" stroke-dasharray="35 442" stroke-dashoffset="-159"/>
+              <circle cx="95" cy="95" r="76" stroke="#3fa552" stroke-dasharray="35 442" stroke-dashoffset="-198.75"/>
+              <circle cx="95" cy="95" r="76" stroke="#d64545" stroke-dasharray="35 442" stroke-dashoffset="-238.5"/>
+              <circle cx="95" cy="95" r="76" stroke="#3fa552" stroke-dasharray="35 442" stroke-dashoffset="-278.25"/>
+              <circle cx="95" cy="95" r="76" stroke="#3fa552" stroke-dasharray="35 442" stroke-dashoffset="-318"/>
+              <circle cx="95" cy="95" r="76" stroke="#3fa552" stroke-dasharray="35 442" stroke-dashoffset="-357.75"/>
+              <circle cx="95" cy="95" r="76" stroke="#c9862d" stroke-dasharray="35 442" stroke-dashoffset="-397.5"/>
+              <circle cx="95" cy="95" r="76" stroke="#3fa552" stroke-dasharray="35 442" stroke-dashoffset="-437.25"/>
+            </g>
+          </svg>
+          <div class="mid"><b>告警</b><span>12 维 · 2🔴 2🟠 2🟡</span><span>不打分，只讲证据</span></div>
+        </div>
+        <div class="aside-note">环形总览（DBbrain 式重心，但中心=确定性状态，拒绝健康分）</div>
+      </div>
+      <div class="matrix">
+        <div class="dimCell"><div class="nm"><span class="sev g"></span>总览</div><div class="kv num">13 <small>会话 · 命中 99.8%</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev y"></span>等待事件</div><div class="kv">LWLock <small>集中 41%</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev o"></span>慢 SQL</div><div class="kv num">4 <small>条 &gt; 3s</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev r"></span>长·空闲事务</div><div class="kv num">2h14m <small>最长持锁</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev o"></span>死元组膨胀</div><div class="kv num">38% <small>orders 表</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev g"></span>LWLock</div><div class="kv">正常</div></div>
+        <div class="dimCell"><div class="nm"><span class="sev r"></span>锁与阻塞链</div><div class="kv num">7 <small>会话被阻塞</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev g"></span>连接</div><div class="kv num">12% <small>/ max 1000</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev g"></span>Checkpoint/WAL</div><div class="kv">正常</div></div>
+        <div class="dimCell"><div class="nm"><span class="sev g"></span>主备复制</div><div class="kv">Streaming·Sync</div></div>
+        <div class="dimCell"><div class="nm"><span class="sev y"></span>对象与索引</div><div class="kv num">3 <small>个疑似无用索引</small></div></div>
+        <div class="dimCell"><div class="nm"><span class="sev g"></span>事务并发</div><div class="kv">正常</div></div>
+      </div>
+    </div>
+    <div class="aside-note" style="margin-top:8px">↑ 点任意维度格子展开该维的原始证据表（阻塞链树 / Top 死元组 / 等待 Top…）——矩阵即导航</div>
+
+    <div class="h2">发现 <span class="cnt">按严重度排序 · 每条 = 证据 → 根因 → 建议</span></div>
+
+    <div class="findCard r">
+      <div class="findHead"><span class="sev r"></span><b>长事务持锁 2h14m</b><span class="codeTag">XACT_LONG</span>
+        <span style="margin-left:auto" class="riskTag md">建议风险:中</span><span class="manual">需人工执行</span></div>
+      <div class="thbar"><i style="width:96%;background:var(--crit)"></i><u style="left:34%" title="warn >30m"></u><s style="left:78%" title="crit >2h"></s></div>
+      <div class="findBody">
+        <div><span class="lab">证据</span>pid <span class="mono">1382930</span> 事务运行 <b class="num">2h14m</b>（阈值 &gt;2h）· state=idle in transaction · 持有 <span class="mono">orders</span> RowExclusiveLock</div>
+        <div><span class="lab">根因</span>应用连接开启事务后未提交（典型连接池泄漏），下游 7 个会话排队，同时卡住 autovacuum 触发膨胀扩散</div>
+        <div><span class="lab">建议</span>业务侧确认后提交或回滚该事务；根治：应用池加 idle-in-transaction 超时</div>
+      </div>
+      <div class="findFoot">
+        <span class="digLink">在会话里深挖：查一下 1382930 在执行什么、来自哪个应用</span>
+        <span class="idea">裁决点②</span><span style="font-size:12px;color:var(--dim)">点击 = 打开新会话并自动填入这句话（把用户带回会话主战场）</span>
+      </div>
+    </div>
+
+    <div class="findCard r">
+      <div class="findHead"><span class="sev r"></span><b>阻塞链：7 个会话排队</b><span class="codeTag">LOCK_CHAIN</span>
+        <span style="margin-left:auto" class="riskTag hi">建议风险:高</span><span class="manual">需人工执行</span></div>
+      <div class="findBody">
+        <div><span class="lab">证据</span>根持锁者 pid <span class="mono">1382930</span>（即上条长事务）→ 阻塞 <b class="num">7</b> 个 UPDATE/SELECT FOR UPDATE，最长等待 <b class="num">41m</b></div>
+        <div><span class="lab">根因</span>与 XACT_LONG 同源——处理根事务即整链释放（跨维关联，不重复计数）</div>
+        <div><span class="lab">建议</span>若业务无法及时提交：评估 pg_terminate_backend(1382930)，先通知业务方</div>
+      </div>
+      <div class="findFoot"><span class="digLink">在会话里深挖：把阻塞链树画给我看</span></div>
+    </div>
+
+    <div class="findCard o">
+      <div class="findHead"><span class="sev o"></span><b>orders 死元组率 38%</b><span class="codeTag">BLOAT_HIGH</span>
+        <span style="margin-left:auto" class="riskTag lo">建议风险:低</span><span class="manual">需人工执行</span></div>
+      <div class="thbar"><i style="width:63%;background:var(--warn)"></i><u style="left:33%" title="notice >20%"></u><s style="left:66%" title="warn >40%"></s></div>
+      <div class="findBody">
+        <div><span class="lab">证据</span><span class="mono">public.orders</span> n_dead_tup <b class="num">183 万</b> / live <b class="num">481 万</b>（38%，阈值 warn&gt;30%）· last_autovacuum 6h 前</div>
+        <div><span class="lab">根因</span>autovacuum 被上述长事务的 xmin 视界卡住，回收不到位</div>
+        <div><span class="lab">建议</span>长事务处理后观察一轮 autovacuum；仍高则业务低峰 <span class="mono">VACUUM (VERBOSE) orders</span></div>
+      </div>
+      <div class="findFoot"><span class="digLink">在会话里深挖：orders 表的膨胀趋势最近一周怎么走的</span></div>
+    </div>
+
+    <div class="findCard y">
+      <div class="findHead"><span class="sev y"></span><b>3 个疑似无用索引</b><span class="codeTag">IDX_UNUSED</span>
+        <span style="margin-left:auto" class="riskTag lo">建议风险:低</span><span class="manual">需人工执行</span></div>
+      <div class="findBody">
+        <div><span class="lab">证据</span><span class="mono">idx_orders_note / idx_cust_tmp / idx_ship_bak</span> idx_scan=0 已 30 天 · 合计占用 <b class="num">2.1GB</b></div>
+        <div><span class="lab">建议</span>确认无低频批处理依赖后删除；先转入观察清单 14 天</div>
+      </div>
+    </div>
+
+    <!-- 处置优先级：与严重度分离（skill 纪律） -->
+    <div class="h2">处置优先级 <span class="cnt">P0/P1/P2 由模型按影响面排——与上面的严重度是两个维度</span></div>
+    <div class="prio">
+      <div class="card"><div class="pTag">P0 · 立即</div><div style="font-size:13px;margin-top:4px">处理长事务 1382930（引用 XACT_LONG🔴）——它同时是阻塞链与膨胀的根</div></div>
+      <div class="card"><div class="pTag">P1 · 本周</div><div style="font-size:13px;margin-top:4px">应用连接池加 idle-in-transaction 超时（根治复发）；复核 4 条慢 SQL（SLOWSQL🟠→ 转 SQL 优化任务）</div></div>
+      <div class="card"><div class="pTag">P2 · 排期</div><div style="font-size:13px;margin-top:4px">无用索引观察清单（IDX_UNUSED🟡）；等待事件集中度跟踪</div></div>
+    </div>
+
+    <!-- 裁决点③ 历史趋势 -->
+    <div class="h2">检查历史 <span class="idea">裁决点③</span><span class="cnt">近 30 次一格一次，点格子打开当日完整报告（阿里 DAS 式趋势）</span></div>
+    <div class="card">
+      <div class="trend">
+        <i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--notice)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--notice)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--ok)"></i><i style="background:var(--warn);outline:2px solid var(--ink);outline-offset:1px"></i>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-top:6px"><span>07-23</span><span>今天 ▲</span></div>
+
+      <!-- 曲线图组件：轻量自绘 SVG（有具体指标恶化时，格子趋势下自动附上该指标曲线） -->
+      <div style="margin-top:18px;font-size:12px;color:var(--dim)">orders 死元组率 · 近 30 次巡检 <span class="idea">裁决点⑪</span> <span>曲线/饼图等图表全部轻量自绘 SVG——零第三方依赖，插件即插即渲，样式跟产品 token 走</span></div>
+      <svg viewBox="0 0 720 120" width="100%" height="120" style="margin-top:6px">
+        <line x1="0" y1="30" x2="720" y2="30" stroke="#eef0f3" stroke-width="1"/>
+        <line x1="0" y1="60" x2="720" y2="60" stroke="#eef0f3" stroke-width="1"/>
+        <line x1="0" y1="90" x2="720" y2="90" stroke="#eef0f3" stroke-width="1"/>
+        <line x1="0" y1="21" x2="720" y2="21" stroke="#d64545" stroke-width="1" stroke-dasharray="5 4" opacity=".55"/>
+        <line x1="0" y1="55" x2="720" y2="55" stroke="#e07a1f" stroke-width="1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="4" y="17" font-size="9.5" fill="#d64545">crit 35%</text>
+        <text x="4" y="51" font-size="9.5" fill="#e07a1f">warn 20%</text>
+        <polygon points="8,102 32,100 56,102 80,98 104,100 128,100 152,98 176,95 200,98 224,100 248,98 272,95 296,93 320,95 344,93 368,91 392,93 416,91 440,88 464,86 488,84 512,79 536,73 560,66 584,57 608,48 632,41 656,34 680,29 704,25 704,120 8,120" fill="#4176e6" opacity=".07"/>
+        <polyline points="8,102 32,100 56,102 80,98 104,100 128,100 152,98 176,95 200,98 224,100 248,98 272,95 296,93 320,95 344,93 368,91 392,93 416,91 440,88 464,86 488,84 512,79 536,73 560,66 584,57 608,48 632,41 656,34 680,29 704,25" fill="none" stroke="#4176e6" stroke-width="2" stroke-linejoin="round"/>
+        <circle cx="704" cy="25" r="3.5" fill="#4176e6"/>
+        <text x="700" y="14" font-size="10.5" fill="#0f1115" font-weight="600" text-anchor="end">38%</text>
+      </svg>
+      <div style="font-size:11px;color:var(--dim)">↑ 08-14 起持续爬升——与本次 XACT_LONG 卡 vacuum 的时间点吻合（曲线即证据）</div>
+    </div>
+
+    <div class="notesFold">📋 Collection Notes：本次 12/12 维采集成功。（若有维度因缺视图/权限降级，会在这里如实列出，该维不做任何臆测结论——skill 纪律）</div>
+  </section>
+
+  <!-- ═══════════════════════ 原型 ② SQL 审核与优化 ═══════════════════════ -->
+  <section class="panel" id="p2">
+    <div class="pgHead"><span class="pgTitle">og5 SQL 审核与优化</span><span class="pgMeta">任务 · 每日 18:00 · public schema 存量 + 线上 Top 20 · 会话里贴 SQL 也会即席审核</span></div>
+    <div class="ptabs"><span class="pt on">报告</span><span class="pt">历史</span><span class="pt">配置</span><span class="pt aux">本次 #run-3e92</span></div>
+
+    <div class="band">
+      <div class="statusCard" style="background:linear-gradient(135deg,#d64545,#b93a3a)">
+        <span style="font-size:11px;opacity:.8;letter-spacing:.1em">总体状态</span>
+        <span class="big">🔴 严重</span>
+        <span class="drv">驱动：2 条线上高频 SQL 无主键表全表更新，回滚不可控</span>
+      </div>
+      <div class="metaCol">
+        <span class="anchor">✓ 已锚定 · 规则判定由脚本产出 · 优化建议全部经 hypopg 验证</span>
+        <span class="metaline">审核对象 <b>public 全量 146 表 · 线上 Top 20 SQL</b> · 完成于 <b>2026-08-21 18:00</b> · 规则集 <a>rules v1（14 条）</a></span>
+        <span class="metaline">规则集可会话调整：<i>"把索引列数上限改成 4"</i> · 客户规范经知识库对照（参考不改判）</span>
+      </div>
+    </div>
+
+    <!-- 华为 UGO 式分级计数 -->
+    <div class="statRow">
+      <div class="statBox"><b style="color:var(--crit)" class="num">2</b><span>🔴 严重违规</span></div>
+      <div class="statBox"><b style="color:var(--warn)" class="num">5</b><span>🟠 告警违规</span></div>
+      <div class="statBox"><b style="color:var(--notice)" class="num">8</b><span>🟡 建议项</span></div>
+      <div class="statBox"><b style="color:var(--ok)" class="num">131</b><span>✓ 通过对象</span></div>
+    </div>
+
+    <!-- 饼图 + 条形列表组件（自绘 SVG，dsh 灰阶质感 + 语义色只上数据） -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+      <div class="card" style="flex:1;min-width:280px;display:flex;gap:18px;align-items:center">
+        <svg width="110" height="110" viewBox="0 0 110 110">
+          <g transform="rotate(-90 55 55)">
+            <circle cx="55" cy="55" r="40" fill="none" stroke="#f2f3f5" stroke-width="16"/>
+            <circle cx="55" cy="55" r="40" fill="none" stroke="#d64545" stroke-width="16" stroke-dasharray="33.5 217.8" stroke-dashoffset="0"/>
+            <circle cx="55" cy="55" r="40" fill="none" stroke="#e07a1f" stroke-width="16" stroke-dasharray="83.8 167.5" stroke-dashoffset="-33.5"/>
+            <circle cx="55" cy="55" r="40" fill="none" stroke="#c9862d" stroke-width="16" stroke-dasharray="134 117.3" stroke-dashoffset="-117.3"/>
+          </g>
+          <text x="55" y="52" text-anchor="middle" font-size="20" font-weight="600" fill="#0f1115">15</text>
+          <text x="55" y="68" text-anchor="middle" font-size="10" fill="#81858c">条违规</text>
+        </svg>
+        <div class="donutLeg">
+          <span><i style="background:var(--crit)"></i>严重 2 · 13%</span>
+          <span><i style="background:var(--warn)"></i>告警 5 · 33%</span>
+          <span><i style="background:var(--notice)"></i>建议 8 · 53%</span>
+          <span style="color:var(--dim);margin-top:2px">环图=分布总览，点扇区过滤下表（示意）</span>
+        </div>
+      </div>
+      <div class="card" style="flex:1.2;min-width:300px">
+        <div style="font-size:12px;color:var(--dim);margin-bottom:8px">规则命中排行（条形列表 · 点击行过滤）</div>
+        <div style="display:grid;gap:7px;font-size:12px">
+          <div style="display:grid;grid-template-columns:64px 1fr 24px;gap:8px;align-items:center"><span class="codeTag">DQL002</span><div style="height:12px;border-radius:3px;background:var(--warn);width:100%;opacity:.85"></div><b class="num">4</b></div>
+          <div style="display:grid;grid-template-columns:64px 1fr 24px;gap:8px;align-items:center"><span class="codeTag">IDX004</span><div style="height:12px;border-radius:3px;background:var(--notice);width:75%;opacity:.85"></div><b class="num">3</b></div>
+          <div style="display:grid;grid-template-columns:64px 1fr 24px;gap:8px;align-items:center"><span class="codeTag">COL003</span><div style="height:12px;border-radius:3px;background:var(--notice);width:75%;opacity:.85"></div><b class="num">3</b></div>
+          <div style="display:grid;grid-template-columns:64px 1fr 24px;gap:8px;align-items:center"><span class="codeTag">TBL001</span><div style="height:12px;border-radius:3px;background:var(--crit);width:50%;opacity:.85"></div><b class="num">2</b></div>
+          <div style="display:grid;grid-template-columns:64px 1fr 24px;gap:8px;align-items:center"><span class="codeTag">DML002</span><div style="height:12px;border-radius:3px;background:var(--crit);width:25%;opacity:.85"></div><b class="num">1</b></div>
+        </div>
+      </div>
+      <div class="statBox"><b class="num">6<small style="font-size:13px;color:var(--dim)">/20</small></b><span>Top SQL 有优化空间</span></div>
+    </div>
+
+    <div class="h2">规范审核 <span class="idea">裁决点④</span><span class="cnt">审核+优化同页两段（一张大盘讲完整故事）vs 拆两个任务——我倾向同页</span></div>
+    <div class="tblwrap"><table>
+      <thead><tr><th>规则</th><th></th><th>对象 / SQL</th><th>问题</th><th>整改建议</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="codeTag">TBL001</span></td><td><span class="sev r"></span></td>
+          <td class="mono">public.order_log</td>
+          <td style="font-size:12px">表无主键——线上 <span class="mono">sql_id 2420469868</span> 对其全表 UPDATE（日均 1.4 万次）</td>
+          <td style="font-size:12px">补自增主键或业务唯一键；上线前 DDL 评审拦截</td>
+        </tr>
+        <tr>
+          <td><span class="codeTag">DML002</span></td><td><span class="sev r"></span></td>
+          <td class="mono">UPDATE order_log SET status=… <span style="color:var(--dim)">(无 WHERE)</span></td>
+          <td style="font-size:12px">无条件全表更新 481 万行/次</td>
+          <td style="font-size:12px">补 WHERE 或改批处理分片；建议触发前审批</td>
+        </tr>
+        <tr>
+          <td><span class="codeTag">DQL002</span></td><td><span class="sev o"></span></td>
+          <td class="mono">…WHERE note LIKE '%退款%'</td>
+          <td style="font-size:12px">前置模糊匹配无法走索引，全表扫 2.3s</td>
+          <td style="font-size:12px">改后缀匹配/全文检索；或业务标签化</td>
+        </tr>
+        <tr>
+          <td><span class="codeTag">IDX004</span></td><td><span class="sev y"></span></td>
+          <td class="mono">idx_cust_a / idx_cust_ab</td>
+          <td style="font-size:12px">前缀冗余索引（(a) 被 (a,b) 覆盖）</td>
+          <td style="font-size:12px">删除 idx_cust_a，先入观察清单</td>
+        </tr>
+        <tr class="hiddenRow">
+          <td><span class="codeTag">COL003</span></td><td><span class="sev y"></span></td>
+          <td class="mono">orders.remark 等 3 列</td>
+          <td style="font-size:12px">业务必填列缺 NOT NULL 约束</td>
+          <td style="font-size:12px">补约束前先扫存量 NULL 行</td>
+        </tr>
+        <tr class="hiddenRow">
+          <td><span class="codeTag">IDX002</span></td><td><span class="sev y"></span></td>
+          <td class="mono">idx_order_multi（6 列）</td>
+          <td style="font-size:12px">索引列数超上限（6 &gt; 5），写放大</td>
+          <td style="font-size:12px">按查询画像裁剪到 ≤4 列</td>
+        </tr>
+        <tr class="hiddenRow">
+          <td><span class="codeTag">DQL005</span></td><td><span class="sev y"></span></td>
+          <td class="mono">SELECT * FROM orders …（3 处）</td>
+          <td style="font-size:12px">全列拉取，回表/网络放大</td>
+          <td style="font-size:12px">显式列清单；宽表尤其收益大</td>
+        </tr>
+        <tr class="hiddenRow">
+          <td><span class="codeTag">KB-01</span></td><td><span class="sev o"></span></td>
+          <td class="mono">命名前缀 t_ vs 客户规范</td>
+          <td style="font-size:12px">客户规范要求 t_ 前缀，rules.yaml 无此条——<b>两标准不一致</b></td>
+          <td style="font-size:12px">并列呈现交你裁决（KB 契约：参考不改判）</td>
+        </tr>
+      </tbody>
+    </table>
+    <span class="moreLink" onclick="toggleRows(this)">展开全部 15 条 ▾</span></div>
+    <div class="aside-note">↑ 默认按严重度收起；「客户规范 vs rules.yaml 不一致」的 KB-01 类条目并列呈现交你裁决（KB 契约）</div>
+
+    <div class="h2">SQL 优化 <span class="cnt">本组报告对象：og5 · Top 5 慢 SQL（会话触发："把 og5 top5 的慢 sql 扫描出来并进行优化"）——一次任务可以是一组 SQL</span></div>
+
+    <!-- SQL 组概览条：一组 SQL 的报告形态（user 反馈二） -->
+    <div class="card" style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:12px;color:var(--dim);margin-right:4px">本组 5 条：</span>
+      <span class="verified" style="cursor:pointer">2420469868 ✓ ↓97.5%</span>
+      <span class="verified" style="cursor:pointer">1093412007 ✓ ↓84.2%</span>
+      <span class="rejected" style="cursor:pointer">887203441 无低风险空间</span>
+      <span class="rejected" style="cursor:pointer;background:var(--notice-soft);color:var(--notice);border:none">445230918 属锁问题→健康检查</span>
+      <span class="verified" style="cursor:pointer;background:var(--blue-soft);color:var(--blue)">30918224 ✓ 改写 ↓61%</span>
+      <span style="font-size:12px;color:var(--dim);margin-left:auto">点击跳到对应卡片</span>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="findHead"><b class="mono" style="font-size:12px">sql_id 2420469868</b>
+        <span class="attr tmp">temp 溢出型</span>
+        <span style="font-size:12px;color:var(--dim)">elapsed 3.4s · calls 1.4万/日 · spill 212MB</span>
+        <span style="margin-left:auto" class="verified">✓ hypopg 验证通过</span></div>
+
+      <div style="font-size:12px;color:var(--dim);margin:10px 0 4px;font-weight:600">原 SQL</div>
+      <div class="sqlblock">SELECT o.customer_id, SUM(oi.item_amount) AS total
+FROM orders o JOIN order_items oi ON o.order_id = oi.order_id
+WHERE o.created_at >= '2026-01-01' AND o.order_status IN ('paid','shipped')
+GROUP BY o.customer_id HAVING SUM(oi.item_amount) > 5000
+ORDER BY total DESC LIMIT 200;</div>
+
+      <div style="font-size:12px;color:var(--dim);margin:12px 0 4px;font-weight:600">原执行计划 <span style="font-weight:400">· 优化点直接标注在计划行上</span></div>
+      <div class="sqlblock" style="line-height:1.75">Limit  (cost=<b>124381.20</b>..124381.70 rows=200)
+  -&gt;  Sort  (cost=124381.20..124893.11)  Sort Key: total DESC
+    <span style="display:inline-block;background:var(--warn-soft);border-radius:4px;padding:0 6px;margin-left:-6px">-&gt;  HashAggregate  (cost=98123.40..109221.15)  <b style="color:var(--warn)">⚠ ② 内存不足下盘 temp 212MB</b></span>
+      -&gt;  Hash Join  (cost=45210.33..88123.40)  Hash Cond: (oi.order_id = o.order_id)
+        <span style="display:inline-block;background:var(--crit-soft);border-radius:4px;padding:0 6px;margin-left:-6px">-&gt;  Seq Scan on orders o  (cost=0.00..42381.20 rows=<b>4,810,000</b>)  <b style="color:var(--crit)">🔴 ① 全表扫描：created_at 无可用索引</b></span>
+              Filter: (created_at &gt;= '2026-01-01' AND order_status = ANY ('{paid,shipped}'))
+        -&gt;  Hash  (cost=18231.10..18231.10)
+          -&gt;  Seq Scan on order_items oi  (cost=0.00..18231.10)</div>
+
+      <div style="font-size:12px;color:var(--dim);margin:12px 0 4px;font-weight:600">优化方案 <span style="font-weight:400">· 针对 ①②，hypopg 虚拟索引实证</span></div>
+      <div class="sqlblock" style="background:var(--ok-soft);border-color:#cfe8d8">-- ① 缺失索引（预估 41MB · [需人工执行]）
+CREATE INDEX idx_orders_created_status ON orders (created_at, order_status);
+-- ② SQL 无需改写：① 落地后扫描行 481万 → 4.8万，聚合回到内存内，下盘自然消失</div>
+
+      <div style="font-size:12px;color:var(--dim);margin:12px 0 4px;font-weight:600">优化后执行计划（hypopg 预演）</div>
+      <div class="sqlblock" style="line-height:1.75">Limit  (cost=<b style="color:var(--ok)">3102.44</b>..3102.94 rows=200)
+  -&gt;  Sort  (cost=3102.44..3110.20)
+    <span style="display:inline-block;background:var(--ok-soft);border-radius:4px;padding:0 6px;margin-left:-6px">-&gt;  HashAggregate  (cost=2410.20..2988.31)  <b style="color:var(--ok)">✓ ② 内存内完成，无下盘</b></span>
+      -&gt;  Nested Loop  (cost=0.85..2261.40)
+        <span style="display:inline-block;background:var(--ok-soft);border-radius:4px;padding:0 6px;margin-left:-6px">-&gt;  Index Scan using <u>idx_orders_created_status</u> on orders o  (cost=0.42..1821.33 rows=<b>48,219</b>)  <b style="color:var(--ok)">✓ ① 走新索引，扫描行 481万 → 4.8万</b></span>
+        -&gt;  Index Scan using pk_order_items on order_items oi  (cost=0.43..8.90)</div>
+
+      <div class="costCompare" style="margin-top:12px">
+        <div class="costRow"><span style="color:var(--dim)">原计划</span><div class="bar" style="width:100%;background:#e9b8b8"></div><b class="num" style="color:var(--crit)">cost 124,381</b></div>
+        <div class="costRow"><span style="color:var(--dim)">优化后</span><div class="bar" style="width:3%;background:var(--ok);min-width:22px"></div><b class="num" style="color:var(--ok)">3,102 ↓97.5%</b></div>
+      </div>
+      <div class="findFoot"><span class="digLink">在会话里深挖：改写成增量物化能不能更快？</span></div>
+    </div>
+
+    <div class="card">
+      <div class="findHead"><b class="mono" style="font-size:12px">sql_id 887203441</b>
+        <span class="attr cpu">CPU 型</span>
+        <span style="font-size:12px;color:var(--dim)">elapsed 1.8s · calls 6,200/日</span>
+        <span style="margin-left:auto" class="rejected">✗ 索引方案验证未通过 · 不呈现</span></div>
+      <div style="font-size:12px;color:var(--sub);margin-top:6px">
+        hypopg 实证：候选索引 <span class="mono">(customer_level)</span> 基数过低（4 个枚举值），cost 无改善（12.1万→11.9万）——<b>诚实结论：此 SQL 无低风险索引优化空间</b>，建议路径改为业务侧缓存或改写（可在会话里探讨）。
+      </div>
+      <div class="findFoot"><span class="digLink">在会话里深挖：帮我评估这条 SQL 的改写方案</span>
+        <span class="idea">裁决点⑤</span><span style="font-size:12px;color:var(--dim)">「验证未通过」也如实展示（信任来自诚实）vs 只展示通过项——我倾向展示</span></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════ 原型 ③ WDR ═══════════════════════ -->
+  <section class="panel" id="p3">
+    <div class="pgHead"><span class="pgTitle">og5 WDR 报告</span><span class="pgMeta">任务 · 每日 09:00 分析昨日高峰窗口 · 会话里说"看下 14 点到 15 点"即可换窗口</span></div>
+    <div class="ptabs"><span class="pt on">报告</span><span class="pt">历史</span><span class="pt">配置</span><span class="pt aux">窗口 snap 412 → 413</span></div>
+
+    <div class="band">
+      <div class="statusCard" style="background:linear-gradient(135deg,#3fa552,#2e8443)">
+        <span style="font-size:11px;opacity:.8;letter-spacing:.1em">窗口结论</span>
+        <span class="big">🟢 平稳</span>
+        <span class="drv">窗口内负载健康；1 条 temp 溢出 SQL 已定位并给出验证过的方案</span>
+      </div>
+      <div class="metaCol">
+        <span class="anchor">✓ 已锚定 · 7 维 delta 全采集 · Top SQL 建议经 hypopg 实证</span>
+        <span class="metaline">快照窗口 <b>#412 (08:00) → #413 (09:00)</b> · og5 · enable_wdr_snapshot <b style="color:var(--ok)">on ✓</b>（未开启时此处如实提示需 DBA 开启，绝不代开）</span>
+        <span class="metaline">原生 WDR 报告已留底：<a>wdr_412_413.html 在线查看</a>（内容链接，非操作按钮）</span>
+      </div>
+    </div>
+
+    <!-- 快照时间轴 -->
+    <div class="h2">快照窗口</div>
+    <div class="tl">
+      <div class="tlAxis">
+        <div class="rail"></div>
+        <div class="win" style="left:58%;width:14.5%"></div>
+        <div class="snap" style="left:8%"></div><div class="snap" style="left:22.5%"></div><div class="snap" style="left:37%"></div><div class="snap" style="left:51%"></div><div class="snap in" style="left:58%"></div><div class="snap in" style="left:72%"></div><div class="snap" style="left:86.5%"></div>
+      </div>
+      <div class="tlLabels"><span>04:00</span><span>05:00</span><span>06:00</span><span>07:00</span><span><b style="color:var(--blue)">08:00 #412</b></span><span><b style="color:var(--blue)">09:00 #413</b></span><span>10:00</span></div>
+      <div class="aside-note">拖拽换窗？不做——换窗口在会话里说（纲领）。时间轴只做「可见」：有哪些快照、本次分析哪段。</div>
+    </div>
+
+    <!-- 裁决点⑥ AWS PI 式负载构成 -->
+    <div class="h2">窗口负载构成 <span class="idea">裁决点⑥</span><span class="cnt">AWS Performance Insights 式 DB Time 按等待类型分解</span></div>
+    <div class="card">
+      <div style="font-size:12px;color:var(--sub);margin-bottom:8px">DB Time <b class="num">2,841s</b>（窗口 3600s · 平均活跃会话 <b class="num">0.79</b>）按构成分解：</div>
+      <div class="loadStack">
+        <i style="width:52%;background:#4658c9">CPU 52%</i>
+        <i style="width:23%;background:#1d9d86">IO 23%</i>
+        <i style="width:14%;background:#e07a1f">Lock 14%</i>
+        <i style="width:11%;background:#9aa3b5">Other</i>
+      </div>
+      <div class="lg"><span><i style="background:#4658c9"></i>CPU 执行</span><span><i style="background:#1d9d86"></i>数据文件 IO</span><span><i style="background:#e07a1f"></i>锁等待</span><span><i style="background:#9aa3b5"></i>其它等待</span></div>
+
+      <!-- 同数据双视角：横向堆叠条（占比对比）+ 环图（份额直觉），二选一或并存由裁决点⑥一起定 -->
+      <div style="display:flex;gap:20px;align-items:center;margin-top:16px;flex-wrap:wrap">
+        <svg width="96" height="96" viewBox="0 0 96 96">
+          <g transform="rotate(-90 48 48)">
+            <circle cx="48" cy="48" r="36" fill="none" stroke="#f2f3f5" stroke-width="13"/>
+            <circle cx="48" cy="48" r="36" fill="none" stroke="#4658c9" stroke-width="13" stroke-dasharray="117.6 108.6" stroke-dashoffset="0"/>
+            <circle cx="48" cy="48" r="36" fill="none" stroke="#1d9d86" stroke-width="13" stroke-dasharray="52 174.2" stroke-dashoffset="-117.6"/>
+            <circle cx="48" cy="48" r="36" fill="none" stroke="#e07a1f" stroke-width="13" stroke-dasharray="31.7 194.5" stroke-dashoffset="-169.6"/>
+            <circle cx="48" cy="48" r="36" fill="none" stroke="#9aa3b5" stroke-width="13" stroke-dasharray="24.9 201.3" stroke-dashoffset="-201.3"/>
+          </g>
+          <text x="48" y="45" text-anchor="middle" font-size="14" font-weight="600" fill="#0f1115">0.79</text>
+          <text x="48" y="60" text-anchor="middle" font-size="8.5" fill="#81858c">平均活跃会话</text>
+        </svg>
+        <div class="donutLeg">
+          <span>窗口内每一秒 DB Time 花在哪——CPU 独大 → 归因表里先看 elapsed 主导的 SQL</span>
+          <span style="color:var(--dim)">锁等待 14% 全部来自 1 条根因链（→ 健康检查 LOCK_CHAIN）</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="h2">Load Profile（窗口 delta）</div>
+    <div class="tblwrap"><table>
+      <thead><tr><th>指标</th><th style="text-align:right">窗口值</th><th style="text-align:right">每秒</th><th style="text-align:right">对比昨日同窗</th></tr></thead>
+      <tbody class="num">
+        <tr><td>DB Time</td><td style="text-align:right">2,841 s</td><td style="text-align:right">0.79</td><td style="text-align:right"><span class="delta-dn">↓ 12%</span></td></tr>
+        <tr><td>事务提交</td><td style="text-align:right">184,230</td><td style="text-align:right">51.2</td><td style="text-align:right"><span style="color:var(--dim)">≈ 持平</span></td></tr>
+        <tr><td>逻辑读 (blocks)</td><td style="text-align:right">9.1 亿</td><td style="text-align:right">25.3 万</td><td style="text-align:right"><span class="delta-up">↑ 31%</span></td></tr>
+        <tr><td>物理读 (blocks)</td><td style="text-align:right">420 万</td><td style="text-align:right">1,168</td><td style="text-align:right"><span class="delta-up">↑ 58%</span></td></tr>
+        <tr><td>temp 下盘</td><td style="text-align:right">212 MB</td><td style="text-align:right">—</td><td style="text-align:right"><span class="delta-up">新增</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <div class="h2">发现 <span class="cnt">7 维阈值判定 · 每条闭环到「哪条请求引发 + 怎么优化」（归因纪律）</span></div>
+    <div class="findCard o">
+      <div class="findHead"><span class="sev o"></span><b>temp 下盘 212MB 集中于单条 SQL</b><span class="codeTag">WDR_TEMP_SPILL</span></div>
+      <div class="findBody">
+        <div><span class="lab">证据</span>窗口 temp 212MB（阈值 &gt;100MB），其中 <span class="mono">sql_id 2420469868</span> 占 <b class="num">96%</b>（spill_MB 列归因）</div>
+        <div><span class="lab">引发请求</span>orders 聚合报表 SQL（详情见「SQL 审核与优化」任务卡——同一条，两任务互相引用不重复分析）</div>
+        <div><span class="lab">优化</span>已验证索引方案 cost ↓97.5%（hypopg 实证）；或调 work_mem 治标</div>
+      </div>
+      <div class="findFoot"><span class="digLink">在会话里深挖：为什么昨天没有 temp 下盘，今天多了什么请求？</span></div>
+    </div>
+
+    <div class="h2">Top SQL 归因表 <span class="cnt">每行一个「归因」徽章——temp/IO/锁的元凶往往不是同一条，不一锅烩</span></div>
+    <div class="tblwrap"><table>
+      <thead><tr><th>sql_id</th><th>归因</th><th style="text-align:right">elapsed</th><th style="text-align:right">calls</th><th style="text-align:right">物理读</th><th style="text-align:right">spill</th><th>去向</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">2420469868</td><td><span class="attr tmp">temp 溢出型</span></td><td class="num" style="text-align:right">3.4s</td><td class="num" style="text-align:right">612</td><td class="num" style="text-align:right">180 万</td><td class="num" style="text-align:right">204MB</td><td style="font-size:12px"><a>→ 已验证索引方案</a></td></tr>
+        <tr><td class="mono">887203441</td><td><span class="attr cpu">CPU 型</span></td><td class="num" style="text-align:right">1.8s</td><td class="num" style="text-align:right">260</td><td class="num" style="text-align:right">4.1 万</td><td class="num" style="text-align:right">0</td><td style="font-size:12px"><a>→ 无低风险索引空间</a></td></tr>
+        <tr><td class="mono">1093412007</td><td><span class="attr io">IO 型</span></td><td class="num" style="text-align:right">0.9s</td><td class="num" style="text-align:right">3,804</td><td class="num" style="text-align:right">231 万</td><td class="num" style="text-align:right">0</td><td style="font-size:12px">会话里深挖</td></tr>
+        <tr><td class="mono">445230918</td><td><span class="attr blk">被阻塞型</span></td><td class="num" style="text-align:right">41m</td><td class="num" style="text-align:right">7</td><td class="num" style="text-align:right">12</td><td class="num" style="text-align:right">0</td><td style="font-size:12px">→ 健康检查 LOCK_CHAIN🔴</td></tr>
+      </tbody>
+    </table></div>
+    <div class="aside-note" style="margin-top:8px"><span class="idea">裁决点⑦</span> 三任务互相引用（WDR 的 temp 元凶 → SQL 优化卡；被阻塞 SQL → 健康检查的锁链发现）——跨任务链接把三张大盘连成一个诊断故事，要不要做？</div>
+
+    <div class="wdrKeep" style="margin-top:16px">📄 原生 WDR HTML 已留底（og 官方格式，审计/存档用）· <a>wdr_412_413.html</a> · 历史留底 30 份</div>
+  </section>
+
+  <!-- ═══════════════ 原型 ④ 集群汇总形态（灵活启动 · 多实例）═══════════════ -->
+  <section class="panel" id="p4">
+    <div class="pgHead"><span class="pgTitle">og-cluster-a 集群体检</span><span class="pgMeta">会话触发："把 og-cluster-a 集群下所有节点做个健康检查" · 同一插件，scope=cluster 自动切本形态</span></div>
+    <div class="ptabs"><span class="pt on">报告</span><span class="pt">历史</span><span class="pt">配置</span><span class="pt aux">12 实例并发采集</span></div>
+
+    <div class="band">
+      <div class="statusCard" style="background:linear-gradient(135deg,#d64545,#b53434)">
+        <span style="font-size:11px;opacity:.8;letter-spacing:.1em">集群总体状态 · 取最差实例</span>
+        <span class="big">🔴 严重</span>
+        <span class="drv">驱动：og-node-04 锁链根因阻塞 17 会话；另有 9/12 实例缓存命中率同时段跌破阈值（集群级共性）</span>
+      </div>
+      <div class="metaCol">
+        <span class="anchor">✓ 已锚定 · 12 实例 × 12 维确定性发现全覆盖</span>
+        <span class="metaline">检查对象 <b>og-cluster-a（12 实例）</b> · 并发扇出 12 路采集 · 总耗时 <b class="num">52s</b></span>
+        <span class="metaline">12/12 实例采集成功 · 0 实例降级 · 证据包 <a>#run-c1a7（含 12 份子包）</a></span>
+        <span class="metaline" style="color:var(--crit)">🔴 1 严重 · 🟠 2 告警 · 🟡 2 关注 · 🟢 7 正常</span>
+      </div>
+    </div>
+
+    <div class="h2">实例健康矩阵 <span class="cnt">每格一实例 · 状态=该实例 12 维最差严重度 · 点格子下钻该实例完整单机报告（即原型①）</span></div>
+    <div id="instGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+      <div class="card" style="border-left:4px solid var(--crit);cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px"><b>og-node-04</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--crit)">🔴 严重</span></div>
+        <div style="font-size:12px;color:var(--sub);margin-top:4px">锁链深 4 层 · 17 会话被阻塞 41m</div>
+        <div style="font-size:12px;color:var(--dim);margin-top:6px">🔴1 🟠2 🟡1 · 下钻 →</div>
+      </div>
+      <div class="card" style="border-left:4px solid var(--warn);cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px"><b>og-node-07</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--warn)">🟠 告警</span></div>
+        <div style="font-size:12px;color:var(--sub);margin-top:4px">orders 死元组 38% · vacuum 被卡</div>
+        <div style="font-size:12px;color:var(--dim);margin-top:6px">🟠1 🟡2 · 下钻 →</div>
+      </div>
+      <div class="card" style="border-left:4px solid var(--warn);cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px"><b>og-node-09</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--warn)">🟠 告警</span></div>
+        <div style="font-size:12px;color:var(--sub);margin-top:4px">连接占用 87% · 应用池疑似泄漏</div>
+        <div style="font-size:12px;color:var(--dim);margin-top:6px">🟠1 🟡1 · 下钻 →</div>
+      </div>
+      <div class="card" style="border-left:4px solid var(--notice);cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px"><b>og-node-02</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--notice)">🟡 关注</span></div>
+        <div style="font-size:12px;color:var(--sub);margin-top:4px">空闲事务 22m · 未达告警线</div>
+        <div style="font-size:12px;color:var(--dim);margin-top:6px">🟡2 · 下钻 →</div>
+      </div>
+      <div class="card" style="border-left:4px solid var(--notice);cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px"><b>og-node-11</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--notice)">🟡 关注</span></div>
+        <div style="font-size:12px;color:var(--sub);margin-top:4px">ckpt 间隔偏密 · WAL 增长偏快</div>
+        <div style="font-size:12px;color:var(--dim);margin-top:6px">🟡1 · 下钻 →</div>
+      </div>
+      <div class="card" style="border-left:4px solid var(--ok);cursor:pointer">
+        <div style="display:flex;align-items:center;gap:8px"><b>og-node-01</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ok)">🟢 正常</span></div>
+        <div style="font-size:12px;color:var(--sub);margin-top:4px">12 维全绿</div>
+        <div style="font-size:12px;color:var(--dim);margin-top:6px">下钻 →</div>
+      </div>
+      <div class="card" id="instMore" style="border-left:4px solid var(--ok);cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="toggleInst()">
+        <div style="font-size:12px;color:var(--blue)">🟢 其余 6 台正常 · 展开全部 12 格 ▾</div>
+      </div>
+      <div class="card hideInst" style="border-left:4px solid var(--ok)"><div style="display:flex;gap:8px"><b>og-node-03</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ok)">🟢 正常</span></div><div style="font-size:12px;color:var(--sub);margin-top:4px">12 维全绿</div><div style="font-size:12px;color:var(--dim);margin-top:6px">下钻 →</div></div>
+      <div class="card hideInst" style="border-left:4px solid var(--ok)"><div style="display:flex;gap:8px"><b>og-node-05</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ok)">🟢 正常</span></div><div style="font-size:12px;color:var(--sub);margin-top:4px">12 维全绿</div><div style="font-size:12px;color:var(--dim);margin-top:6px">下钻 →</div></div>
+      <div class="card hideInst" style="border-left:4px solid var(--ok)"><div style="display:flex;gap:8px"><b>og-node-06</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ok)">🟢 正常</span></div><div style="font-size:12px;color:var(--sub);margin-top:4px">12 维全绿</div><div style="font-size:12px;color:var(--dim);margin-top:6px">下钻 →</div></div>
+      <div class="card hideInst" style="border-left:4px solid var(--ok)"><div style="display:flex;gap:8px"><b>og-node-08</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ok)">🟢 正常</span></div><div style="font-size:12px;color:var(--sub);margin-top:4px">12 维全绿</div><div style="font-size:12px;color:var(--dim);margin-top:6px">下钻 →</div></div>
+      <div class="card hideInst" style="border-left:4px solid var(--ok)"><div style="display:flex;gap:8px"><b>og-node-10</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ok)">🟢 正常</span></div><div style="font-size:12px;color:var(--sub);margin-top:4px">12 维全绿</div><div style="font-size:12px;color:var(--dim);margin-top:6px">下钻 →</div></div>
+      <div class="card hideInst" style="border-left:4px solid var(--ok)"><div style="display:flex;gap:8px"><b>og-node-12</b><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ok)">🟢 正常</span></div><div style="font-size:12px;color:var(--sub);margin-top:4px">12 维全绿</div><div style="font-size:12px;color:var(--dim);margin-top:6px">下钻 →</div></div>
+      <div class="card" style="border:1px dashed var(--line2);display:flex;align-items:center;justify-content:center;box-shadow:none">
+        <div style="font-size:12px;color:var(--dim);text-align:center">正常实例默认折叠成一格<br>问题实例永远全部展开</div>
+      </div>
+    </div>
+
+    <div class="h2">集群级发现 <span class="idea">裁决点⑧</span><span class="cnt">汇总 ≠ 12 份单机报告钉在一起——跨实例共性与离群才是集群报告的增量价值</span></div>
+    <div class="card" style="border-left:4px solid var(--warn);margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px">🟠 共性异常：9/12 实例 shared_buffers 命中率在 07:40–08:00 同时段跌破 95%</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:6px">单看任何一台都只是 NOTICE，12 台放在一起才看出「同时段、同幅度」——指向宿主机层 IO 抖动或集中批处理，不是数据库自身问题。证据（12 实例命中率并排，多线曲线图组件）：</div>
+      <svg viewBox="0 0 720 100" width="100%" height="100" style="margin-top:10px">
+        <rect x="400" y="4" width="160" height="92" fill="#e07a1f" opacity=".08"/>
+        <line x1="0" y1="26" x2="720" y2="26" stroke="#eef0f3"/><line x1="0" y1="56" x2="720" y2="56" stroke="#eef0f3"/>
+        <line x1="0" y1="44" x2="720" y2="44" stroke="#e07a1f" stroke-width="1" stroke-dasharray="5 4" opacity=".5"/>
+        <text x="716" y="41" font-size="9.5" fill="#e07a1f" text-anchor="end">95%</text>
+        <polyline points="0,12 100,13 200,12 300,14 400,13 430,44 470,66 510,70 540,58 560,30 640,14 720,12" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,16 100,15 200,17 300,15 400,16 430,50 470,72 510,75 540,62 560,34 640,17 720,15" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,10 100,11 200,10 300,12 400,11 430,40 470,60 510,64 540,52 560,26 640,12 720,10" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,14 100,14 200,15 300,13 400,14 430,47 470,69 510,72 540,60 560,32 640,15 720,13" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,13 100,12 200,14 300,13 400,12 430,42 470,63 510,67 540,55 560,28 640,13 720,12" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,15 100,16 200,15 300,16 400,15 430,52 470,74 510,78 540,64 560,36 640,16 720,14" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,11 100,12 200,11 300,11 400,12 430,38 470,58 510,62 540,50 560,24 640,11 720,11" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,17 100,16 200,16 300,17 400,17 430,54 470,76 510,80 540,66 560,38 640,18 720,16" fill="none" stroke="#c3c8cf" stroke-width="1.4"/>
+        <polyline points="0,12 100,13 200,13 300,12 400,13 430,45 470,65 510,69 540,57 560,29 640,14 720,12" fill="none" stroke="#e07a1f" stroke-width="2"/>
+        <polyline points="0,9 100,9 200,10 300,9 400,10 430,10 470,11 510,10 540,10 560,9 640,9 720,9" fill="none" stroke="#8fc9a2" stroke-width="1.4"/>
+        <polyline points="0,8 100,8 200,8 300,9 400,8 430,9 470,8 510,9 540,8 560,8 640,8 720,8" fill="none" stroke="#8fc9a2" stroke-width="1.4"/>
+        <polyline points="0,10 100,10 200,9 300,10 400,9 430,10 470,10 510,11 540,10 560,10 640,10 720,10" fill="none" stroke="#8fc9a2" stroke-width="1.4"/>
+        <text x="480" y="96" font-size="9.5" fill="#e07a1f" text-anchor="middle">07:40–08:00</text>
+      </svg>
+      <div style="font-size:11px;color:var(--dim);margin-top:2px">灰=9 台同段下探（橙线为最深的 og-node-09）· 绿=3 台无感 · 同时段同幅度=集群级共性的确定性证据</div>
+      <div class="findFoot"><span class="digLink">在会话里深挖：07:40 宿主机上发生了什么？</span></div>
+    </div>
+    <div class="card" style="border-left:4px solid var(--notice);margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px">🟡 配置离群：og-node-07 的 work_mem=4MB，其余 11 台均为 64MB</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:6px">配置漂移检测：对 12 实例关键参数做横向对齐，离群项列出「谁不一样、差多少」。og-node-07 的膨胀告警可能与此相关（排序下盘加剧 IO）。</div>
+    </div>
+    <div class="card" style="border-left:4px solid var(--crit)">
+      <div style="font-weight:600;font-size:13px">🔴 最高优先：og-node-04 锁链（单实例问题，但它是集群状态的驱动者）</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:6px">集群报告不吞掉单机严重项：最差实例的驱动发现直接上浮到集群层，一句话+下钻链接，不用逐台翻。</div>
+      <div class="findFoot"><span class="digLink">在会话里深挖：帮我终止 og-node-04 的根因会话 140237</span></div>
+    </div>
+    <div class="aside-note" style="margin-top:8px">插件形态说明：报告 schema 带 <b>scope（instance / cluster / sql-set）+ children[]</b>，registerTaskPanel 同一面板按 scope 自适应渲染——单实例=原型①，集群=本页（汇总层+逐实例下钻），SQL 组=原型②的组概览。启动方式随便多灵活，面板都接得住。</div>
+  </section>
+
+  <!-- ═══════════════ 原型 ⑤ 会话内嵌缩减版（一次性沟通不离开聊天流）═══════════════ -->
+  <section class="panel" id="p5">
+    <div class="pgHead"><span class="pgTitle">og5 慢查询这事…</span><span class="pgMeta">用户只在会话里说了一句，没建任务——结果以缩减卡内嵌在聊天记录里</span></div>
+    <div class="ptabs"><span class="pt on">对话</span><span class="pt">轨迹</span></div>
+
+    <div style="max-width:760px;margin:0 auto">
+      <!-- 用户气泡 -->
+      <div style="display:flex;justify-content:flex-end;margin:18px 0">
+        <div style="background:#f2f3f5;color:var(--ink);border-radius:14px 14px 4px 14px;padding:10px 16px;font-size:14px;max-width:70%">把 og5 top5 的慢 sql 扫描出来并进行优化</div>
+      </div>
+
+      <!-- 助手回复 + 内嵌缩减卡 -->
+      <div style="display:flex;gap:10px;margin:18px 0">
+        <div style="max-width:82%">
+          <div style="font-size:13px;line-height:1.7;color:var(--ink)">扫描完成。og5 Top 5 慢 SQL 已逐条分析：<b>3 条给出验证通过的优化方案</b>，1 条无低风险空间，1 条实为锁问题。摘要如下：</div>
+
+          <!-- 缩减版报告卡：同一插件的第二渲染形态 -->
+          <div class="card" style="margin-top:10px;padding:0;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:linear-gradient(135deg,#d64545,#b53434);color:#fff">
+              <b style="font-size:13px">🔴 SQL 优化 · og5 · Top 5 慢 SQL</b>
+              <span style="font-size:11px;background:rgba(255,255,255,.18);border-radius:6px;padding:1px 8px">✓ 已锚定</span>
+              <span style="margin-left:auto;font-size:12px;font-weight:600">合计 cost ↓ 91.3%（3 条已验证）</span>
+            </div>
+            <div style="padding:6px 14px 10px">
+              <div style="display:flex;gap:8px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line)">
+                <span style="color:var(--ok);font-weight:600;font-size:12px;flex:none">✓</span>
+                <span class="mono" style="font-size:12px;color:var(--dim);flex:none">2420469868</span>
+                <span style="font-size:12px">缺索引全表扫 → <span class="mono">idx_orders_created_status</span></span>
+                <b style="margin-left:auto;font-size:12px;color:var(--ok);flex:none">cost ↓97.5%</b>
+              </div>
+              <div style="display:flex;gap:8px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line)">
+                <span style="color:var(--ok);font-weight:600;font-size:12px;flex:none">✓</span>
+                <span class="mono" style="font-size:12px;color:var(--dim);flex:none">1093412007</span>
+                <span style="font-size:12px">冗余前缀索引合并 + 覆盖列</span>
+                <b style="margin-left:auto;font-size:12px;color:var(--ok);flex:none">cost ↓84.2%</b>
+              </div>
+              <div style="display:flex;gap:8px;align-items:baseline;padding:7px 0">
+                <span style="color:var(--crit);font-weight:600;font-size:12px;flex:none">⛓</span>
+                <span class="mono" style="font-size:12px;color:var(--dim);flex:none">445230918</span>
+                <span style="font-size:12px">不是慢 SQL，是被锁链阻塞 41m——根因会话 140237</span>
+                <b style="margin-left:auto;font-size:12px;color:var(--dim);flex:none">转健康视角</b>
+              </div>
+              <div style="font-size:12px;color:var(--dim);padding:4px 0 0">另 2 条：30918224 改写 ↓61% · 887203441 无低风险空间（收起）</div>
+            </div>
+            <div style="display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--line);background:var(--bg);font-size:12px">
+              <a style="color:var(--blue);font-weight:600;cursor:pointer">展开完整报告 →</a>
+              <a style="color:var(--dim);cursor:pointer">📄 证据包 #run-3e92</a>
+              <span style="margin-left:auto;color:var(--dim)">卡片可折叠，不刷屏</span>
+            </div>
+          </div>
+
+          <div style="font-size:13px;line-height:1.7;color:var(--ink);margin-top:10px">两条索引方案已经 hypopg 实证，DDL 我放在完整报告里，<b>需要你签收后才会给出执行清单</b>。想每周自动扫一次的话，说一句「固化成周期任务」就行。</div>
+        </div>
+      </div>
+
+      <!-- 用户追问：展示深挖闭环 -->
+      <div style="display:flex;justify-content:flex-end;margin:18px 0">
+        <div style="background:#f2f3f5;color:var(--ink);border-radius:14px 14px 4px 14px;padding:10px 16px;font-size:14px;max-width:70%">445230918 那个锁链帮我看下根因</div>
+      </div>
+      <div style="display:flex;gap:10px;margin:18px 0">
+        <div style="font-size:13px;line-height:1.7;color:var(--ink);max-width:82%">根因会话 140237：一个空闲事务持有 orders 表行锁 2h14m……<span style="color:var(--dim)">（缩减卡里任何一行都能直接接着聊——报告和会话是同一条流，不用切页面）</span></div>
+      </div>
+
+      <!-- dsh 原版输入框复刻（静态装饰，卖融合感） -->
+      <div class="inputMock">
+        <span class="plus">＋</span>
+        <span class="ph">给智能体发消息</span>
+        <span class="selChip">🛡 Full access ⌄</span>
+        <span class="selChip">DeepSeek-V4 <span style="color:#adb2b8">High</span> ⌄</span>
+        <span class="send">↑</span>
+      </div>
+    </div>
+
+    <div class="aside-note" style="max-width:760px;margin:14px auto 0"><span class="idea">裁决点⑨</span> 缩减卡=插件注册面板时附带的第二渲染形态（<span class="mono">renderInline</span>）：状态带 + Top 3 结果行 + 展开链接，超出部分收起。「展开完整报告」跳主区完整面板（临时结果页，不建任务实体）。</div>
+    <div class="aside-note" style="max-width:760px;margin:6px auto 0"><span class="idea">裁决点⑩</span> 一次性会话运行<b>不落任务实体</b>（避免任务列表被一次性请求刷爆），报告本身照常入库可检索；用户说「固化成周期任务」才建任务——固化后历史报告自动挂到新任务名下。</div>
+  </section>
+
+  </main>
+</div>
+
+<script>
+document.querySelectorAll('.tab').forEach(function(t){
+  t.addEventListener('click', function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on')});
+    document.querySelectorAll('.panel').forEach(function(x){x.classList.remove('on')});
+    t.classList.add('on');
+    document.getElementById(t.dataset.p).classList.add('on');
+    var m={p1:'s1',p2:'s2',p3:'s3',p4:'s4',p5:'s0'};
+    document.querySelectorAll('.side .srow').forEach(function(x){x.classList.remove('on')});
+    var sr=document.getElementById(m[t.dataset.p]);
+    if(sr){sr.classList.add('on')}
+    window.scrollTo({top:0});
+  });
+});
+function toggleRows(el){
+  var w=el.closest('.tblwrap');
+  if(!w){return}
+  w.classList.toggle('showAll');
+  el.textContent=w.classList.contains('showAll')?'收起 ▴':'展开全部 15 条 ▾';
+}
+function signOff(el){
+  var bar=el.closest('.signBar');
+  if(!bar){return}
+  bar.innerHTML='<span style="font-size:13px;color:var(--ok)">✓ 已签收 · 2026-08-21 17:12 · 已入库归档——后续在会话里可随时追问任何一条发现</span>';
+}
+function toggleInst(){
+  var g=document.getElementById('instGrid');
+  var more=document.getElementById('instMore');
+  if(!g||!more){return}
+  g.classList.toggle('instShow');
+  more.querySelector('div').textContent=g.classList.contains('instShow')?'收起正常实例 ▴':'🟢 其余 6 台正常 · 展开全部 12 格 ▾';
+}
+</script>
