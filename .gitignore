@@ -9,3 +9,4 @@ profiles/*/cordis.yml
 profiles/*/node_modules/
 .dsh-home/
 deploy/k8s/p0/secret.yaml
+.dsh-conformance-home/
