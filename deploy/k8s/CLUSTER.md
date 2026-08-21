@@ -336,3 +336,17 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   负载-副本换算实测：v4-flash 轻会话 ~10s/条 × 每 pod 2 并发 = 12 条/分钟/pod。
 - 两轮共 ~400 条轻会话；观测教训：**kubectl orb.local 通道有小时级间歇不可用窗口**（IPv6 no-route，
   socat 18080 HTTP 通道全程正常）——长时负载脚本的观测要带降级（HPA events 是最可靠的事后取证）。
+
+## 任务重做 #1：task-health 上线与工具注册事故（2026-08-21）
+
+- **交付**：task-health（TaskType 'health' 双侧 + client 面板）+ tool-health-collect（health_collect
+  确定性 12 维采集器，Runtime）。e2e 三轮：og5 单机（instance）与 og5+og-ha 主备三实例（cluster）
+  均一次 `health_collect → task_report` 过锚定门；集群层共性聚类（2/3 XACT_LONG 同源 WLM）、
+  max_connections 漂移（200 vs 1000）、最差实例上浮全部检出；面板浏览器实拍验证（矩阵/集群发现/签收箱）。
+- **事故：health_collect 两轮不在模型工具列表**。task-health 包内 apply 顶层注册工具，
+  多依赖数组 `inject(['tools','opendbDb','opendbRegistry'])` 与单依赖链式 `inject(['opendbDb'],c1=>c1.inject(...))`
+  均静默不生效（无报错、无 PENDING、dump-config 正常）。根治=按 W4 结论拆独立 function plugin
+  （顶层 inject 数据服务、嵌套仅 `inject(['tools'])`，1:1 对照 tool-metrics）。
+- **防绕路守卫生效实证**：第二轮工具缺失时，模型按 prompt「诚实守卫」上报 warn“工具缺失未执行锚定检查”，
+  而不是退回自由巡检自造 det（第一轮无守卫时它就这么干了，还把 scope 写成节点名）。
+  锚定链的完整性靠三层：工具产出唯一事实源 + prompt 锚定纪律 + reportSchema 结构校验。

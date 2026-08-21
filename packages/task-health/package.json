@@ -1,0 +1,19 @@
+{
+  "name": "@opendb-dsh/task-health",
+  "version": "0.0.1",
+  "description": "opendb-dsh health-check task type: deterministic 12-dim collectors + anchored LLM interpretation (task redo #1)",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "dsh": { "client": { "platform": "web" } },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json && node build-client.mjs", "test": "node --experimental-strip-types --test --test-concurrency=1 --test-timeout=60000 test/*.test.ts" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6" },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@opendb-dsh/tasks": "workspace:*",
+    "@opendb-dsh/tool-db": "workspace:*"
+  },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
+}

@@ -33,8 +33,10 @@
 - 集群网络发疯 → 先 `pmset -g log` 看 mac 是否刚睡醒（合盖睡眠会冻结 VM 且唤醒后不自愈）；
   修复口诀与分层诊断法见 CLUSTER.md。flannel 已固定 host-gw 后端，勿改回 vxlan（OrbStack 对 VM 间
   UDP 有过 40% 丢包事故）。
-- dsh 工具注册必须用 function plugin 顶层 inject 模式；defineTool 的 object 参数必须显式
-  `additionalProperties`。Runtime 侧改动走镜像 + rollout；仅前端改动走热更。
+- dsh 工具注册必须用**独立 function plugin**（顶层 inject 数据服务 + 嵌套仅 inject(['tools'])，
+  形状对照 tool-metrics）；在任务插件包内注册工具（apply 里嵌套多依赖数组或单依赖链式 inject）
+  实测都静默不生效——2026-08-21 task-health 两轮 e2e 复证，最终拆 tool-health-collect 独立包根治。
+  defineTool 的 object 参数必须显式 `additionalProperties`。Runtime 侧改动走镜像 + rollout；仅前端改动走热更。
 - 分钟级 cron 任务测试后必须禁用（每次触发都消耗模型 token）。
 
 ## 插件纪律

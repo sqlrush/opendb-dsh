@@ -94,6 +94,8 @@
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-metrics
       name: '@opendb-dsh/tool-metrics'
+    - id: tool-health-collect
+      name: '@opendb-dsh/tool-health-collect'
 # ── P1 W4: task_report 工具 + 任务类型注册表（Runtime 侧，engine:false）──────
 - insert:
     - id: opendb-tasks
@@ -133,6 +135,10 @@
 - insert:
     - id: tool-task-admin
       name: '@opendb-dsh/tool-task-admin'
+# ── 任务重做 #1：health 类型双侧 + health_collect 工具（工具只在 Runtime 激活）────
+- insert:
+    - id: task-health
+      name: '@opendb-dsh/task-health'
 # ── P2 W1：incident 任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）──────
 - insert:
     - id: task-incident
