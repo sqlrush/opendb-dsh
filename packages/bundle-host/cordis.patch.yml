@@ -124,6 +124,8 @@
       name: '@opendb-dsh/task-sqlreview'
     - id: task-wdr
       name: '@opendb-dsh/task-wdr'
+    - id: task-ddl
+      name: '@opendb-dsh/task-ddl'
 # ── 插件地图：P2 W1 事件驱动运维（task-incident 双半边 + alert-ddl 告警器）────────
 - insert:
     - id: task-incident

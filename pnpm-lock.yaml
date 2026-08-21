@@ -229,6 +229,9 @@ importers:
       '@opendb-dsh/storage-redis':
         specifier: workspace:*
         version: link:../storage-redis
+      '@opendb-dsh/task-ddl':
+        specifier: workspace:*
+        version: link:../task-ddl
       '@opendb-dsh/task-health':
         specifier: workspace:*
         version: link:../task-health
@@ -325,6 +328,9 @@ importers:
       '@opendb-dsh/spill-s3':
         specifier: workspace:*
         version: link:../spill-s3
+      '@opendb-dsh/task-ddl':
+        specifier: workspace:*
+        version: link:../task-ddl
       '@opendb-dsh/task-health':
         specifier: workspace:*
         version: link:../task-health
@@ -349,6 +355,9 @@ importers:
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../tool-db
+      '@opendb-dsh/tool-ddl-collect':
+        specifier: workspace:*
+        version: link:../tool-ddl-collect
       '@opendb-dsh/tool-health-collect':
         specifier: workspace:*
         version: link:../tool-health-collect
@@ -872,6 +881,28 @@ importers:
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(@deepseek-ai/cordis@4.0.1)(@deepseek-ai/dsh-invariants@0.1.0-rc.6(@deepseek-ai/cordis@4.0.1))
 
+  packages/task-ddl:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/tasks':
+        specifier: workspace:*
+        version: link:../tasks
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   packages/task-health:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -1087,6 +1118,25 @@ importers:
       '@opendb-dsh/registry':
         specifier: workspace:*
         version: link:../registry
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-tools':
+        specifier: ^0.1.0-rc.6
+        version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
+
+  packages/tool-ddl-collect:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/task-ddl':
+        specifier: workspace:*
+        version: link:../task-ddl
+      '@opendb-dsh/tool-db':
+        specifier: workspace:*
+        version: link:../tool-db
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -1463,6 +1513,9 @@ importers:
       '@opendb-dsh/storage-redis':
         specifier: workspace:*
         version: link:../../packages/storage-redis
+      '@opendb-dsh/task-ddl':
+        specifier: workspace:*
+        version: link:../../packages/task-ddl
       '@opendb-dsh/task-health':
         specifier: workspace:*
         version: link:../../packages/task-health
@@ -1562,6 +1615,9 @@ importers:
       '@opendb-dsh/spill-s3':
         specifier: workspace:*
         version: link:../../packages/spill-s3
+      '@opendb-dsh/task-ddl':
+        specifier: workspace:*
+        version: link:../../packages/task-ddl
       '@opendb-dsh/task-health':
         specifier: workspace:*
         version: link:../../packages/task-health
@@ -1586,6 +1642,9 @@ importers:
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../../packages/tool-db
+      '@opendb-dsh/tool-ddl-collect':
+        specifier: workspace:*
+        version: link:../../packages/tool-ddl-collect
       '@opendb-dsh/tool-health-collect':
         specifier: workspace:*
         version: link:../../packages/tool-health-collect

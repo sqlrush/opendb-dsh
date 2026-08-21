@@ -384,3 +384,22 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **e2e**：空闲窗口/指定窗口（beginSnap/endSnap）均一次 `wdr_collect→task_report`；空闲窗口如实报 ok
   "Top10 全为平台监控自身查询"——累计计数器 vs 窗口 delta 的语义差被真实数据验证（dbe_perf 累计大 ≠ 窗口忙）。
   面板浏览器实拍验证；坑：pg Date 对象 String() 成 "Thu Aug…"，时间戳一律 toISOString 再入报告。
+
+## 任务重做 #4：task-ddl 上线（2026-08-21，user 增补功能）
+
+- **交付**：task-ddl（DDL 规范扫描 + 变更历史时间轴追溯：什么时间/由哪个用户/做过什么变更）
+  + tool-ddl-collect。会话版本（ddl_collect 任意会话可用）+ 任务版本双形态。
+- **三源阶梯**：①平台字典变更快照（对象/时间主干，10 分钟粒度）②节点审计 pg_query_audit
+  （用户归因+DDL 原文；og 要求 AUDITADMIN——opendb_ro 默认无权，工具如实降级并在 DDLR90/notes
+  给出解锁命令）③dbe_perf.statement DDL 文本辅助。合并=审计条目按对象名±15 分钟吸附字典条目。
+- **洪峰折叠**：同刻 >30 条字典变更（collector 首轮基线导入）折叠为单条"批量登记 N 对象"——
+  og5 实测 337 对象基线被折叠，时间轴保持可读。
+- **规则**：DDLR00 DROP SCHEMA(critical)/01 表删除/02 TRUNCATE/03 DROP COLUMN/04 业务时段变更/
+  05 变更抖动(24h≥3次)/07 DROP 无 IF EXISTS/90 归因缺失（可观测性缺口本身是发现）。
+- **e2e（og5 120h 窗口）**：ddl_collect→db_query 现状核对→报告一次过锚定门；w3_dict_probe
+  "建后 11 分钟即删"被讲成故事线（业务时段删除+无法归因→warn）；面板时间轴按日分组/动作色点/
+  模型逐条 note 浏览器实拍验证。
+- **环境注记**：og5=mac docker 容器（5433→5432）；给平台账号解锁审计查询：
+  `docker exec og5 su - omm -c "gsql -d postgres -c \"ALTER USER opendb_ro AUDITADMIN;\""`
+  （auto 模式拦截权限变更类命令——此授权留给 user 执行，授后时间轴自动补齐操作者）。
+  task-monitor-dashboard 定位定案（user）：平台数据底座，保留。
