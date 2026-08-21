@@ -28,7 +28,7 @@ function reportRow(r: any): TaskReportRecord {
  */
 export default class TasksService extends Service {
   // metrics/dictionary 供 TaskBuildContext；直接列 inject（构造器内探测未注入服务会被 cordis 拒绝，P0 已踩过）
-  static inject = ['opendbRegistry', 'opendbMetrics', 'opendbDictionary', 'opendbApprovals', 'opendbNotify'];
+  static inject = ['opendbRegistry', 'opendbMetrics', 'opendbDictionary', 'opendbNotify'];
   static Config = z.object({
     connectionString: z.string().required(),
     engine: z.boolean().default(false),
@@ -69,7 +69,6 @@ export default class TasksService extends Service {
         registry: this.registry,
         types: this.types,
         buildCtx,
-        approvals: () => anyCtx.opendbApprovals,   // 已在 inject 内，读取安全
         baseUrl: (config.baseUrl ?? '') !== '' ? config.baseUrl! : `http://127.0.0.1:${process.env.OPENDB_HOST_PORT ?? '3080'}`,
         tenant: this.tenant,
         tzOffsetMinutes: config.tzOffsetMinutes ?? 480,

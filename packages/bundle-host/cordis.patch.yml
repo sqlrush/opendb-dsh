@@ -79,10 +79,6 @@
       name: '@opendb-dsh/dictionary-pg'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
-    - id: opendb-approvals
-      name: '@opendb-dsh/approvals'
-      config:
-        connectionString: !!js process.env.OPENDB_PG_URL
     - id: opendb-tasks
       name: '@opendb-dsh/tasks'
       config:
@@ -124,10 +120,12 @@
 - insert:
     - id: ui-node-monitor
       name: '@opendb-dsh/ui-node-monitor'
-# ── 任务重做 #1：健康检查（确定性 12 维 + 锚定解读；Host 侧=类型注册+引擎调度）────
+# ── 任务重做 #1/#2：健康检查 + SQL 审核优化（Host 侧=类型注册+引擎调度）────────
 - insert:
     - id: task-health
       name: '@opendb-dsh/task-health'
+    - id: task-sqlreview
+      name: '@opendb-dsh/task-sqlreview'
 # ── 插件地图：P2 W1 事件驱动运维（task-incident 双半边 + alert-ddl 告警器）────────
 - insert:
     - id: task-incident

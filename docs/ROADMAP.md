@@ -58,6 +58,7 @@
 | IM 审批 | `approval-im-feishu` / `approval-im-dingtalk`（ApprovalProvider seam 外部 provider） | user 拍板 + IM 应用凭据 |
 | MCP 对外 | `mcp-db`（tool-db 只读能力以 MCP server 暴露给 Codex/Claude Code） | user 拍板 |
 | 扇出编排 | `subagent-queue` · `workflow-sandbox-job` | 单代理出现实际瓶颈 |
+| 审批签收（2026-08-21 下线） | `approvals` 服务 + 引擎 createPendingAcks + 控制台待签收区 + task_create 签收参数（代码保留在 packages/approvals，装配已拆） | user 解除只读定位（平台重新引入变更/操作类功能时） |
 
 ### P3 · 规模与多租户 ✅（2026-08-19/20 全项收官，详见 CLUSTER.md P3 复盘节）
 - 规模 ✅：2001 节点采集覆盖率 100%（60s 零滑期，collector 5m CPU/118Mi）；舰队巡检 5/5 P95=91s；

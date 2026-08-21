@@ -1,7 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 
 export const name = 'ui-opendb';
-export const inject = ['connection', 'webServer', 'opendbRegistry', 'opendbTasks', 'opendbApprovals', 'opendbMetrics', 'opendbDictionary'];
+export const inject = ['connection', 'webServer', 'opendbRegistry', 'opendbTasks', 'opendbMetrics', 'opendbDictionary'];
 
 type RpcResult = { ok: true; value: unknown } | { ok: false; error: { code: string; message: string; details: Record<string, unknown> } };
 
@@ -19,7 +19,6 @@ export function apply(ctx: Context): void {
   const anyCtx = ctx as any;
   const registry = anyCtx.opendbRegistry;
   const tasks = anyCtx.opendbTasks;
-  const approvals = anyCtx.opendbApprovals;
 
   // agent 工作区目录 reconcile（幂等，启动即跑 + 每 60s 周期）：initContainer 是第一道防线；
   // P3 多副本下运行期新建的 agent 只在处理请求的副本上 mkdir——周期 reconcile 把目录补齐到
@@ -190,7 +189,6 @@ export function apply(ctx: Context): void {
             agentId: payload.agentId, type: payload.type, name: payload.name,
             config: payload.config ?? {},
             cron: typeof payload.cron === 'string' && payload.cron !== '' ? payload.cron : undefined,
-            requiresApproval: payload.requiresApproval === true,
           });
           return { ok: true, value: { task } };
         }
@@ -217,16 +215,7 @@ export function apply(ctx: Context): void {
           }
           return { ok: true, value: { runs: enriched } };
         }
-        case 'approvals/list':
-          return { ok: true, value: { approvals: await approvals.list({ status: typeof payload?.status === 'string' ? payload.status : undefined }) } };
-        case 'approvals/decide': {
-          if (typeof payload?.id !== 'string' || (payload?.decision !== 'approved' && payload?.decision !== 'rejected')) return bad('id and decision(approved|rejected) required');
-          const record = await approvals.decide(payload.id, {
-            decision: payload.decision, decidedBy: 'console',   // P1 无认证；P2 接 IdP 后带真实身份
-            comment: typeof payload.comment === 'string' ? payload.comment : undefined,
-          });
-          return { ok: true, value: { approval: record } };
-        }
+        // approvals/* 端点已下线（2026-08-21：平台聚焦模型分析+只读展示，审批签收随之移除）
         default:
           return bad(`unknown endpoint ${endpoint}`);
       }

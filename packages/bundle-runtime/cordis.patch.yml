@@ -96,6 +96,8 @@
       name: '@opendb-dsh/tool-metrics'
     - id: tool-health-collect
       name: '@opendb-dsh/tool-health-collect'
+    - id: tool-sqlreview-collect
+      name: '@opendb-dsh/tool-sqlreview-collect'
 # ── P1 W4: task_report 工具 + 任务类型注册表（Runtime 侧，engine:false）──────
 - insert:
     - id: opendb-tasks
@@ -108,11 +110,6 @@
       name: '@opendb-dsh/task-inspection'
     - id: task-sql-audit
       name: '@opendb-dsh/task-sql-audit'
-- insert:
-    - id: opendb-approvals
-      name: '@opendb-dsh/approvals'
-      config:
-        connectionString: !!js process.env.OPENDB_PG_URL
 - insert:
     - id: tool-task-report
       name: '@opendb-dsh/tool-task-report'
@@ -135,10 +132,12 @@
 - insert:
     - id: tool-task-admin
       name: '@opendb-dsh/tool-task-admin'
-# ── 任务重做 #1：health 类型双侧 + health_collect 工具（工具只在 Runtime 激活）────
+# ── 任务重做 #1/#2：类型双侧注册（工具在独立包，见 tool-*-collect）────────────
 - insert:
     - id: task-health
       name: '@opendb-dsh/task-health'
+    - id: task-sqlreview
+      name: '@opendb-dsh/task-sqlreview'
 # ── P2 W1：incident 任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）──────
 - insert:
     - id: task-incident

@@ -63,13 +63,10 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
 
   function TasksPage() {
     const [tasks, setTasks] = useState<any[]>([]);
-    const [approvals, setApprovals] = useState<any[]>([]);
     const selected = hsSel();
-    const [comment, setComment] = useState<Record<string, string>>({});
     const refresh = async () => {
       try {
         setTasks((await call('tasks/list', {})).tasks);
-        setApprovals((await call('approvals/list', { status: 'pending' })).approvals);
       } catch { /* retry next poll */ }
     };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 20_000); return () => clearInterval(t); }, []);
@@ -77,27 +74,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     const Panel = task !== undefined ? (getTaskPanel(task.type) ?? DefaultTaskPanel) : undefined;
     return (
       <div>
-        {approvals.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={S.h2}>待签收（{approvals.length}）</div>
-            <table style={S.table}>
-              <tbody>
-                {approvals.map((a) => (
-                  <tr key={a.id}>
-                    <td style={S.td}>{a.subject}</td>
-                    <td style={S.td}><input style={S.input} placeholder="意见" value={comment[a.id] ?? ''} onChange={(e) => setComment({ ...comment, [a.id]: e.target.value })} /></td>
-                    <td style={S.td}>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button style={S.btn} onClick={() => void call('approvals/decide', { id: a.id, decision: 'approved', comment: comment[a.id] ?? '' }).then(refresh)}>签收</button>
-                        <button style={S.btn} onClick={() => void call('approvals/decide', { id: a.id, decision: 'rejected', comment: comment[a.id] ?? '' }).then(refresh)}>驳回</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {/* 待签收区已下线（2026-08-21：平台聚焦模型分析+只读展示，审批签收链路整体移除） */}
         <div style={S.split}>
           <div style={S.listPane}>
             <div style={S.h2}>任务</div>

@@ -25,7 +25,6 @@ async function requireAgent(deps: Deps, exec: any): Promise<{ id: string; name: 
 function taskLine(t: any): Record<string, unknown> {
   return {
     name: t.name, type: t.type, cron: t.cron ?? '手动', enabled: t.enabled ? '启用' : '停用',
-    approval: t.requiresApproval ? '需签收' : '-',
   };
 }
 
@@ -38,7 +37,6 @@ function defineTaskCreateTool(deps: Deps) {
       name: { type: 'string', required: true, description: '任务名称（简短、唯一）。' },
       cron: { type: 'string', description: '5 字段 cron（北京时间），如 "0 8 * * *"=每天8点；省略=仅手动触发。' },
       config: { type: 'object', additionalProperties: true, description: '任务类型的配置对象（结构随类型；如 sql-audit 的 {topN, node}）。' },
-      requires_approval: { type: 'boolean', description: '报告是否需要 DBA 签收（默认 true）。' },
     },
     output: TEXT_OUTPUT,
     async execute(args: any, exec: any) {
@@ -49,9 +47,8 @@ function defineTaskCreateTool(deps: Deps) {
         name: String(args.name ?? ''),
         cron: typeof args.cron === 'string' && args.cron !== '' ? args.cron : undefined,
         config: args.config ?? {},
-        requiresApproval: args.requires_approval !== false,
       });
-      return { content: `任务已创建：「${task.name}」（${task.type}，${task.cron ?? '手动触发'}${task.requiresApproval ? '，报告需签收' : ''}）。侧栏任务列表可见；结果将在任务大盘展示。` };
+      return { content: `任务已创建：「${task.name}」（${task.type}，${task.cron ?? '手动触发'}）。侧栏任务列表可见；结果将在任务大盘只读展示。` };
     },
   } as any);
 }
@@ -59,13 +56,12 @@ function defineTaskCreateTool(deps: Deps) {
 function defineTaskUpdateTool(deps: Deps) {
   return defineTool({
     name: 'task_update',
-    description: '调整当前智能体某个任务的策略（交互纲领：用户在会话里说变更，由你调整——任务大盘上没有编辑按钮）。可改 cron/启停/配置/签收要求/名称。',
+    description: '调整当前智能体某个任务的策略（交互纲领：用户在会话里说变更，由你调整——任务大盘上没有编辑按钮）。可改 cron/启停/配置/名称。',
     parameters: {
       task: { type: 'string', required: true, description: '要调整的任务名称（或 id）。' },
       cron: { type: 'string', description: '新 cron（北京时间）；传空字符串 "" 表示改为仅手动。' },
       enabled: { type: 'boolean', description: '启用/停用。' },
       config: { type: 'object', additionalProperties: true, description: '新配置对象（整体替换）。' },
-      requires_approval: { type: 'boolean', description: '报告是否需签收。' },
       new_name: { type: 'string', description: '重命名。' },
     },
     output: TEXT_OUTPUT,
@@ -79,10 +75,9 @@ function defineTaskUpdateTool(deps: Deps) {
       if (typeof args.cron === 'string') patch.cron = args.cron === '' ? null : args.cron;
       if (typeof args.enabled === 'boolean') patch.enabled = args.enabled;
       if (args.config !== undefined) patch.config = args.config;
-      if (typeof args.requires_approval === 'boolean') patch.requiresApproval = args.requires_approval;
       if (typeof args.new_name === 'string' && args.new_name !== '') patch.name = args.new_name;
       const updated = await deps.tasks.updateTask(target.id, patch);
-      return { content: `任务「${updated.name}」已调整：${updated.cron ?? '手动触发'} · ${updated.enabled ? '启用' : '停用'}${updated.requiresApproval ? ' · 报告需签收' : ''}` };
+      return { content: `任务「${updated.name}」已调整：${updated.cron ?? '手动触发'} · ${updated.enabled ? '启用' : '停用'}` };
     },
   } as any);
 }
@@ -97,7 +92,7 @@ function defineTaskListTool(deps: Deps) {
       const agent = await requireAgent(deps, exec);
       const all = (await deps.tasks.listTasks()).filter((t: any) => t.agentId === agent.id);
       const types = deps.tasks.listTypes().map((t: any) => `${t.key}（${t.title}${t.defaultCron ? '，建议 ' + t.defaultCron : ''}）`).join('、');
-      const table = all.length > 0 ? renderTable(['name', 'type', 'cron', 'enabled', 'approval'], all.map(taskLine)) : '（还没有任务）';
+      const table = all.length > 0 ? renderTable(['name', 'type', 'cron', 'enabled'], all.map(taskLine)) : '（还没有任务）';
       return { content: clampText(`智能体「${agent.name}」的任务：\n${table}\n\n可用任务类型：${types}`, 20000) };
     },
   } as any);
@@ -129,7 +124,6 @@ function defineTaskProposeTool(deps: Deps) {
         name: String(args.name ?? ''),
         cron: typeof args.cron === 'string' && args.cron !== '' ? args.cron : undefined,
         config: args.config ?? {},
-        requiresApproval: true,
         enabled: false,
       });
       return { content: `草案已落（未启用）：「${task.name}」（${task.type}，${task.cron ?? '手动'}）。请向用户展示方案${typeof args.rationale === 'string' && args.rationale !== '' ? `与理由（${args.rationale}）` : ''}并用 ask_user 请求确认；同意后用 task_update 启用。` };

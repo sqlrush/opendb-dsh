@@ -1,0 +1,18 @@
+{
+  "name": "@opendb-dsh/task-sqlreview",
+  "version": "0.0.1",
+  "description": "opendb-dsh SQL review & tune task type: deterministic rules engine + plan-anchored optimization, read-only (task redo #2)",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "dsh": { "client": { "platform": "web" } },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json && node build-client.mjs", "test": "node --experimental-strip-types --test --test-concurrency=1 --test-timeout=60000 test/*.test.ts" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@opendb-dsh/tasks": "workspace:*"
+  },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
+}

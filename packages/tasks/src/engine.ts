@@ -11,7 +11,6 @@ export interface EngineDeps {
   registry: any;
   types: Map<string, TaskType>;
   buildCtx: TaskBuildContext;
-  approvals?: () => any | undefined;    // lazy: Host 有 opendbApprovals，Runtime 无
   baseUrl: string;
   tenant: string;
   tzOffsetMinutes: number;
@@ -41,7 +40,7 @@ function reportRequirement(mode: ReportMode): string {
 
 /**
  * 任务引擎（仅 Host 启用）：CAS 触发（每 cron 槽至多一次）、经 Host 自身 /api 开会话
- * （与手发无差别）、超时/无报告终态判定、requires_approval 报告的签收单创建（单写者）。
+ * （与手发无差别）、超时/无报告终态判定。（审批签收链路已下线：平台聚焦只读展示。）
  */
 export class TaskEngine {
   private readonly d: EngineDeps;
@@ -102,7 +101,6 @@ export class TaskEngine {
       await this.fireDue(now);
       await this.sweepTimeouts(now);
       await this.settleFinishedTurns();
-      await this.createPendingAcks();
     } catch (cause) {
       process.stderr.write(`[tasks] tick failed: ${String((cause as Error).message ?? cause)}\n`);
     } finally {
@@ -223,6 +221,9 @@ export class TaskEngine {
       const type = this.d.types.get(task.type);
       if (type === undefined) throw new Error(`任务类型 ${task.type} 未注册`);
       if (type.runMode !== 'session') throw new Error(`service 型任务不经会话运行（enabled 即常驻，无需触发）`);
+      // session 路径同样过 configSchema 规范化（service 路径已有）——SQL 直插/部分字段 config
+      // 缺省时补默认值，否则 buildPrompt 里 config.xxx.length 直接炸（2026-08-21 sqlreview e2e 实证）
+      task = { ...task, config: type.configSchema(task.config ?? {}) };
       const agent = await this.d.registry.getAgent(task.agentId);
       if (agent === undefined) throw new Error(`agent ${task.agentId} 不存在`);
       const workspaces = await this.api('workspace.list', {});
@@ -303,27 +304,8 @@ export class TaskEngine {
     }
   }
 
-  /** requires_approval 任务的成功报告 → report-ack 审批单（缺哪补哪，单写者幂等）。 */
-  private async createPendingAcks(): Promise<void> {
-    const approvals = this.d.approvals?.();
-    if (approvals === undefined) return;
-    const r = await this.d.pool.query(
-      `SELECT r.id AS run_id, t.name, t.id AS task_id, p.severity, p.summary
-       FROM dsh_task_runs r
-       JOIN dsh_tasks t ON t.id = r.task_id AND t.requires_approval
-       JOIN dsh_task_reports p ON p.run_id = r.id
-       WHERE r.status = 'succeeded'
-         AND NOT EXISTS (SELECT 1 FROM dsh_approvals a WHERE a.ref_run_id = r.id)`,
-    );
-    for (const raw of r.rows) {
-      await approvals.request({
-        kind: 'report-ack',
-        subject: `报告签收：${raw.name}（${raw.severity}）`,
-        payload: { taskId: raw.task_id, runId: raw.run_id, severity: raw.severity, summary: raw.summary },
-        refRunId: raw.run_id,
-      }).catch((cause: unknown) => process.stderr.write(`[tasks] create ack failed: ${String(cause)}\n`));
-    }
-  }
+  // 审批签收链路已整体下线（2026-08-21 user 决策：平台聚焦模型分析+只读展示，不做变更操作类功能；
+  // createPendingAcks 及 approvals 依赖随之移除，dsh_approvals 表保留但不再写入——恢复走暂缓池）。
 
   private async api(method: string, payload: unknown): Promise<any> {
     const res = await fetch(`${this.d.baseUrl}/api/${method}`, {

@@ -221,17 +221,13 @@ a{color:var(--blue);text-decoration:none}
         <span class="anchor">✓ 已锚定 · 9 条确定性发现全覆盖 · 无夸大 · 无遗漏</span>
         <span class="metaline">检查对象 <b>og5</b> · 完成于 <b>2026-08-21 08:00:42</b> · 采集耗时 <b class="num">38s</b> · 触发 <b>每日 08:00</b></span>
         <span class="metaline">12 维全部采集成功 · 0 维降级 · 证据包 <a>#run-8f31</a></span>
-        <span class="metaline" style="color:var(--warn)">⏳ 报告待签收</span>
+        <span class="metaline">📄 报告已自动入库归档 · 只读展示，有异议在会话里说</span>
       </div>
     </div>
 
-    <!-- 决策控件：审批签收是交互纲领里唯一保留的显式控件（dsh 原版按钮风格） -->
+    <!-- 只读定位（2026-08-21 user 修订）：报告自动归档，无签收/操作控件 -->
     <div class="signBar">
-      <span style="font-size:13px">⏳ <b style="font-weight:500">本报告待签收</b> · 签收=确认已阅并入库归档；有异议直接在会话里说，驳回会自动带上下文开新会话</span>
-      <span style="margin-left:auto;display:flex;gap:10px">
-        <button class="btnPrimary" onclick="signOff(this)">✓ 签收</button>
-        <button class="btnGhost">✗ 驳回 · 到会话说原因</button>
-      </span>
+      <span style="font-size:13px">📄 <b style="font-weight:500">报告已自动入库归档</b> · 平台只读定位：只呈现分析结果，不设签收/操作控件——有异议或要深挖，直接在会话里说</span>
     </div>
 
     <!-- 裁决点① 健康环 vs 维度矩阵：两种形态并排给你选（也可以并存：环做总览、矩阵做导航） -->
@@ -804,7 +800,7 @@ CREATE INDEX idx_orders_created_status ON orders (created_at, order_status);
             </div>
           </div>
 
-          <div style="font-size:13px;line-height:1.7;color:var(--ink);margin-top:10px">两条索引方案已经 hypopg 实证，DDL 我放在完整报告里，<b>需要你签收后才会给出执行清单</b>。想每周自动扫一次的话，说一句「固化成周期任务」就行。</div>
+          <div style="font-size:13px;line-height:1.7;color:var(--ink);margin-top:10px">两条索引方案已经 hypopg 实证，DDL 清单放在完整报告里（平台只读，<b>是否执行由你在业务侧决定</b>）。想每周自动扫一次的话，说一句「固化成周期任务」就行。</div>
         </div>
       </div>
 
@@ -852,11 +848,6 @@ function toggleRows(el){
   if(!w){return}
   w.classList.toggle('showAll');
   el.textContent=w.classList.contains('showAll')?'收起 ▴':'展开全部 15 条 ▾';
-}
-function signOff(el){
-  var bar=el.closest('.signBar');
-  if(!bar){return}
-  bar.innerHTML='<span style="font-size:13px;color:var(--ok)">✓ 已签收 · 2026-08-21 17:12 · 已入库归档——后续在会话里可随时追问任何一条发现</span>';
 }
 function toggleInst(){
   var g=document.getElementById('instGrid');

@@ -49,4 +49,4 @@ client registerTaskPanel）。领域 UI 独立 client 插件；ui-harness/ui-ope
 
 一切交互尽量在会话完成（task_create/task_update 工具已就位）；主区任务页=无按钮结果大盘
 （插件经 registerTaskPanel 注册专属面板）；弹新页面是稀缺品（现仅「新建智能体」）；
-审批签收类人类监督决策保留显式控件。
+**只读定位（2026-08-21）：平台聚焦模型分析+只读展示，不做变更/操作类功能；审批签收链路已整体下线进暂缓池。**

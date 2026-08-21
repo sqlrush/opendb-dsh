@@ -350,3 +350,21 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **防绕路守卫生效实证**：第二轮工具缺失时，模型按 prompt「诚实守卫」上报 warn“工具缺失未执行锚定检查”，
   而不是退回自由巡检自造 det（第一轮无守卫时它就这么干了，还把 scope 写成节点名）。
   锚定链的完整性靠三层：工具产出唯一事实源 + prompt 锚定纪律 + reportSchema 结构校验。
+
+## 任务重做 #2：task-sqlreview + 全平台去审批化（2026-08-21）
+
+- **去审批化（user 定位修订：模型分析+只读展示，不做变更/操作类功能）**：approvals 服务从
+  host/runtime 双 bundle 解除装配（包保留，恢复走暂缓池）；引擎 createPendingAcks 移除；
+  控制台待签收区/approvals RPC 下线；task_create/update 签收参数删除；alert-ddl 自举不再要求签收；
+  存量 4 张签收单与 requires_approval 标记清库。浏览器回归：任务页无签收控件、console 零错误。
+- **task-sqlreview 上线**：12 条确定性规则（7 目录类含 TBL001 慢SQL DML 联动升级 critical + 5 文本类）
+  + Top-N 慢 SQL 计划锚定（EXPLAIN 只读 + 脚本标注 Seq Scan/下盘 + 总 cost 提取）+ 验证阶梯
+  explain-verified / estimated（og 无 hypopg 如实降级）/ no-gain / plan-unavailable。
+  工具半边独立包 tool-sqlreview-collect（同 health 定论）。
+- **e2e 三轮**：①线上 Top5——EXPLAIN 被 opendb_ro schema 权限挡（gsbench schema 无 USAGE）→
+  全部 plan-unavailable 如实呈现，模型目录取证归因锁竞争并交叉引用当日巡检；②贴 SQL 场景初跑
+  发现 buildPrompt 未教模型转传 config.sqls（已修）；③修后完整链打通：脚本标注两处全表扫 →
+  模型列裁剪改写 → db_query EXPLAIN 实证 cost 106→106，**如实报 0% 降幅**（行宽 -69% 收益另行说明，
+  并判断 LIKE '%…' 语义必需不硬改）——诚实纪律实证。
+- **引擎修复**：session 触发路径补 configSchema 规范化（service 路径已有）——部分字段 config
+  直插时 buildPrompt 里 config.xxx.length 直接炸（本轮 sqlreview e2e 首跑即中）。
