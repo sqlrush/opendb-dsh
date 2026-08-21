@@ -98,6 +98,8 @@
       name: '@opendb-dsh/tool-health-collect'
     - id: tool-sqlreview-collect
       name: '@opendb-dsh/tool-sqlreview-collect'
+    - id: tool-wdr-collect
+      name: '@opendb-dsh/tool-wdr-collect'
 # ── P1 W4: task_report 工具 + 任务类型注册表（Runtime 侧，engine:false）──────
 - insert:
     - id: opendb-tasks
@@ -138,6 +140,8 @@
       name: '@opendb-dsh/task-health'
     - id: task-sqlreview
       name: '@opendb-dsh/task-sqlreview'
+    - id: task-wdr
+      name: '@opendb-dsh/task-wdr'
 # ── P2 W1：incident 任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）──────
 - insert:
     - id: task-incident

@@ -368,3 +368,19 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   并判断 LIKE '%…' 语义必需不硬改）——诚实纪律实证。
 - **引擎修复**：session 触发路径补 configSchema 规范化（service 路径已有）——部分字段 config
   直插时 buildPrompt 里 config.xxx.length 直接炸（本轮 sqlreview e2e 首跑即中）。
+
+## 任务重做 #3：task-wdr 上线（2026-08-21）——三任务全部落地
+
+- **交付**：task-wdr（TaskType 'wdr' + R4③ 面板：快照时间轴+窗口高亮/DB Time 堆叠条/Top SQL 归因表/
+  Load Profile/等待事件/findings）+ tool-wdr-collect（窗口 delta 七维 + 归因纪律 + 阈值判定）。
+- **只读铁律**：只消费既有快照对，绝不 create_wdr_snapshot / 不碰 GUC；快照不足/未开启时如实说明并留给 DBA。
+  原生 WDR 留底：只探测 generate_wdr_report 存在性并给出 DBA 归档命令，不代执行。
+- **og5 实探地基**（写采集器前先探，零返工）：snap_* 表列带 snap_ 前缀、时间 µs；快照每小时/保留 8 天/
+  enable_wdr_snapshot=on；关键表 snap_global_instance_time（DB_TIME/CPU/IO/NET/PLAN 构成）、
+  snap_summary_statement（含 cpu_time/data_io_time/sort_spill_size 归因三件套）、snap_summary_stat_database、
+  snap_global_wait_events（STATUS 空闲类要剔除）、snap_global_bgwriter_stat（不是 stat_bgwriter！）。
+- **归因纪律**（脚本判定，模型不可改）：tmp=sort_spill>0 · cpu=cpu/elapsed≥0.5 · io=io/elapsed≥0.3 ·
+  blk=elapsed>1s 且 cpu/io 双<5%（锁等待型——og5 实数据 gsbench UPDATE elapse 1.2e9µs/cpu 15606µs 即此型）。
+- **e2e**：空闲窗口/指定窗口（beginSnap/endSnap）均一次 `wdr_collect→task_report`；空闲窗口如实报 ok
+  "Top10 全为平台监控自身查询"——累计计数器 vs 窗口 delta 的语义差被真实数据验证（dbe_perf 累计大 ≠ 窗口忙）。
+  面板浏览器实拍验证；坑：pg Date 对象 String() 成 "Thu Aug…"，时间戳一律 toISOString 再入报告。
