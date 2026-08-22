@@ -403,3 +403,21 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   `docker exec og5 su - omm -c "gsql -d postgres -c \"ALTER USER opendb_ro AUDITADMIN;\""`
   （auto 模式拦截权限变更类命令——此授权留给 user 执行，授后时间轴自动补齐操作者）。
   task-monitor-dashboard 定位定案（user）：平台数据底座，保留。
+
+## 会话内嵌卡上线 + 清场坑（2026-08-22）
+
+- **会话内嵌卡（ui-task-inline，client-only）**：dsh 提供键控槽位
+  `slots.register({ name: 'tool.call.toolview', key: '<工具名>' }, Component)`——key 域开放，
+  为自己的工具接管会话流渲染，未接管的工具仍走通用行（官方范例：grep 的 SearchRow、
+  workflow-run 的 conversation.chat.node）。props = `{ callId, toolName, block, cwd, openFile, inspect }`；
+  `block.kind==='tool-result'` 时 `block.content[].text` 里是工具原文（我们的工具输出 = `--` 注释 + JSON），
+  运行中则是 RunningToolCall（出骨架）。已为 health/sqlreview/wdr/ddl_collect + rules_catalog +
+  task_report 六个工具注册卡片。实拍验证：会话里说「给 og5 做个健康检查」→ 红色状态带卡直出
+  （严重 1/告警 1/关注 8 + Top3 发现 + 收起提示 + 降级计数），console 零错误。
+- **清场坑（务必按序）**：① dsh 的 workspace 顺序索引在 `dsh_kv_units.global->workspaceIds`，
+  删 `dsh_kv_records` 的 workspace 行后必须同步该数组，否则 Host boot 直接崩
+  （`workspace domain is inconsistent: registry order references missing workspace`）；
+  ② **清场前必须先把 Host 副本缩到 0**（KEDA 要先 `annotate scaledobject autoscaling.keda.sh/paused-replicas=0`），
+  否则运行中的 pod 会把内存态写回 PG，复活工作区并新建会话——第一轮清场"没删干净"就是这个原因；
+  ③ 删 agent 前要先解绑 `dsh_db_nodes.agent_id`（FK RESTRICT）并清理 `opendb_memories`
+  / `opendb_knowledge_docs` 的 agent 引用。

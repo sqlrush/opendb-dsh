@@ -112,6 +112,10 @@
 - insert:
     - id: onboarding
       name: '@opendb-dsh/onboarding'
+# ── 会话内嵌卡（client-only）：为 opendb 采集工具接管 tool.call.toolview 渲染 ──
+- insert:
+    - id: ui-task-inline
+      name: '@opendb-dsh/ui-task-inline'
 # ── 插件地图：ui-node-monitor（节点监控面板，client-only，W6 拆包还债）─────────
 - insert:
     - id: ui-node-monitor

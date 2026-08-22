@@ -271,6 +271,9 @@ importers:
       '@opendb-dsh/ui-opendb':
         specifier: workspace:*
         version: link:../ui-opendb
+      '@opendb-dsh/ui-task-inline':
+        specifier: workspace:*
+        version: link:../ui-task-inline
 
   packages/bundle-runtime:
     dependencies:
@@ -1468,6 +1471,21 @@ importers:
         specifier: ^19.0.0
         version: 19.2.8
 
+  packages/ui-task-inline:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   profiles/collector:
     dependencies:
       '@opendb-dsh/bundle-collector':
@@ -1608,6 +1626,9 @@ importers:
       '@opendb-dsh/ui-opendb':
         specifier: workspace:*
         version: link:../../packages/ui-opendb
+      '@opendb-dsh/ui-task-inline':
+        specifier: workspace:*
+        version: link:../../packages/ui-task-inline
 
   profiles/runtime:
     dependencies:
