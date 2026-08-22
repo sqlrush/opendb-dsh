@@ -41,6 +41,7 @@ export const HEALTH_TASK_TYPE: TaskType<HealthConfig> = {
     }).required(),
     findings: z.array(z.object({
       node: z.string().required(),
+      dim: z.string().default('').description('所属维度 key（overview/waits/…，逐字来自 health_collect）'),
       item: z.string().required(),
       level: z.string().required().description('ok|notice|warn|critical'),
       detail: z.string().default(''),
@@ -79,7 +80,7 @@ export const HEALTH_TASK_TYPE: TaskType<HealthConfig> = {
       `## 锚定纪律（违反会被驳回）`,
       `- data.scope 必须逐字取 health_collect 输出的 scope 字段（instance 或 cluster）；`,
       `- data.det 三个字段（worst/counts/byNode）必须逐字复制 health_collect 输出的同名字段，禁止改动；`,
-      `- data.findings 必须包含 health_collect 的每一条 Deterministic Finding（code/level/metric/value/threshold/evidence 原样带上，value 转成字符串），你可以补充 detail 解读，但不得删条、不得下调 level；`,
+      `- data.findings 必须包含 health_collect 的每一条 Deterministic Finding（dim/code/level/metric/value/threshold/evidence 原样带上，value 转成字符串），你可以补充 detail 解读，但不得删条、不得下调 level；`,
       `- 你自己发现的补充问题也进 findings，code 留空、level 只能是 notice；`,
       `- collectionNotes 原样带上（降级的维度不得出现任何结论）；`,
       `- 引用数字必须来自证据，禁止编造。`,

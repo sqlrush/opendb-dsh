@@ -37,6 +37,63 @@ function Dot({ level }: { level: string }) {
   return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: sev(level).c, marginRight: 6 }} />;
 }
 
+function DigLink({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span style={{ fontSize: 12, color: copied ? T.sev.ok.c : T.blue, cursor: 'pointer' }}
+      onClick={() => { try { void navigator.clipboard.writeText(text); } catch { /* noop */ } setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
+      💬 {copied ? '已复制——到会话里粘贴发送即可' : `在会话里深挖：${text}`}
+    </span>
+  );
+}
+
+/** DB Time 构成环图（与堆叠条同数据双视角，中心=平均活跃会话） */
+function ClassDonut({ dbTime }: { dbTime: any }) {
+  const classes = ((dbTime?.classes ?? []) as any[]).filter((c) => Number(c.share) > 0);
+  if (classes.length === 0) return null;
+  const R = 36; const C = 2 * Math.PI * R;
+  let off = 0;
+  return (
+    <svg width={96} height={96} viewBox="0 0 96 96">
+      <g transform="rotate(-90 48 48)">
+        <circle cx={48} cy={48} r={R} fill="none" stroke="#f2f3f5" strokeWidth={13} />
+        {classes.map((c: any, i: number) => {
+          const len = Number(c.share) * C;
+          const el = <circle key={i} cx={48} cy={48} r={R} fill="none" stroke={CLASS_COLORS[String(c.name)] ?? '#9aa3b5'} strokeWidth={13} strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-off} />;
+          off += len;
+          return el;
+        })}
+      </g>
+      <text x={48} y={45} textAnchor="middle" fontSize={14} fontWeight={600} fill={T.ink}>{Number(dbTime?.avgActive ?? 0)}</text>
+      <text x={48} y={60} textAnchor="middle" fontSize={8.5} fill={T.dim}>平均活跃会话</text>
+    </svg>
+  );
+}
+
+/** 检查历史趋势条：点格子切历史报告 */
+function RunStrip({ runs, selId, onSel }: { runs: any[]; selId: string; onSel: (id: string) => void }) {
+  const cells = runs.slice(0, 30).reverse();
+  if (cells.length === 0) return null;
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 26 }}>
+        {cells.map((r: any) => {
+          const lv = String(r.report?.data?.det?.worst ?? (r.status === 'succeeded' ? 'ok' : 'notice'));
+          return (
+            <i key={String(r.id)} title={`${String(r.firedAt).replace('T', ' ').slice(0, 16)} · ${lv}`}
+              onClick={() => r.report !== undefined && onSel(String(r.id))}
+              style={{ flex: 1, maxWidth: 16, height: '100%', borderRadius: 3, background: sev(lv).c, cursor: r.report !== undefined ? 'pointer' : 'default', fontStyle: 'normal', outline: r.id === selId ? `2px solid ${T.ink}` : 'none', outlineOffset: 1, opacity: r.report !== undefined ? 1 : 0.35 }} />
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: T.dim, marginTop: 6 }}>
+        <span>{String(cells[0]?.firedAt ?? '').slice(5, 10)}</span>
+        <span>最新 ▲ · 点格子查看当次完整报告</span>
+      </div>
+    </div>
+  );
+}
+
 function Timeline({ snaps }: { snaps: any[] }) {
   if (snaps.length === 0) return null;
   const w = 680; const pad = 14;
@@ -89,6 +146,7 @@ function LoadStack({ dbTime }: { dbTime: any }) {
 
 export function WdrPanel({ task, call }: { task: any; call: (endpoint: string, payload?: unknown) => Promise<any> }) {
   const [runs, setRuns] = useState<any[]>([]);
+  const [selId, setSelId] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     let alive = true;
@@ -102,8 +160,9 @@ export function WdrPanel({ task, call }: { task: any; call: (endpoint: string, p
     return () => { alive = false; clearInterval(timer); };
   }, [task.id]);
 
-  const latest = runs.find((r) => r.report !== undefined);
-  const data = latest?.report?.data;
+  const withReport = runs.filter((r) => r.report !== undefined);
+  const current = withReport.find((r) => r.id === selId) ?? withReport[0];
+  const data = current?.report?.data;
   if (error !== '') return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>加载失败：{error}</div>;
   if (data === undefined) return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>还没有 WDR 窗口报告——任务触发后报告会出现在这里。</div>;
 
@@ -126,8 +185,11 @@ export function WdrPanel({ task, call }: { task: any; call: (endpoint: string, p
 
       <Timeline snaps={(data.snapshots ?? []) as any[]} />
 
-      <H2>窗口负载构成 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>DB Time 按构成分解（AWS-PI 式）</span></H2>
-      <div style={card}><LoadStack dbTime={data.dbTime} /></div>
+      <H2>窗口负载构成 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>DB Time 按构成分解（AWS-PI 式，堆叠条 + 环图双视角）</span></H2>
+      <div style={{ ...card, display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 320 }}><LoadStack dbTime={data.dbTime} /></div>
+        <ClassDonut dbTime={data.dbTime} />
+      </div>
 
       <H2>Top SQL 归因表 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>归因纪律：tmp=下盘 · cpu=cpu 占比 · io=物理读占比 · blk=elapsed 高而 cpu≈0</span></H2>
       <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
@@ -152,6 +214,12 @@ export function WdrPanel({ task, call }: { task: any; call: (endpoint: string, p
           </tbody>
         </table>
       </div>
+
+      {((data.topSql ?? []) as any[]).some((s: any) => String(s.attr) === 'blk') ? (
+        <div style={{ margin: '8px 0 0' }}>
+          <DigLink text={`WDR 窗口里 ${((data.topSql ?? []) as any[]).filter((s: any) => String(s.attr) === 'blk').map((s: any) => `sql ${String(s.sqlId)}`).join('、')} 是等待/锁型（elapsed 高而 cpu≈0）——帮我从健康检查的锁链视角查根因持锁者`} />
+        </div>
+      ) : null}
 
       {(data.loadProfile ?? []).length > 0 ? (
         <>
@@ -220,14 +288,8 @@ export function WdrPanel({ task, call }: { task: any; call: (endpoint: string, p
           📋 Collection Notes：{((data.collectionNotes ?? []) as any[]).map((n: any, i: number) => <div key={i}>{String(n)}</div>)}
         </div>
       ) : null}
-      <div style={{ fontSize: 12, color: T.dim, marginTop: 16 }}>
-        近 {runs.length} 次运行：{runs.slice(0, 10).map((r: any, i: number) => (
-          <span key={i} style={{ marginRight: 8 }}>
-            <Dot level={r.report?.data?.det?.worst ?? (r.status === 'succeeded' ? 'ok' : 'notice')} />
-            {String(r.firedAt ?? '').slice(5, 16).replace('T', ' ')}
-          </span>
-        ))}
-      </div>
+      <H2>检查历史 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>一格一次运行 · 点格子查看当次报告</span></H2>
+      <RunStrip runs={runs} selId={String(current?.id ?? '')} onSel={setSelId} />
     </div>
   );
 }

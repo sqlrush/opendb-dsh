@@ -93,8 +93,32 @@ function Timeline({ entries }: { entries: any[] }) {
   );
 }
 
+function RunStrip({ runs, selId, onSel }: { runs: any[]; selId: string; onSel: (id: string) => void }) {
+  const cells = runs.slice(0, 30).reverse();
+  if (cells.length === 0) return null;
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 26 }}>
+        {cells.map((r: any) => {
+          const lv = String(r.report?.data?.det?.worst ?? (r.status === 'succeeded' ? 'ok' : 'notice'));
+          return (
+            <i key={String(r.id)} title={`${String(r.firedAt).replace('T', ' ').slice(0, 16)} · ${lv}`}
+              onClick={() => r.report !== undefined && onSel(String(r.id))}
+              style={{ flex: 1, maxWidth: 16, height: '100%', borderRadius: 3, background: sev(lv).c, cursor: r.report !== undefined ? 'pointer' : 'default', fontStyle: 'normal', outline: r.id === selId ? `2px solid ${T.ink}` : 'none', outlineOffset: 1, opacity: r.report !== undefined ? 1 : 0.35 }} />
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: T.dim, marginTop: 6 }}>
+        <span>{String(cells[0]?.firedAt ?? '').slice(5, 10)}</span>
+        <span>最新 ▲ · 点格子查看当次完整报告</span>
+      </div>
+    </div>
+  );
+}
+
 export function DdlPanel({ task, call }: { task: any; call: (endpoint: string, payload?: unknown) => Promise<any> }) {
   const [runs, setRuns] = useState<any[]>([]);
+  const [selId, setSelId] = useState('');
   const [error, setError] = useState('');
   useEffect(() => {
     let alive = true;
@@ -108,8 +132,9 @@ export function DdlPanel({ task, call }: { task: any; call: (endpoint: string, p
     return () => { alive = false; clearInterval(timer); };
   }, [task.id]);
 
-  const latest = runs.find((r) => r.report !== undefined);
-  const data = latest?.report?.data;
+  const withReport = runs.filter((r) => r.report !== undefined);
+  const current = withReport.find((r) => r.id === selId) ?? withReport[0];
+  const data = current?.report?.data;
   if (error !== '') return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>加载失败：{error}</div>;
   if (data === undefined) return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>还没有 DDL 追溯报告——任务触发后报告会出现在这里；在会话里问"最近一周谁改过表"也能即席出缩减版。</div>;
 
@@ -194,14 +219,8 @@ export function DdlPanel({ task, call }: { task: any; call: (endpoint: string, p
           📋 Collection Notes：{((data.collectionNotes ?? []) as any[]).map((n: any, i: number) => <div key={i}>{String(n)}</div>)}
         </div>
       ) : null}
-      <div style={{ fontSize: 12, color: T.dim, marginTop: 16 }}>
-        近 {runs.length} 次运行：{runs.slice(0, 10).map((r: any, i: number) => (
-          <span key={i} style={{ marginRight: 8 }}>
-            <Dot level={r.report?.data?.det?.worst ?? (r.status === 'succeeded' ? 'ok' : 'notice')} />
-            {String(r.firedAt ?? '').slice(5, 16).replace('T', ' ')}
-          </span>
-        ))}
-      </div>
+      <H2>检查历史 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>一格一次运行 · 点格子查看当次报告</span></H2>
+      <RunStrip runs={runs} selId={String(current?.id ?? '')} onSel={setSelId} />
     </div>
   );
 }

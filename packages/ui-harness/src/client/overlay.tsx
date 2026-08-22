@@ -61,8 +61,56 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
+  /** 任务运行历史（页内 tab「历史」）：只读表 */
+  function TaskHistory({ task }: { task: any }) {
+    const [runs, setRuns] = useState<any[]>([]);
+    useEffect(() => {
+      let alive = true;
+      call('runs/list', { taskId: task.id }).then((v) => { if (alive) setRuns(v?.runs ?? []); }).catch(() => {});
+      return () => { alive = false; };
+    }, [task.id]);
+    return (
+      <table style={S.table}>
+        <thead><tr><th style={S.th}>时间</th><th style={S.th}>触发</th><th style={S.th}>状态</th><th style={S.th}>报告</th></tr></thead>
+        <tbody>
+          {runs.map((r) => (
+            <tr key={r.id}>
+              <td style={S.td}>{String(r.firedAt).replace('T', ' ').slice(0, 19)}</td>
+              <td style={S.td}><span style={S.dim}>{r.triggerKind}</span></td>
+              <td style={S.td}>{r.status}{r.error ? <span style={{ color: sevColor('critical') }}> {r.error}</span> : null}</td>
+              <td style={S.td}>{r.report !== undefined ? <span style={{ color: sevColor(r.report.severity) }}>{r.report.severity} · {r.report.summary}</span> : <span style={S.dim}>-</span>}</td>
+            </tr>
+          ))}
+          {runs.length === 0 && <tr><td style={S.td} colSpan={4}><span style={S.dim}>还没有运行记录</span></td></tr>}
+        </tbody>
+      </table>
+    );
+  }
+
+  /** 任务配置（页内 tab「配置」）：只读展示——调整在会话里说一句即可（交互纲领） */
+  function TaskConfig({ task }: { task: any }) {
+    return (
+      <div style={{ maxWidth: 640 }}>
+        <div style={{ ...S.dim, fontSize: 12, marginBottom: 10 }}>只读展示——要调整（改周期/改范围/停用），在会话里对智能体说一句即可，这里没有编辑按钮（交互纲领 §15）。</div>
+        <table style={S.table}>
+          <tbody>
+            <tr><td style={{ ...S.td, width: 110, color: 'var(--dsw-alias-label-tertiary)' }}>类型</td><td style={S.td}>{task.type}</td></tr>
+            <tr><td style={{ ...S.td, color: 'var(--dsw-alias-label-tertiary)' }}>调度</td><td style={S.td}>{task.cron ?? '手动触发'}</td></tr>
+            <tr><td style={{ ...S.td, color: 'var(--dsw-alias-label-tertiary)' }}>状态</td><td style={S.td}>{task.enabled ? '启用' : '停用'}</td></tr>
+            <tr><td style={{ ...S.td, color: 'var(--dsw-alias-label-tertiary)' }}>配置</td><td style={S.td}><pre style={{ margin: 0, font: '12px/1.7 "JetBrains Mono",Menlo,monospace', background: 'var(--dsw-alias-interactive-bg-hover)', borderRadius: 10, padding: '12px 14px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{JSON.stringify(task.config ?? {}, null, 2)}</pre></td></tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  /**
+   * 任务页 = 全宽任务大盘（2026-08-22 user：工作区侧栏已有任务列表，主区不再重复列表）。
+   * dsh 式页头（大标题 + meta）+ 文字 tab（报告/历史/配置，蓝下划线）——与 R4 设计稿一致。
+   */
   function TasksPage() {
     const [tasks, setTasks] = useState<any[]>([]);
+    const [tab, setTab] = useState<'report' | 'history' | 'config'>('report');
     const selected = hsSel();
     const refresh = async () => {
       try {
@@ -70,34 +118,31 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
       } catch { /* retry next poll */ }
     };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 20_000); return () => clearInterval(t); }, []);
-    const task = tasks.find((t) => t.id === selected);
-    const Panel = task !== undefined ? (getTaskPanel(task.type) ?? DefaultTaskPanel) : undefined;
+    const task = tasks.find((t) => t.id === selected) ?? tasks[0];
+    useEffect(() => { setTab('report'); }, [task?.id]);
+    if (tasks.length === 0) return <Empty icon="▤" title="还没有任务" hint="在会话里说一句就能建，例如「每天早上八点巡检所有节点」" />;
+    if (task === undefined) return null;
+    const Panel = getTaskPanel(task.type) ?? DefaultTaskPanel;
+    const pt = (key: 'report' | 'history' | 'config', label: string) => (
+      <span onClick={() => setTab(key)} style={{
+        fontSize: 14, cursor: 'pointer', padding: '4px 1px 9px', borderBottom: `2px solid ${tab === key ? 'var(--dsw-alias-label-brand, #4176e6)' : 'transparent'}`,
+        color: tab === key ? 'var(--dsw-alias-label-brand, #4176e6)' : 'var(--dsw-alias-label-secondary)', fontWeight: tab === key ? 500 : 400,
+      }}>{label}</span>
+    );
     return (
       <div>
-        {/* 待签收区已下线（2026-08-21：平台聚焦模型分析+只读展示，审批签收链路整体移除） */}
-        <div style={S.split}>
-          <div style={S.listPane}>
-            <div style={S.h2}>任务</div>
-            {tasks.map((t) => (
-              <div key={t.id} style={{ ...S.taskRow, ...(t.id === selected ? S.taskRowActive : {}) }} onClick={() => setState({ selectedTaskId: t.id })}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <b>{t.name}</b>
-                  {!t.enabled && <span style={S.dim}>停用</span>}
-                </div>
-                <div style={{ fontSize: 12, marginTop: 2 }}>
-                  <span style={S.dim}>{t.type} · {t.cron ?? '手动'}</span>
-                  {t.lastReport !== undefined && <span style={{ color: sevColor(t.lastReport.severity) }}> · {t.lastReport.severity}</span>}
-                </div>
-              </div>
-            ))}
-            {tasks.length === 0 && <Empty icon="▤" title="还没有任务" hint="在会话里说一句就能建，例如「每天早上八点巡检所有节点」" />}
-          </div>
-          <div style={S.detailPane}>
-            {Panel !== undefined && task !== undefined
-              ? <Panel task={task} call={call} />
-              : <span style={S.dim}>← 选择一个任务查看详情（任务插件的专属面板将渲染在这里）</span>}
-          </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 17, fontWeight: 600 }}>{task.name}</span>
+          <span style={{ ...S.dim, fontSize: 13 }}>
+            任务 · {task.cron ?? '手动触发'} · {task.enabled ? '启用' : '停用'}
+            {task.lastReport !== undefined ? <span> · 最近 <span style={{ color: sevColor(task.lastReport.severity) }}>{task.lastReport.severity}</span></span> : null}
+            {' '}· 调整周期或范围，在会话里说一句即可
+          </span>
         </div>
+        <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--dsw-alias-border-l1)', margin: '10px 0 20px' }}>
+          {pt('report', '报告')}{pt('history', '历史')}{pt('config', '配置')}
+        </div>
+        {tab === 'report' ? <Panel task={task} call={call} /> : tab === 'history' ? <TaskHistory task={task} /> : <TaskConfig task={task} />}
       </div>
     );
   }
