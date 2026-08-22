@@ -123,6 +123,19 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     if (tasks.length === 0) return <Empty icon="▤" title="还没有任务" hint="在会话里说一句就能建，例如「每天早上八点巡检所有节点」" />;
     if (task === undefined) return null;
     const Panel = getTaskPanel(task.type) ?? DefaultTaskPanel;
+    /**
+     * 任务操作区（2026-08-22 user：dsh 的会话内长任务有暂停/删除/修改交互，我们也要有）。
+     * 走 ui-opendb 既有 RPC：tasks/update（启停）、tasks/runNow（立即执行）、tasks/remove（删除）。
+     * 「修改」仍在会话里说（纲领：策略变更靠对话），这里只放三个不可含糊的动作。
+     */
+    const act = async (fn: () => Promise<unknown>, confirmText?: string) => {
+      if (confirmText !== undefined && !window.confirm(confirmText)) return;
+      try { await fn(); } catch (e) { window.alert(String((e as Error)?.message ?? e)); }
+      await refresh();
+    };
+    const opBtn = (label: string, onClick: () => void, danger = false) => (
+      <button style={{ ...S.btn, ...(danger ? { color: 'var(--dsw-alias-state-error-primary)' } : {}) }} onClick={onClick}>{label}</button>
+    );
     const pt = (key: 'report' | 'history' | 'config', label: string) => (
       <span onClick={() => setTab(key)} style={{
         fontSize: 15, cursor: 'pointer', padding: '4px 1px 9px', borderBottom: `2px solid ${tab === key ? 'var(--dsw-alias-label-brand, #4176e6)' : 'transparent'}`,
@@ -137,6 +150,11 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
             任务 · {task.cron ?? '手动触发'} · {task.enabled ? '启用' : '停用'}
             {task.lastReport !== undefined ? <span> · 最近 <span style={{ color: sevColor(task.lastReport.severity) }}>{task.lastReport.severity}</span></span> : null}
             {' '}· 调整周期或范围，在会话里说一句即可
+          </span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            {opBtn('▶ 立即运行', () => void act(() => call('tasks/runNow', { id: task.id })))}
+            {opBtn(task.enabled ? '⏸ 暂停' : '▶ 启用', () => void act(() => call('tasks/update', { id: task.id, patch: { enabled: !task.enabled } })))}
+            {opBtn('🗑 删除', () => void act(() => call('tasks/remove', { id: task.id }), `确认删除任务「${task.name}」？其运行记录与报告一并删除，不可恢复。`), true)}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--dsw-alias-border-l1)', margin: '10px 0 20px' }}>

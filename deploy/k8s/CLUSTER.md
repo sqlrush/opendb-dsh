@@ -421,3 +421,26 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
   否则运行中的 pod 会把内存态写回 PG，复活工作区并新建会话——第一轮清场"没删干净"就是这个原因；
   ③ 删 agent 前要先解绑 `dsh_db_nodes.agent_id`（FK RESTRICT）并清理 `opendb_memories`
   / `opendb_knowledge_docs` 的 agent 引用。
+
+## 用户实测四问题修复（2026-08-22）——全部属实，根因都在平台侧
+
+- **① 消息上屏延迟 3-6 秒**（输入框 18ms 就清空、消息却迟迟不出现）。时间线铁证：
+  `turn/start 12:30:14.872` → `user/message 12:30:20.634`（晚 5.76s）。根因：dsh 的 user/message
+  与 context snapshot 同批落库，而 `memory-context` 在 `agent/pre-step` 做语义检索——
+  **Ollama bge-m3 embedding 在 CPU 上实测 5.1/5.9/5.8 秒**，整条链路被它顶住。
+  修：memory-context 注入加超时（默认 1200ms）+ 降级为「仅最近记忆」（纯 PG，毫秒级）。
+  实测 6119ms → **1741ms**。（继续优化方向：embedding 缓存/更快模型/异步预热。）
+- **② 建任务后首次不跑 + 说"马上跑一次"无效**。根因：`TasksService.runNow` 要求
+  `this.engine !== undefined`，而 tool-task-admin 跑在 **Runtime（engine:false）** → 必然抛错。
+  修：runNow 改为「只入队不执行」（INSERT queued run + NOTIFY，任何实例可调），Host 引擎
+  fireQueuedManuals 负责执行；task_create 增 `run_now`（默认 true）；新增 `task_run_now` 工具。
+- **③ 说"给 og5 建巡检"却起了 403 节点的巡检**。根因：task-health 的 config 用 `nodes: string[]`，
+  而 sqlreview/wdr/ddl 三类型用 `node: string` ——**字段名不一致**，模型按惯例填单数 `node`，
+  被 buildPrompt 忽略 → 退化成「该 agent 全部绑定节点」。修：`resolveTargets()` 同时接受
+  单数/复数并合并去重（3 条回归单测）；未指定目标且绑定 >16 节点时自动转舰队聚合模式；
+  task_create 的 config 描述里写明各类型字段与"点名了节点就必须填"。
+- **④ 任务缺暂停/删除/修改交互**（dsh 的 goal 有）。修：任务页头加「▶ 立即运行 / ⏸ 暂停 /
+  🗑 删除（二次确认）」，走 ui-opendb 既有 tasks/runNow · tasks/update · tasks/remove RPC；
+  「修改策略」仍在会话里说（纲领）。
+- 验证：会话里说「给 og5 建个健康检查任务，每小时一次」→ 5s 出建任务回执 → 立即产生
+  manual run → prompt 为「以下 1 个节点：og5」、工具 `{"nodes":["og5"]}` → 报告落库。

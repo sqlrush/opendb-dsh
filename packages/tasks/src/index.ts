@@ -172,12 +172,22 @@ export default class TasksService extends Service {
   }
 
   // ---------------- 运行与报告
+  /**
+   * 立即运行：**只入队，不执行**——任何实例都能调用（Runtime 侧的 task_create/task_run_now
+   * 工具就在这条路上）。真正开会话由 Host 引擎的 fireQueuedManuals 负责，NOTIFY 拍醒。
+   * 2026-08-22 事故：此前要求 `this.engine !== undefined`，而工具跑在 Runtime（engine:false），
+   * 于是"建任务后首跑""马上运行一次"全部静默失败。
+   */
   async runNow(taskId: string, kind: 'manual' | 'event' = 'manual'): Promise<TaskRunRecord> {
     await this.ready;
-    if (this.engine === undefined) throw new Error('本实例未启用任务引擎（engine:false）');
-    const run = await this.engine.runNow(taskId, kind);
-    await (this.ctx as any).opendbNotify.publish('opendb_task_wake', taskId).catch(() => { /* poll 保底 */ });
-    return run;
+    const exists = await this.pool.query('SELECT id FROM dsh_tasks WHERE id = $1 AND tenant_id = $2', [taskId, this.tenant]);
+    if (exists.rowCount === 0) throw new Error(`任务 ${taskId} 不存在`);
+    const r = await this.pool.query(
+      `INSERT INTO dsh_task_runs (id, task_id, trigger_kind) VALUES ($1, $2, $3) RETURNING *`,
+      [`run-${randomUUID().slice(0, 8)}`, taskId, kind],
+    );
+    await (this.ctx as any).opendbNotify?.publish('opendb_task_wake', taskId)?.catch(() => { /* poll 保底 */ });
+    return runRow(r.rows[0]);
   }
   async listRuns(filter: { taskId?: string; limit?: number } = {}): Promise<TaskRunRecord[]> {
     await this.ready;

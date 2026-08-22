@@ -19,7 +19,20 @@ export type { DetFinding, DetLevel, DimResult, QueryFn } from './collectors.ts';
 export const name = 'task-health';
 export const inject = ['opendbTasks'];
 
-interface HealthConfig { nodes: string[]; dims: string[]; focus: string }
+interface HealthConfig { nodes: string[]; node: string; dims: string[]; focus: string }
+
+/**
+ * 目标节点解析（2026-08-22 事故修复）：模型建任务时常填单数 `node`（与 sqlreview/wdr/ddl
+ * 三个类型的字段名一致），此前只读 `nodes` 数组 → 单数被忽略 → 退化成「该 agent 全部绑定
+ * 节点」，用户说"给 og5 建巡检"实际起了 403 节点的巡检。两种写法一律接受并合并。
+ */
+export function resolveTargets(config: { nodes?: string[]; node?: string }): string[] {
+  const list = [
+    ...(Array.isArray(config.nodes) ? config.nodes : []),
+    ...(typeof config.node === 'string' && config.node !== '' ? [config.node] : []),
+  ].map((s) => String(s).trim()).filter((s) => s !== '');
+  return [...new Set(list)];
+}
 
 export const HEALTH_TASK_TYPE: TaskType<HealthConfig> = {
   key: 'health',
@@ -29,6 +42,7 @@ export const HEALTH_TASK_TYPE: TaskType<HealthConfig> = {
   defaultCron: '0 8 * * *',
   configSchema: z.object({
     nodes: z.array(z.string()).default([]).description('检查的节点名单；空 = 该 agent 绑定的全部节点（>1 个自动出集群汇总报告）'),
+    node: z.string().default('').description('单个目标节点名（与 nodes 等价、可二选一；两者都填则合并）'),
     dims: z.array(z.string()).default([]).description('维度白名单（overview/waits/slowsql/xact/bloat/lwlock/lockchain/connections/ckpt/replication/objects/concurrency）；空 = 全部 12 维'),
     focus: z.string().default('').description('本任务额外关注点（如"重点看锁等待"）'),
   }),
@@ -62,13 +76,27 @@ export const HEALTH_TASK_TYPE: TaskType<HealthConfig> = {
   }),
   async buildPrompt(task: TaskRecord<HealthConfig>, _run, ctx: TaskBuildContext): Promise<string> {
     const bound = await ctx.nodesOf(task.agentId);
-    const picked = task.config.nodes.length > 0 ? bound.filter((n) => task.config.nodes.includes(n.name)) : bound;
+    const targets = resolveTargets(task.config);
+    const picked = targets.length > 0 ? bound.filter((n) => targets.includes(n.name)) : bound;
     const names = picked.map((n) => n.name);
+    // 未指定目标且绑定节点很多时，逐节点采集不可行也没必要——转舰队聚合模式（W6 已验证打法）
+    if (targets.length === 0 && bound.length > 16) {
+      return [
+        `请对本智能体管理的 ${bound.length} 个节点执行舰队健康巡检（聚合模式，不要逐节点采集）：`,
+        `1. 先调 metrics_fleet_overview 拿全舰队总览：采集覆盖率、每指标聚合、异常值 Top 节点、无数据节点；`,
+        `2. 对异常榜前几名挑最多 5 个节点，用 health_collect（nodes 传这几个节点名）做确定性深检；`,
+        `3. 覆盖率不足 95% 本身就是 warn 级发现。`,
+        task.config.focus !== '' ? `\n本次额外关注：${task.config.focus}` : '',
+        ``,
+        `报告 data 结构同单机模式：{ scope:"cluster", det:{worst,counts,byNode}, findings:[...], clusterFindings:[...], priorities, rootCause, collectionNotes }；`,
+        `det/findings 必须逐字来自 health_collect 的输出，未深检的节点不得臆造发现。`,
+      ].filter((l) => l !== '').join('\n');
+    }
     return [
       `请对 ${names.length > 0 ? `以下 ${names.length} 个节点` : '本智能体绑定的全部节点'} 执行健康检查：${names.join(', ') || '（未绑定节点——如属异常请在报告中说明）'}`,
       ``,
       `## 步骤（严格遵循，这是锚定式健康检查，不是自由巡检）`,
-      `1. 调用 health_collect${task.config.nodes.length > 0 ? `（nodes 传 ${JSON.stringify(names)}）` : '（不传 nodes = 全部绑定节点）'}——它运行 12 维确定性采集器，返回证据包 + Deterministic Findings（每条含 code/level/metric/value/threshold/evidence）。`,
+      `1. 调用 health_collect${names.length > 0 ? `（nodes 传 ${JSON.stringify(names)}）` : '（不传 nodes = 全部绑定节点）'}——它运行 12 维确定性采集器，返回证据包 + Deterministic Findings（每条含 code/level/metric/value/threshold/evidence）。`,
       `2. 你只做解读，不做采集：不要用 db_query 重复采集已覆盖的维度；只有需要追查根因细节（如锁链持有者在跑什么）时才用 db_query 补充。`,
       `3. 根因串联：多条确定性发现同源时（如 XACT_LONG 卡住 vacuum → BLOAT_HIGH → LOCK_CHAIN），在 rootCause 里讲清因果链。`,
       `4. 处置排序：P0（立即）/P1（本周）/P2（排期）按影响面排——这与严重度是两个维度。`,

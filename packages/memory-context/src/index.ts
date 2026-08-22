@@ -8,7 +8,24 @@ export const Config = z.object({
   recentCount: z.number().step(1).min(0).default(3),
   searchCount: z.number().step(1).min(0).default(4),
   maxBytes: z.number().step(1).min(512).default(6144),
+  // 2026-08-22 事故：语义检索要先算 embedding，Ollama bge-m3 在 CPU 上实测 5-6s/次，
+  // 卡在 agent/pre-step 上 → 用户消息要等上下文组装完才落库上屏，聊天框空窗 3-6 秒。
+  // 超时后降级为「只用最近记忆」（纯 PG 查询，毫秒级），对话永远优先。
+  searchTimeoutMs: z.number().step(1).min(100).default(1200).description('语义检索超时；超时降级为仅最近记忆'),
 });
+
+/** 超时包装：到点就返回兜底值，不抛错、不阻塞对话 */
+async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p.catch(() => fallback),
+      new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms); }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 /** Pure: merge recent + searched memories (dedup by id), render the system-reminder text. */
 export function renderMemoryContext(
@@ -60,11 +77,12 @@ export function latestUserText(messages: unknown[]): string {
  * 语义相关的记忆」作为 system-reminder 注入（instructions-pg 同款已验证钩子模式）。
  * 每会话注入一次；记忆层故障时静默跳过（对话永远可用）。
  */
-export function apply(ctx: Context, config: { recentCount?: number; searchCount?: number; maxBytes?: number } = {}): void {
+export function apply(ctx: Context, config: { recentCount?: number; searchCount?: number; maxBytes?: number; searchTimeoutMs?: number } = {}): void {
   const anyCtx = ctx as any;
   const recentCount = config.recentCount ?? 3;
   const searchCount = config.searchCount ?? 4;
   const maxBytes = config.maxBytes ?? 6144;
+  const searchTimeoutMs = config.searchTimeoutMs ?? 1200;
   const injected = new WeakSet<object>();
 
   anyCtx.on('agent/pre-step', async ({ agent, messages }: any, next: () => Promise<any>) => {
@@ -76,8 +94,9 @@ export function apply(ctx: Context, config: { recentCount?: number; searchCount?
       const memory = anyCtx.opendbMemory;
       const query = latestUserText(messages as unknown[]);
       const [recent, searched] = await Promise.all([
-        recentCount > 0 ? memory.recent({ agentId, limit: recentCount }) : Promise.resolve([]),
-        searchCount > 0 && query !== '' ? memory.search({ agentId, query, topK: searchCount }) : Promise.resolve([]),
+        withTimeout(recentCount > 0 ? memory.recent({ agentId, limit: recentCount }) : Promise.resolve([]), searchTimeoutMs, []),
+        // 语义检索超时即降级：宁可少注入几条记忆，也不让用户对着空聊天框等 5 秒
+        withTimeout(searchCount > 0 && query !== '' ? memory.search({ agentId, query, topK: searchCount }) : Promise.resolve([]), searchTimeoutMs, []),
       ]);
       const text = renderMemoryContext(recent, searched, maxBytes);
       injected.add(agent);

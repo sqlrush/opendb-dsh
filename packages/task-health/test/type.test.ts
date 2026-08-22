@@ -71,3 +71,31 @@ test('summarize：scope 判定与 counts', () => {
   assert.equal(two.scope, 'cluster');
   assert.equal(two.worst, 'ok');
 });
+
+test('resolveTargets：单数 node / 复数 nodes / 两者合并去重（2026-08-22 403 节点事故回归）', async () => {
+  const { resolveTargets } = await import('../src/index.ts');
+  assert.deepEqual(resolveTargets({ node: 'og5' }), ['og5'], '模型常填单数 node，必须被识别');
+  assert.deepEqual(resolveTargets({ nodes: ['og5', 'og6'] }), ['og5', 'og6']);
+  assert.deepEqual(resolveTargets({ node: 'og5', nodes: ['og5', 'og6'] }), ['og5', 'og6'], '合并去重');
+  assert.deepEqual(resolveTargets({}), [], '都不填才是全部节点');
+  assert.deepEqual(resolveTargets({ node: '  ' }), []);
+});
+
+test('buildPrompt：填了 node 单数就只查该节点（不退化成全部绑定节点）', async () => {
+  const bound = Array.from({ length: 403 }, (_, i) => ({ id: String(i), name: i === 0 ? 'og5' : `og-sim-${i}`, engine: 'opengauss', host: 'h', port: 1, dbname: 'postgres', status: 'online' }));
+  const ctx = { nodesOf: async () => bound } as any;
+  const task = { id: 't', tenantId: 'default', agentId: 'a', type: 'health', name: 'og5巡检', config: HEALTH_TASK_TYPE.configSchema({ node: 'og5' }), enabled: true, requiresApproval: false, timeoutMs: 0 } as any;
+  const prompt = await HEALTH_TASK_TYPE.buildPrompt(task, {} as any, ctx);
+  assert.match(prompt, /以下 1 个节点/);
+  assert.match(prompt, /\["og5"\]/);
+  assert.ok(!prompt.includes('403'), '不得退化成全部绑定节点');
+});
+
+test('buildPrompt：未指定目标且绑定节点 >16 时转舰队聚合模式（避免几百节点逐个采集）', async () => {
+  const bound = Array.from({ length: 403 }, (_, i) => ({ id: String(i), name: `og-sim-${i}`, engine: 'opengauss', host: 'h', port: 1, dbname: 'postgres', status: 'online' }));
+  const ctx = { nodesOf: async () => bound } as any;
+  const task = { id: 't', tenantId: 'default', agentId: 'a', type: 'health', name: '全量巡检', config: HEALTH_TASK_TYPE.configSchema({}), enabled: true, requiresApproval: false, timeoutMs: 0 } as any;
+  const prompt = await HEALTH_TASK_TYPE.buildPrompt(task, {} as any, ctx);
+  assert.match(prompt, /metrics_fleet_overview/);
+  assert.match(prompt, /聚合模式/);
+});

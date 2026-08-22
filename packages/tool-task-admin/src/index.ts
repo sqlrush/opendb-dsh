@@ -36,7 +36,8 @@ function defineTaskCreateTool(deps: Deps) {
       type: { type: 'string', required: true, description: '任务类型 key（如 inspection=定期巡检、sql-audit=SQL审核、prompt=定时对话）。' },
       name: { type: 'string', required: true, description: '任务名称（简短、唯一）。' },
       cron: { type: 'string', description: '5 字段 cron（北京时间），如 "0 8 * * *"=每天8点；省略=仅手动触发。' },
-      config: { type: 'object', additionalProperties: true, description: '任务类型的配置对象（结构随类型；如 sql-audit 的 {topN, node}）。' },
+      config: { type: 'object', additionalProperties: true, description: '任务类型的配置对象。目标节点各类型统一支持 node（单个）或 nodes（数组）：health={node|nodes,dims,focus}、sqlreview={node,topN,sqls}、wdr={node,beginSnap,endSnap,topN}、ddl={node,hours}、rules={plugin}。**用户点名了具体节点就必须填**，不填 = 该智能体绑定的全部节点（可能是几百个）。' },
+      run_now: { type: 'boolean', description: '创建后立即运行一次（默认 true）。设为 false 则只等 cron。' },
     },
     output: TEXT_OUTPUT,
     async execute(args: any, exec: any) {
@@ -48,7 +49,19 @@ function defineTaskCreateTool(deps: Deps) {
         cron: typeof args.cron === 'string' && args.cron !== '' ? args.cron : undefined,
         config: args.config ?? {},
       });
-      return { content: `任务已创建：「${task.name}」（${task.type}，${task.cron ?? '手动触发'}）。侧栏任务列表可见；结果将在任务大盘只读展示。` };
+      // 建完立即跑一次（2026-08-22 user 反馈：建任务成功但首次巡检没做）——入队即返回，
+      // 引擎下一 tick（NOTIFY 拍醒，约 0.5s）真正开会话执行。
+      const runNow = args.run_now !== false;
+      let firstRun = '';
+      if (runNow) {
+        try {
+          await deps.tasks.runNow(task.id, 'manual');
+          firstRun = '；已排入首次运行（稍后在侧栏任务页看报告）';
+        } catch (cause) {
+          firstRun = `；首次运行排队失败：${String((cause as Error).message ?? cause)}`;
+        }
+      }
+      return { content: `任务已创建：「${task.name}」（${task.type}，${task.cron ?? '手动触发'}）${firstRun}。侧栏任务列表可见；结果将在任务大盘只读展示。` };
     },
   } as any);
 }
@@ -78,6 +91,27 @@ function defineTaskUpdateTool(deps: Deps) {
       if (typeof args.new_name === 'string' && args.new_name !== '') patch.name = args.new_name;
       const updated = await deps.tasks.updateTask(target.id, patch);
       return { content: `任务「${updated.name}」已调整：${updated.cron ?? '手动触发'} · ${updated.enabled ? '启用' : '停用'}` };
+    },
+  } as any);
+}
+
+/** 立即运行一次（user 2026-08-22：说"马上跑一次"时模型此前无工具可用） */
+function defineTaskRunNowTool(deps: Deps) {
+  return defineTool({
+    name: 'task_run_now',
+    description: '立即运行当前智能体的某个任务一次（不改动它的 cron 周期）。用户说「马上跑一次/现在执行/立即巡检」时用它。入队即返回，引擎随后开会话执行，结果在任务大盘展示。',
+    parameters: {
+      task: { type: 'string', required: true, description: '任务名称（或 id）。' },
+    },
+    output: TEXT_OUTPUT,
+    async execute(args: any, exec: any) {
+      const agent = await requireAgent(deps, exec);
+      const all = await deps.tasks.listTasks();
+      const ref = String(args.task ?? '');
+      const target = all.find((t: any) => t.agentId === agent.id && (t.name === ref || t.id === ref));
+      if (target === undefined) throw new Error(`智能体「${agent.name}」没有名为「${ref}」的任务（用 task_list 查看现有任务）`);
+      const run = await deps.tasks.runNow(target.id, 'manual');
+      return { content: `任务「${target.name}」已排入立即运行（run ${String(run.id)}）——引擎会开一个新会话执行，完成后报告出现在任务大盘。` };
     },
   } as any);
 }
@@ -137,5 +171,6 @@ export function apply(ctx: Context): void {
   ctx.effect(() => anyCtx.tools.register(defineTaskCreateTool(deps)), 'tool-task-admin.create');
   ctx.effect(() => anyCtx.tools.register(defineTaskUpdateTool(deps)), 'tool-task-admin.update');
   ctx.effect(() => anyCtx.tools.register(defineTaskListTool(deps)), 'tool-task-admin.list');
+  ctx.effect(() => anyCtx.tools.register(defineTaskRunNowTool(deps)), 'tool-task-admin.runNow');
   ctx.effect(() => anyCtx.tools.register(defineTaskProposeTool(deps)), 'tool-task-admin.propose');
 }
