@@ -102,6 +102,8 @@
       name: '@opendb-dsh/tool-wdr-collect'
     - id: tool-ddl-collect
       name: '@opendb-dsh/tool-ddl-collect'
+    - id: tool-rules-catalog
+      name: '@opendb-dsh/tool-rules-catalog'
 # ── P1 W4: task_report 工具 + 任务类型注册表（Runtime 侧，engine:false）──────
 - insert:
     - id: opendb-tasks
@@ -132,6 +134,11 @@
 - insert:
     - id: tool-task-admin
       name: '@opendb-dsh/tool-task-admin'
+# ── 默认模型（user 2026-08-22：v4-flash → v4-pro）───────────────────────────
+- id: agent-default-model
+  config:
+    provider: deepseek-official
+    model: deepseek-v4-pro
 # ── 任务重做 #1/#2：类型双侧注册（工具在独立包，见 tool-*-collect）────────────
 - insert:
     - id: task-health
@@ -142,6 +149,8 @@
       name: '@opendb-dsh/task-wdr'
     - id: task-ddl
       name: '@opendb-dsh/task-ddl'
+    - id: task-rules
+      name: '@opendb-dsh/task-rules'
 # ── P2 W1：incident 任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）──────
 - insert:
     - id: task-incident
