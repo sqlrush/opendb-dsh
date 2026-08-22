@@ -19,14 +19,14 @@ const T = {
 };
 const sev = (l: string) => T.sev[l] ?? T.sev.ok;
 const ORDER: Record<string, number> = { critical: 3, warn: 2, notice: 1, ok: 0 };
-const card: any = { background: '#fff', border: `1px solid ${T.line}`, borderRadius: 8, padding: '13px 16px', boxShadow: '0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)' };
+const card: any = { background: '#fff', border: `1px solid ${T.line}`, borderRadius: 8, padding: '16px 20px', boxShadow: '0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)' };
 const mono = '"JetBrains Mono","SF Mono",Menlo,monospace';
 
 function H2({ children }: { children: any }) {
-  return <div style={{ fontSize: 14, fontWeight: 500, margin: '22px 0 10px', color: T.ink, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{children}</div>;
+  return <div style={{ fontSize: 18, fontWeight: 600, margin: '30px 0 14px', color: T.ink, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>{children}</div>;
 }
 function Hint({ children }: { children: any }) {
-  return <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>{children}</span>;
+  return <span style={{ fontSize: 13.5, color: T.dim, fontWeight: 400 }}>{children}</span>;
 }
 function Dot({ level }: { level: string }) {
   return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: sev(level).c, marginRight: 6, flex: 'none' }} />;
@@ -66,12 +66,12 @@ function DigLink({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <span
-      style={{ fontSize: 12, color: copied ? T.sev.ok.c : T.blue, cursor: 'pointer' }}
+      style={{ fontSize: 13.5, color: copied ? T.sev.ok.c : T.blue, cursor: 'pointer' }}
       onClick={() => {
         try { void navigator.clipboard.writeText(text); } catch { /* http 环境无 clipboard 权限 */ }
         setCopied(true); setTimeout(() => setCopied(false), 2000);
       }}
-    >💬 {copied ? '已复制——到会话里粘贴发送即可' : `在会话里深挖：${text}`}</span>
+    >💬 {copied ? '已复制——到会话里粘贴发送即可' : `在会话里深挖：${text.length > 42 ? `${text.slice(0, 42)}…` : text}`}</span>
   );
 }
 
@@ -107,7 +107,7 @@ function Ring({ states, worst }: { states: { dim: string; title: string; worst: 
       </svg>
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
         <b style={{ fontSize: 20, color: sev(worst).c }}>{sev(worst).cn}</b>
-        <span style={{ fontSize: 11, color: T.dim }}>{n} 维 · 只讲证据</span>
+        <span style={{ fontSize: 12, color: T.dim }}>{n} 维 · 只讲证据</span>
       </div>
     </div>
   );
@@ -121,21 +121,21 @@ function StatusBand({ data, when }: { data: any; when?: string }) {
   return (
     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
       <div style={{ borderRadius: 12, padding: '16px 22px', color: '#fff', minWidth: 200, background: s.grad, display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'center' }}>
-        <span style={{ fontSize: 11, opacity: 0.8, letterSpacing: '.1em' }}>{String(data?.scope) === 'cluster' ? '集群总体状态 · 取最差实例' : '总体状态'}</span>
+        <span style={{ fontSize: 12, opacity: 0.8, letterSpacing: '.1em' }}>{String(data?.scope) === 'cluster' ? '集群总体状态 · 取最差实例' : '总体状态'}</span>
         <span style={{ fontSize: 24, fontWeight: 600, letterSpacing: 1 }}>{s.cn}</span>
-        {driver !== undefined && String(driver.level) !== 'ok' ? <span style={{ fontSize: 12, opacity: 0.92, maxWidth: 280, lineHeight: 1.5 }}>驱动：{String(driver.detail ?? driver.item ?? '')}</span> : null}
+        {driver !== undefined && String(driver.level) !== 'ok' ? <span style={{ fontSize: 13.5, opacity: 0.92, maxWidth: 280, lineHeight: 1.5 }}>驱动：{String(driver.detail ?? driver.item ?? '')}</span> : null}
       </div>
       <div style={{ flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column', gap: 7, justifyContent: 'center' }}>
-        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, background: T.sev.ok.soft, color: T.sev.ok.c, borderRadius: 6, padding: '3px 10px', fontWeight: 500, width: 'fit-content' }}>
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 13.5, background: T.sev.ok.soft, color: T.sev.ok.c, borderRadius: 6, padding: '3px 10px', fontWeight: 500, width: 'fit-content' }}>
           ✓ 已锚定 · 确定性发现全覆盖 · 状态不可被解读下调
         </span>
-        <span style={{ fontSize: 12, color: T.dim }}>
+        <span style={{ fontSize: 13.5, color: T.dim }}>
           严重 <b style={{ color: T.sev.critical.c }}>{Number(counts.critical ?? 0)}</b> · 告警 <b style={{ color: T.sev.warn.c }}>{Number(counts.warn ?? 0)}</b> · 关注 <b style={{ color: T.sev.notice.c }}>{Number(counts.notice ?? 0)}</b>
           {when !== undefined ? <span> · 完成于 {when}</span> : null}
         </span>
         {(data?.collectionNotes ?? []).length > 0
-          ? <span style={{ fontSize: 12, color: T.sev.warn.c }}>⚠ {data.collectionNotes.length} 个维度采集降级（见底部 Collection Notes）</span>
-          : <span style={{ fontSize: 12, color: T.dim }}>全部维度采集成功 · 0 降级 · 📄 报告已自动入库归档</span>}
+          ? <span style={{ fontSize: 13.5, color: T.sev.warn.c }}>⚠ {data.collectionNotes.length} 个维度采集降级（见底部 Collection Notes）</span>
+          : <span style={{ fontSize: 13.5, color: T.dim }}>全部维度采集成功 · 0 降级 · 📄 报告已自动入库归档</span>}
       </div>
     </div>
   );
@@ -150,8 +150,8 @@ function DimMatrix({ states }: { states: { dim: string; title: string; worst: st
         const text = d.top === undefined ? '正常' : (v !== '' ? `${v} · ${String(d.top.code)}` : String(d.top.code ?? d.top.item ?? ''));
         return (
           <div key={d.dim} style={{ ...card, padding: '9px 12px' }}>
-            <div style={{ fontSize: 12, color: T.sub }}><Dot level={d.worst} />{d.title}</div>
-            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 3, color: sev(d.worst).c, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.top !== undefined ? String(d.top.detail ?? text) : text}>
+            <div style={{ fontSize: 13.5, color: T.sub }}><Dot level={d.worst} />{d.title}</div>
+            <div style={{ fontSize: 16, fontWeight: 600, marginTop: 3, color: sev(d.worst).c, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.top !== undefined ? String(d.top.detail ?? text) : text}>
               {text}
             </div>
           </div>
@@ -167,14 +167,14 @@ function FindingCard({ f }: { f: any }) {
     <div style={{ ...card, borderLeft: `3px solid ${s.c}`, marginBottom: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <Dot level={String(f.level)} />
-        <b style={{ fontSize: 13 }}>{String(f.item ?? '')}</b>
-        {String(f.code ?? '') !== '' ? <span style={{ font: `600 10.5px ${mono}`, background: T.fill, border: `1px solid ${T.line}`, borderRadius: 5, padding: '1px 6px', color: T.sub }}>{String(f.code)}</span> : null}
-        {String(f.node ?? '') !== '' ? <span style={{ fontSize: 11, color: T.dim }}>@{String(f.node)}</span> : null}
-        {String(f.value ?? '') !== '' && String(f.threshold ?? '') !== '' ? <span style={{ marginLeft: 'auto', fontSize: 11, color: T.dim }}>实测 <b style={{ color: s.c }}>{String(f.value)}</b> · 阈值 {String(f.threshold)}</span> : null}
+        <b style={{ fontSize: 16 }}>{String(f.item ?? '')}</b>
+        {String(f.code ?? '') !== '' ? <span style={{ font: `600 11.5px ${mono}`, background: T.fill, border: `1px solid ${T.line}`, borderRadius: 5, padding: '1px 6px', color: T.sub }}>{String(f.code)}</span> : null}
+        {String(f.node ?? '') !== '' ? <span style={{ fontSize: 12, color: T.dim }}>@{String(f.node)}</span> : null}
+        {String(f.value ?? '') !== '' && String(f.threshold ?? '') !== '' ? <span style={{ marginLeft: 'auto', fontSize: 12, color: T.dim }}>实测 <b style={{ color: s.c }}>{String(f.value)}</b> · 阈值 {String(f.threshold)}</span> : null}
       </div>
       <ThresholdBar metric={String(f.metric ?? '')} value={String(f.value ?? '')} level={String(f.level)} />
-      {String(f.detail ?? '') !== '' ? <div style={{ fontSize: 12.5, color: T.sub, marginTop: 6 }}>{String(f.detail)}</div> : null}
-      {String(f.evidence ?? '') !== '' ? <div style={{ fontSize: 11.5, color: T.dim, marginTop: 4, fontFamily: mono }}>证据 {String(f.evidence)}</div> : null}
+      {String(f.detail ?? '') !== '' ? <div style={{ fontSize: 16, color: T.sub, marginTop: 6 }}>{String(f.detail)}</div> : null}
+      {String(f.evidence ?? '') !== '' ? <div style={{ fontSize: 13, color: T.dim, marginTop: 4, fontFamily: mono }}>证据 {String(f.evidence)}</div> : null}
       {String(f.level) !== 'ok' ? (
         <div style={{ marginTop: 8 }}><DigLink text={`帮我深挖「${String(f.item ?? f.code)}」：${String(f.detail ?? '')}`} /></div>
       ) : null}
@@ -191,8 +191,8 @@ function ClusterGrid({ data }: { data: any }) {
         return (
           <div key={String(n.node)} style={{ ...card, borderLeft: `4px solid ${s.c}`, padding: '10px 12px' }}>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <b style={{ fontSize: 13 }}>{String(n.node)}</b>
-              <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: s.c }}>{s.cn}</span>
+              <b style={{ fontSize: 16 }}>{String(n.node)}</b>
+              <span style={{ marginLeft: 'auto', fontSize: 13.5, fontWeight: 600, color: s.c }}>{s.cn}</span>
             </div>
           </div>
         );
@@ -218,7 +218,7 @@ function RunStrip({ runs, selId, onSel }: { runs: any[]; selId: string; onSel: (
           );
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: T.dim, marginTop: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: T.dim, marginTop: 6 }}>
         <span>{String(cells[0]?.firedAt ?? '').slice(5, 10)}</span>
         <span>最新 ▲ · 点格子查看当次完整报告</span>
       </div>
@@ -245,8 +245,8 @@ export function HealthPanel({ task, call }: { task: any; call: (endpoint: string
   const withReport = runs.filter((r) => r.report !== undefined);
   const current = withReport.find((r) => r.id === selId) ?? withReport[0];
   const data = current?.report?.data;
-  if (error !== '') return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>加载失败：{error}</div>;
-  if (data === undefined) return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>还没有健康检查报告——任务触发后（cron 或在会话里说一声）报告会出现在这里。</div>;
+  if (error !== '') return <div style={{ fontSize: 16, color: T.dim, padding: 16 }}>加载失败：{error}</div>;
+  if (data === undefined) return <div style={{ fontSize: 16, color: T.dim, padding: 16 }}>还没有健康检查报告——任务触发后（cron 或在会话里说一声）报告会出现在这里。</div>;
 
   const isCluster = String(data.scope) === 'cluster';
   const findings = (data.findings ?? []).slice().sort((a: any, b: any) => (ORDER[b.level] ?? 0) - (ORDER[a.level] ?? 0));
@@ -254,7 +254,7 @@ export function HealthPanel({ task, call }: { task: any; call: (endpoint: string
   const when = current?.finishedAt !== undefined && current?.finishedAt !== null ? String(current.finishedAt).replace('T', ' ').slice(0, 19) : undefined;
 
   return (
-    <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif', color: T.ink, lineHeight: 1.6 }}>
+    <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif', color: T.ink, lineHeight: 1.75 }}>
       <StatusBand data={data} when={when} />
 
       {isCluster ? (
@@ -286,13 +286,13 @@ export function HealthPanel({ task, call }: { task: any; call: (endpoint: string
         <>
           <H2>根因串联</H2>
           <div style={{ ...card, background: T.fill, border: 'none' }}>
-            <div style={{ fontSize: 13, color: T.sub }}>{String(data.rootCause)}</div>
+            <div style={{ fontSize: 16, color: T.sub }}>{String(data.rootCause)}</div>
           </div>
         </>
       ) : null}
 
       <H2>发现 <Hint>按严重度排序 · 每条 = 证据 → 阈值 → 解读</Hint></H2>
-      {abnormal.length === 0 ? <div style={{ fontSize: 13, color: T.sev.ok.c }}>✓ 无异常发现，各维在阈值内。</div>
+      {abnormal.length === 0 ? <div style={{ fontSize: 16, color: T.sev.ok.c }}>✓ 无异常发现，各维在阈值内。</div>
         : abnormal.map((f: any, i: number) => <FindingCard key={i} f={f} />)}
 
       {(data.priorities ?? []).length > 0 ? (
@@ -301,9 +301,9 @@ export function HealthPanel({ task, call }: { task: any; call: (endpoint: string
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {(data.priorities ?? []).map((p: any, i: number) => (
               <div key={i} style={{ ...card, flex: 1, minWidth: 220 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.sub, letterSpacing: '.05em' }}>{String(p.p)}</div>
-                <div style={{ fontSize: 13, marginTop: 4 }}>{String(p.action)}</div>
-                {(p.refs ?? []).length > 0 ? <div style={{ fontSize: 11, color: T.dim, marginTop: 4 }}>关联 {(p.refs ?? []).join(', ')}</div> : null}
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.sub, letterSpacing: '.05em' }}>{String(p.p)}</div>
+                <div style={{ fontSize: 16, marginTop: 4 }}>{String(p.action)}</div>
+                {(p.refs ?? []).length > 0 ? <div style={{ fontSize: 12, color: T.dim, marginTop: 4 }}>关联 {(p.refs ?? []).join(', ')}</div> : null}
               </div>
             ))}
           </div>
@@ -314,7 +314,7 @@ export function HealthPanel({ task, call }: { task: any; call: (endpoint: string
       <RunStrip runs={runs} selId={String(current?.id ?? '')} onSel={setSelId} />
 
       {(data.collectionNotes ?? []).length > 0 ? (
-        <div style={{ fontSize: 12, color: T.dim, border: `1px dashed ${T.line}`, borderRadius: 8, padding: '8px 14px', marginTop: 16 }}>
+        <div style={{ fontSize: 13.5, color: T.dim, border: `1px dashed ${T.line}`, borderRadius: 8, padding: '8px 14px', marginTop: 16 }}>
           📋 Collection Notes：{(data.collectionNotes ?? []).map((n: any, i: number) => <div key={i}>{String(n)}</div>)}
         </div>
       ) : null}

@@ -13,9 +13,9 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   const S: Record<string, React.CSSProperties> = {
     head: { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid var(--dsw-alias-border-l1)' },
     title: { fontSize: 15, fontWeight: 600 },
-    body: { flex: 1, overflow: 'auto', padding: 20 },
+    body: { flex: 1, overflow: 'auto', padding: 24 },
     btn: { background: 'var(--dsw-alias-interactive-bg-hover)', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, color: 'var(--dsw-alias-label-primary)', padding: '4px 10px', fontSize: 13, cursor: 'pointer' },
-    table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 },
+    table: { width: '100%', borderCollapse: 'collapse' as const, fontSize: 13.5 },
     th: { textAlign: 'left' as const, padding: '6px 8px', color: 'var(--dsw-alias-label-tertiary)', borderBottom: '1px solid var(--dsw-alias-border-l2)', fontWeight: 500 },
     td: { padding: '6px 8px', borderBottom: '1px solid var(--dsw-alias-border-l1)', verticalAlign: 'top' as const },
     dim: { color: 'var(--dsw-alias-label-tertiary)' },
@@ -91,7 +91,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   function TaskConfig({ task }: { task: any }) {
     return (
       <div style={{ maxWidth: 640 }}>
-        <div style={{ ...S.dim, fontSize: 12, marginBottom: 10 }}>只读展示——要调整（改周期/改范围/停用），在会话里对智能体说一句即可，这里没有编辑按钮（交互纲领 §15）。</div>
+        <div style={{ ...S.dim, fontSize: 13.5, marginBottom: 10 }}>只读展示——要调整（改周期/改范围/停用），在会话里对智能体说一句即可，这里没有编辑按钮（交互纲领 §15）。</div>
         <table style={S.table}>
           <tbody>
             <tr><td style={{ ...S.td, width: 110, color: 'var(--dsw-alias-label-tertiary)' }}>类型</td><td style={S.td}>{task.type}</td></tr>
@@ -125,15 +125,15 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     const Panel = getTaskPanel(task.type) ?? DefaultTaskPanel;
     const pt = (key: 'report' | 'history' | 'config', label: string) => (
       <span onClick={() => setTab(key)} style={{
-        fontSize: 14, cursor: 'pointer', padding: '4px 1px 9px', borderBottom: `2px solid ${tab === key ? 'var(--dsw-alias-label-brand, #4176e6)' : 'transparent'}`,
+        fontSize: 15, cursor: 'pointer', padding: '4px 1px 9px', borderBottom: `2px solid ${tab === key ? 'var(--dsw-alias-label-brand, #4176e6)' : 'transparent'}`,
         color: tab === key ? 'var(--dsw-alias-label-brand, #4176e6)' : 'var(--dsw-alias-label-secondary)', fontWeight: tab === key ? 500 : 400,
       }}>{label}</span>
     );
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 17, fontWeight: 600 }}>{task.name}</span>
-          <span style={{ ...S.dim, fontSize: 13 }}>
+          <span style={{ fontSize: 18, fontWeight: 600 }}>{task.name}</span>
+          <span style={{ ...S.dim, fontSize: 13.5 }}>
             任务 · {task.cron ?? '手动触发'} · {task.enabled ? '启用' : '停用'}
             {task.lastReport !== undefined ? <span> · 最近 <span style={{ color: sevColor(task.lastReport.severity) }}>{task.lastReport.severity}</span></span> : null}
             {' '}· 调整周期或范围，在会话里说一句即可

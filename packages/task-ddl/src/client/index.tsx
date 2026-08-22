@@ -18,7 +18,7 @@ const T = {
 };
 const sev = (l: string) => T.sev[l] ?? T.sev.ok;
 const ORDER: Record<string, number> = { critical: 3, warn: 2, notice: 1, ok: 0 };
-const card: any = { background: '#fff', border: `1px solid ${T.line}`, borderRadius: 8, padding: '13px 16px', boxShadow: '0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)' };
+const card: any = { background: '#fff', border: `1px solid ${T.line}`, borderRadius: 8, padding: '16px 20px', boxShadow: '0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)' };
 const mono = '"JetBrains Mono","SF Mono",Menlo,monospace';
 
 const ACTION: Record<string, { cn: string; c: string; bg: string }> = {
@@ -30,7 +30,7 @@ const ACTION: Record<string, { cn: string; c: string; bg: string }> = {
 };
 
 function H2({ children }: { children: any }) {
-  return <div style={{ fontSize: 14, fontWeight: 500, margin: '22px 0 10px', color: T.ink }}>{children}</div>;
+  return <div style={{ fontSize: 18, fontWeight: 600, margin: '30px 0 14px', color: T.ink }}>{children}</div>;
 }
 function Dot({ level }: { level: string }) {
   return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: sev(level).c, marginRight: 6 }} />;
@@ -49,19 +49,19 @@ function TimelineEntryRow({ e }: { e: any }) {
   const { hm } = localParts(String(e.time));
   return (
     <div style={{ display: 'flex', gap: 12, padding: '7px 0', borderBottom: `1px solid ${T.line}`, alignItems: 'flex-start' }}>
-      <span style={{ fontFamily: mono, fontSize: 12, color: T.dim, width: 42, flex: 'none', paddingTop: 2 }}>{hm}</span>
+      <span style={{ fontFamily: mono, fontSize: 13.5, color: T.dim, width: 42, flex: 'none', paddingTop: 2 }}>{hm}</span>
       <span style={{ width: 10, height: 10, borderRadius: 5, background: a.c, flex: 'none', marginTop: 5, boxShadow: `0 0 0 3px ${a.bg}` }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: a.c, background: a.bg, borderRadius: 5, padding: '1px 7px' }}>{a.cn}</span>
-          {String(e.kind) !== 'bulk' && String(e.kind) !== '' ? <span style={{ fontSize: 11, color: T.dim }}>{String(e.kind)}</span> : null}
-          <span style={{ fontFamily: mono, fontSize: 12.5, fontWeight: 600, wordBreak: 'break-all' }}>{String(e.object)}</span>
-          {String(e.user ?? '') !== '' ? <span style={{ fontSize: 11, fontWeight: 600, color: '#0e3074', background: T.blueSoft, borderRadius: 999, padding: '1px 9px' }}>👤 {String(e.user)}</span> : null}
-          {(e.sources ?? []).includes('audit') ? <span style={{ fontSize: 10.5, color: T.sev.ok.c }}>✓ 审计</span> : null}
+          <span style={{ fontSize: 12, fontWeight: 600, color: a.c, background: a.bg, borderRadius: 5, padding: '1px 7px' }}>{a.cn}</span>
+          {String(e.kind) !== 'bulk' && String(e.kind) !== '' ? <span style={{ fontSize: 12, color: T.dim }}>{String(e.kind)}</span> : null}
+          <span style={{ fontFamily: mono, fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{String(e.object)}</span>
+          {String(e.user ?? '') !== '' ? <span style={{ fontSize: 12, fontWeight: 600, color: '#0e3074', background: T.blueSoft, borderRadius: 999, padding: '1px 9px' }}>👤 {String(e.user)}</span> : null}
+          {(e.sources ?? []).includes('audit') ? <span style={{ fontSize: 11.5, color: T.sev.ok.c }}>✓ 审计</span> : null}
         </div>
-        {String(e.note ?? '') !== '' ? <div style={{ fontSize: 12, color: T.sub, marginTop: 3 }}>{String(e.note)}</div> : null}
+        {String(e.note ?? '') !== '' ? <div style={{ fontSize: 13.5, color: T.sub, marginTop: 3 }}>{String(e.note)}</div> : null}
         {String(e.sqlText ?? '') !== '' ? (
-          <div style={{ fontSize: 11.5, color: T.dim, marginTop: 3, fontFamily: mono, cursor: 'pointer', wordBreak: 'break-all' }} onClick={() => setOpen(!open)}>
+          <div style={{ fontSize: 13, color: T.dim, marginTop: 3, fontFamily: mono, cursor: 'pointer', wordBreak: 'break-all' }} onClick={() => setOpen(!open)}>
             {open || String(e.sqlText).length <= 90 ? String(e.sqlText) : `${String(e.sqlText).slice(0, 90)}…`}
           </div>
         ) : null}
@@ -77,14 +77,14 @@ function Timeline({ entries }: { entries: any[] }) {
     byDay.set(day, [...(byDay.get(day) ?? []), e]);
   }
   const days = [...byDay.entries()];
-  if (days.length === 0) return <div style={{ fontSize: 13, color: T.dim }}>窗口内没有任何数据字典变更。</div>;
+  if (days.length === 0) return <div style={{ fontSize: 16, color: T.dim }}>窗口内没有任何数据字典变更。</div>;
   return (
     <div>
       {days.map(([day, list]) => (
         <div key={day} style={{ ...card, marginBottom: 12, paddingTop: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{day}</span>
-            <span style={{ fontSize: 11, color: T.dim }}>{list.length} 条 · 北京时间</span>
+            <span style={{ fontSize: 16, fontWeight: 600 }}>{day}</span>
+            <span style={{ fontSize: 12, color: T.dim }}>{list.length} 条 · 北京时间</span>
           </div>
           {list.map((e: any, i: number) => <TimelineEntryRow key={i} e={e} />)}
         </div>
@@ -108,7 +108,7 @@ function RunStrip({ runs, selId, onSel }: { runs: any[]; selId: string; onSel: (
           );
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: T.dim, marginTop: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: T.dim, marginTop: 6 }}>
         <span>{String(cells[0]?.firedAt ?? '').slice(5, 10)}</span>
         <span>最新 ▲ · 点格子查看当次完整报告</span>
       </div>
@@ -135,24 +135,24 @@ export function DdlPanel({ task, call }: { task: any; call: (endpoint: string, p
   const withReport = runs.filter((r) => r.report !== undefined);
   const current = withReport.find((r) => r.id === selId) ?? withReport[0];
   const data = current?.report?.data;
-  if (error !== '') return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>加载失败：{error}</div>;
-  if (data === undefined) return <div style={{ fontSize: 13, color: T.dim, padding: 16 }}>还没有 DDL 追溯报告——任务触发后报告会出现在这里；在会话里问"最近一周谁改过表"也能即席出缩减版。</div>;
+  if (error !== '') return <div style={{ fontSize: 16, color: T.dim, padding: 16 }}>加载失败：{error}</div>;
+  if (data === undefined) return <div style={{ fontSize: 16, color: T.dim, padding: 16 }}>还没有 DDL 追溯报告——任务触发后报告会出现在这里；在会话里问"最近一周谁改过表"也能即席出缩减版。</div>;
 
   const worst = String(data.det?.worst ?? 'ok');
   const stats = data.stats ?? {};
   const rules = ((data.ruleFindings ?? []) as any[]).slice().sort((a, b) => (ORDER[String(b.level)] ?? 0) - (ORDER[String(a.level)] ?? 0));
-  const th: any = { color: T.dim, fontWeight: 500, fontSize: 12, textAlign: 'left', padding: '7px 10px', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap' };
-  const td: any = { padding: '8px 10px', borderBottom: `1px solid ${T.line}`, verticalAlign: 'top', fontSize: 12 };
+  const th: any = { color: T.dim, fontWeight: 500, fontSize: 13.5, textAlign: 'left', padding: '7px 10px', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap' };
+  const td: any = { padding: '8px 10px', borderBottom: `1px solid ${T.line}`, verticalAlign: 'top', fontSize: 13.5 };
 
   return (
-    <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif', color: T.ink, lineHeight: 1.6 }}>
+    <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif', color: T.ink, lineHeight: 1.75 }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <span style={{ fontSize: 16, fontWeight: 600, color: sev(worst).c }}>变更态势：{sev(worst).cn}</span>
-        <span style={{ fontSize: 12, color: T.sub }}>{String(data.node)} · 回溯 {Number(data.windowHours)} 小时</span>
-        <span style={{ display: 'inline-flex', gap: 6, fontSize: 12, background: T.sev.ok.soft, color: T.sev.ok.c, borderRadius: 6, padding: '3px 10px', fontWeight: 500 }}>✓ 已锚定 · 时间轴与规则由脚本产出</span>
+        <span style={{ fontSize: 18, fontWeight: 600, color: sev(worst).c }}>变更态势：{sev(worst).cn}</span>
+        <span style={{ fontSize: 13.5, color: T.sub }}>{String(data.node)} · 回溯 {Number(data.windowHours)} 小时</span>
+        <span style={{ display: 'inline-flex', gap: 6, fontSize: 13.5, background: T.sev.ok.soft, color: T.sev.ok.c, borderRadius: 6, padding: '3px 10px', fontWeight: 500 }}>✓ 已锚定 · 时间轴与规则由脚本产出</span>
         {data.auditAvailable === true
-          ? <span style={{ fontSize: 12, color: T.sev.ok.c }}>👤 审计归因已启用</span>
-          : <span style={{ fontSize: 12, color: T.sev.notice.c }}>👤 用户归因不可用（见底部 Notes 解锁方法）</span>}
+          ? <span style={{ fontSize: 13.5, color: T.sev.ok.c }}>👤 审计归因已启用</span>
+          : <span style={{ fontSize: 13.5, color: T.sev.notice.c }}>👤 用户归因不可用（见底部 Notes 解锁方法）</span>}
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -165,21 +165,21 @@ export function DdlPanel({ task, call }: { task: any; call: (endpoint: string, p
         ].map((it, i) => (
           <div key={i} style={{ ...card, flex: 1, minWidth: 110 }}>
             <b style={{ fontSize: 18, fontWeight: 600, color: it.c, fontVariantNumeric: 'tabular-nums', wordBreak: 'break-all' }}>{String(it.v ?? 0)}</b>
-            <span style={{ display: 'block', fontSize: 12, color: T.dim, marginTop: 1 }}>{it.label}</span>
+            <span style={{ display: 'block', fontSize: 13.5, color: T.dim, marginTop: 1 }}>{it.label}</span>
           </div>
         ))}
       </div>
 
       {rules.length > 0 ? (
         <>
-          <H2>规范扫描 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>确定性规则 · 级别不可被解读下调</span></H2>
+          <H2>规范扫描 <span style={{ fontSize: 13.5, color: T.dim, fontWeight: 400 }}>确定性规则 · 级别不可被解读下调</span></H2>
           <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%' }}>
               <thead><tr><th style={th}>规则</th><th style={th}></th><th style={th}>对象</th><th style={th}>问题</th><th style={th}>建议</th></tr></thead>
               <tbody>
                 {rules.map((f: any, i: number) => (
                   <tr key={i}>
-                    <td style={td}><span style={{ font: `600 10.5px ${mono}`, background: T.fill, border: `1px solid ${T.line}`, borderRadius: 5, padding: '1px 6px', color: T.sub }}>{String(f.rule)}</span></td>
+                    <td style={td}><span style={{ font: `600 11.5px ${mono}`, background: T.fill, border: `1px solid ${T.line}`, borderRadius: 5, padding: '1px 6px', color: T.sub }}>{String(f.rule)}</span></td>
                     <td style={td}><Dot level={String(f.level)} /></td>
                     <td style={{ ...td, fontFamily: mono }}>{String(f.object).slice(0, 50)}</td>
                     <td style={td}>{String(f.problem)}</td>
@@ -192,13 +192,13 @@ export function DdlPanel({ task, call }: { task: any; call: (endpoint: string, p
         </>
       ) : null}
 
-      <H2>变更时间轴 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>什么时间 · 由哪个用户 · 做过什么变更（按日分组，新→旧）</span></H2>
+      <H2>变更时间轴 <span style={{ fontSize: 13.5, color: T.dim, fontWeight: 400 }}>什么时间 · 由哪个用户 · 做过什么变更（按日分组，新→旧）</span></H2>
       <Timeline entries={(data.timeline ?? []) as any[]} />
 
       {String(data.rootCause ?? '') !== '' ? (
         <>
           <H2>变更故事线</H2>
-          <div style={{ ...card, background: T.fill, border: 'none' }}><div style={{ fontSize: 13, color: T.sub }}>{String(data.rootCause)}</div></div>
+          <div style={{ ...card, background: T.fill, border: 'none' }}><div style={{ fontSize: 16, color: T.sub }}>{String(data.rootCause)}</div></div>
         </>
       ) : null}
       {(data.priorities ?? []).length > 0 ? (
@@ -207,19 +207,19 @@ export function DdlPanel({ task, call }: { task: any; call: (endpoint: string, p
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {((data.priorities ?? []) as any[]).map((p: any, i: number) => (
               <div key={i} style={{ ...card, flex: 1, minWidth: 220 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.sub, letterSpacing: '.05em' }}>{String(p.p)}</div>
-                <div style={{ fontSize: 13, marginTop: 4 }}>{String(p.action)}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: T.sub, letterSpacing: '.05em' }}>{String(p.p)}</div>
+                <div style={{ fontSize: 16, marginTop: 4 }}>{String(p.action)}</div>
               </div>
             ))}
           </div>
         </>
       ) : null}
       {(data.collectionNotes ?? []).length > 0 ? (
-        <div style={{ fontSize: 12, color: T.dim, border: `1px dashed ${T.line}`, borderRadius: 8, padding: '8px 14px', marginTop: 16 }}>
+        <div style={{ fontSize: 13.5, color: T.dim, border: `1px dashed ${T.line}`, borderRadius: 8, padding: '8px 14px', marginTop: 16 }}>
           📋 Collection Notes：{((data.collectionNotes ?? []) as any[]).map((n: any, i: number) => <div key={i}>{String(n)}</div>)}
         </div>
       ) : null}
-      <H2>检查历史 <span style={{ fontSize: 12, color: T.dim, fontWeight: 400 }}>一格一次运行 · 点格子查看当次报告</span></H2>
+      <H2>检查历史 <span style={{ fontSize: 13.5, color: T.dim, fontWeight: 400 }}>一格一次运行 · 点格子查看当次报告</span></H2>
       <RunStrip runs={runs} selId={String(current?.id ?? '')} onSel={setSelId} />
     </div>
   );
