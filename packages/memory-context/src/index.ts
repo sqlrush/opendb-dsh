@@ -11,8 +11,19 @@ export const Config = z.object({
   // 2026-08-22 事故：语义检索要先算 embedding，Ollama bge-m3 在 CPU 上实测 5-6s/次，
   // 卡在 agent/pre-step 上 → 用户消息要等上下文组装完才落库上屏，聊天框空窗 3-6 秒。
   // 超时后降级为「只用最近记忆」（纯 PG 查询，毫秒级），对话永远优先。
-  searchTimeoutMs: z.number().step(1).min(100).default(1200).description('语义检索超时；超时降级为仅最近记忆'),
+  searchTimeoutMs: z.number().step(1).min(100).default(600).description('语义检索超时；超时降级为仅最近记忆'),
 });
+
+/**
+ * 「本会话是否已注入过」无状态判断——看消息列表里有没有自己的 snapshot（同 instructions-pg）。
+ * 进程内去重表在 agent 作用域/多副本 Runtime 下都失效（实测 6 轮注入 4 次）。
+ */
+function alreadyInjected(messages: unknown[]): boolean {
+  return messages.some((m) => {
+    const src = (m as any)?.source;
+    return src?.kind === 'plugin' && src?.plugin === '@opendb-dsh/memory-context';
+  });
+}
 
 /** 超时包装：到点就返回兜底值，不抛错、不阻塞对话 */
 async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -83,11 +94,16 @@ export function apply(ctx: Context, config: { recentCount?: number; searchCount?
   const searchCount = config.searchCount ?? 4;
   const maxBytes = config.maxBytes ?? 6144;
   const searchTimeoutMs = config.searchTimeoutMs ?? 1200;
-  const injected = new WeakSet<object>();
 
-  anyCtx.on('agent/pre-step', async ({ agent, messages }: any, next: () => Promise<any>) => {
+  anyCtx.on('agent/pre-step', async ({ agent, messages, turn, step }: any, next: () => Promise<any>) => {
     const decision = await next();
-    if (decision.kind === 'reject' || injected.has(agent)) return decision;
+    if (process.env.OPENDB_INJECT_DEBUG === '1') {
+      process.stderr.write(`[memory-context][debug] turn=${String(turn)} step=${String(step)} msgs=${(decision.messages as any[] ?? []).length}\n`);
+    }
+    // 「每会话一次」= 只在会话首轮首步注入。decision.messages 只含本轮消息（实测 length=1），
+    // 进程内去重表又跨不了多副本 Runtime——turn/step 是服务端给的会话级事实，唯一可靠依据。
+    if (decision.kind === 'reject' || Number(turn) > 1 || Number(step) > 1) return decision;
+    if (alreadyInjected(decision.messages as unknown[])) return decision;
     try {
       const agentId = await resolveAgentId(anyCtx.opendbRegistry, agent);
       if (agentId === undefined) return decision;
@@ -99,7 +115,6 @@ export function apply(ctx: Context, config: { recentCount?: number; searchCount?
         withTimeout(searchCount > 0 && query !== '' ? memory.search({ agentId, query, topK: searchCount }) : Promise.resolve([]), searchTimeoutMs, []),
       ]);
       const text = renderMemoryContext(recent, searched, maxBytes);
-      injected.add(agent);
       if (text === undefined) return decision;
       const message = createUserMessage({
         content: [{ type: 'text', text }],
