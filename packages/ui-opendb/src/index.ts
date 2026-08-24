@@ -141,6 +141,15 @@ export function apply(ctx: Context): void {
                       CROSS JOIN LATERAL jsonb_array_elements_text(
                         coalesce(u.global->'archivedSessionIds', '[]'::jsonb)) a(sid)
                       WHERE u.unit = 'workspace' AND a.sid = e.session_id)
+                -- 空会话不进列表（对齐 dsh 原生的 blank 语义：新建即 blank，发出第一条消息
+                -- 才转为非 blank；原生的显示规则是 !blank || id === current，那个例外是为了
+                -- 让当前会话保持高亮，而我们的侧栏是纯 CSS hover、无持久选中态，所以不需要）。
+                -- 判据 = 有没有真人消息：插件注入的上下文（instructions-pg/memory-context 等）
+                -- 同样落成 user/message，必须按 source.kind 排除，否则空会话也会有 4~5 条事件。
+                AND EXISTS (SELECT 1 FROM dsh_session_events x
+                            WHERE x.session_id = e.session_id
+                              AND x.type = 'user/message'
+                              AND coalesce(x.data->'source'->>'kind', 'user') = 'user')
              ORDER BY max(e.time) DESC
              LIMIT $1`,
             vals,
