@@ -464,24 +464,3 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **测量方法论教训**：删 PG 会话后前端仍持旧 session 引用，消息只在 DOM 乐观渲染却没落库，
   一度测出"15ms 假快"。回显测量必须①先点「新会话」②用 `button` 选择器关内测弹窗
   （通用文本选择器匹配不到 button，弹窗遮挡输入框会得到 dom=-1）③交叉验证 PG 事件落库。
-
-## 性能分析：为何"opendb-dsh 比原生慢"（2026-08-23，user 报）
-
-**前提先纠正**：两边模型不同——原生 dsh 用的是 **GLM-5.2**，opendb-dsh 是 **DeepSeek-V4-Pro**（实测选择器读出）。
-
-**受控对比（同一简单问题、各自新会话）**：墙钟 原生 4023ms vs 我方 4021ms；1 轮 1 步；
-LLM 3.2s vs 2.9s；首 token 1.0s vs 1.2s；输入 8.7K vs 8.2K tok；缓存命中 69% vs **99%**。
-→ **框架层面没有慢，简单问答完全持平**；TTFT ~1s、请求头延迟 0.00s（分段日志实测）。
-
-**真正的慢在数据库场景的步数**。用户问「og5有没有慢sql」+「这条 SQL 如何优化」，实测：
-- 26 步、**14 次工具调用**、会话跨度 **205 秒**；
-- 工具序列：`skill(og-slow-query-triage)` → `db_overview` → 手写 `db_query`×2（dbe_perf.statement / wait_events）
-  → `metrics_recent`×2 → 手写 `db_query`×5（含 EXPLAIN）→ **第 14 步才调 `sqlreview_collect`**。
-
-**根因**：`skill-pg` 四份 SOP 写于 P2 W2，那时四个 `*_collect` 确定性工具还不存在，SOP 逐条教模型
-手写 `dbe_perf` / `pg_locks` / `pg_class` 探索查询——模型忠实照做，把一次调用能拿全的信息拆成了十几次往返。
-
-**修复**：① 四份 SOP 全部改写为「确定性工具优先」（慢SQL→sqlreview_collect、锁/容量→health_collect、
-DDL→ddl_collect，并写明"不要手写探索 SQL"）；② 四个采集工具 description 加「首选入口，先调它再说」
-并列明它覆盖了哪些手写查询。
-**效果实测**：同一问题 工具调用 14→**2**、步数 12→**3**、会话跨度 205s→**44s（4.6× 提速）**。

@@ -25,7 +25,7 @@ interface Deps { db: any; registry: any; dictionary: any; maxContentBytes: numbe
 function defineDdlCollectTool(deps: Deps) {
   return defineTool({
     name: 'ddl_collect',
-    description: '【DDL 变更追溯 / 结构变更审计的首选入口，先调它再说】一次调用合并平台字典变更快照与节点审计日志，产出完整变更时间轴（什么时间·由哪个用户·做过什么变更·DDL 原文）+ 8 条规范规则扫描（DROP/TRUNCATE/DROP COLUMN/业务时段变更/变更抖动/无 IF EXISTS 等）+ 统计。**比 dict_changes 多出用户归因与 DDL 原文，不要用 dict_changes 手工拼时间轴**。全程只读。',
+    description: 'DDL 变更追溯与规范扫描：合并平台字典变更快照（对象/时间）与节点审计日志（哪个用户执行了什么 DDL），产出变更时间轴 + 确定性规范扫描（DROP/TRUNCATE/业务时段变更/变更抖动等规则）。回答"什么时间、由哪个用户、做过什么变更"。全程只读。',
     parameters: {
       node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
       hours: { type: 'integer', description: '回溯窗口小时数（默认 168 = 7 天）。' },

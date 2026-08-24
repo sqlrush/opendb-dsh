@@ -24,7 +24,7 @@ interface Deps { db: any; registry: any; maxContentBytes: number; maxNodes: numb
 function defineHealthCollectTool(deps: Deps) {
   return defineTool({
     name: 'health_collect',
-    description: '【实例健康 / 锁等待 / 容量水位 / 膨胀的首选入口，先调它再说】一次调用完成 12 维只读采集并给出阈值判定（总览·等待·慢SQL·长空闲事务·膨胀·LWLock·锁链[含 waiter↔holder 边]·连接占用率·ckpt/WAL·复制·对象索引·并发），返回证据包 + Deterministic Findings。**覆盖了手写 pg_locks 自连接、pg_stat_activity、pg_stat_user_tables、pg_settings 等一系列查询的全部结果，不要先用 db_overview + metrics_recent 去拼**。多节点时附跨实例分析（共性/配置漂移/最差上浮）。',
+    description: '健康检查确定性采集器：对指定节点（默认本智能体全部绑定节点）运行 12 维只读采集（总览/等待/慢SQL/长事务/膨胀/LWLock/锁链/连接/ckpt·WAL/复制/对象/并发），返回证据包 + Deterministic Findings（阈值判定由脚本完成）。多节点时附跨实例分析（共性/配置漂移/最差上浮）。',
     parameters: {
       nodes: { type: 'array', items: { type: 'string' }, description: '节点名列表；省略 = 本智能体全部绑定节点。' },
       dims: { type: 'array', items: { type: 'string' }, description: '维度白名单；省略 = 全部 12 维。' },
