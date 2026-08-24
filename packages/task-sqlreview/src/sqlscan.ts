@@ -81,14 +81,25 @@ ORDER BY total_elapse_time / n_calls DESC LIMIT ${Math.max(1, Math.min(topN, 20)
 
 /** 单条 SQL 的计划锚定：EXPLAIN → cost + 标注；失败如实降级 */
 export async function explainOne(q: QueryFn, text: string): Promise<Pick<SqlItem, 'explainOk' | 'plan' | 'planCost' | 'planFindings' | 'note'>> {
-  try {
-    const r = await q(`EXPLAIN ${text}`, 40);
+  const attempt = async (sql: string) => {
+    const r = await q(`EXPLAIN ${sql}`, 40);
     const lines = r.rows.map((row) => str(Object.values(row)[0])).slice(0, 30);
     return { explainOk: true, plan: lines, planCost: topCost(lines), planFindings: annotatePlan(lines) };
+  };
+  try {
+    return await attempt(text);
   } catch (cause) {
+    // og 的 unique_sql 文本把参数记成 `?` 占位符，直接 EXPLAIN 必然语法报错。
+    // 换成 NULL 得到等价可解析文本再试一次（2026-08-23 实测：og5 Top5 慢 SQL 里 4 条靠这一步才拿到计划）。
+    // 计划来自归一化文本 ≠ 原文，note 里如实标注，不让下游误以为是原样计划。
+    if (text.includes('?')) {
+      try {
+        return { ...await attempt(text.replace(/\?/g, 'NULL')), note: '计划取自参数占位符归一化（? → NULL）后的等价文本；结构与 cost 可用，具体参数值不代表真实调用' };
+      } catch { /* 归一化仍失败 → 落到下面的如实降级 */ }
+    }
     return {
       explainOk: false, plan: [], planFindings: [],
-      note: `无法取得执行计划：${String((cause as Error).message ?? cause).slice(0, 120)}（多为参数化/截断文本，属正常降级）`,
+      note: `无法取得执行计划：${String((cause as Error).message ?? cause).slice(0, 120)}（参数化/截断文本或权限不足，属正常降级）`,
     };
   }
 }

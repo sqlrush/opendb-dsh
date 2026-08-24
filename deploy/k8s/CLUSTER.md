@@ -464,3 +464,23 @@ task_report（W4）与 read_spill（W1 起！）都用了 spill-s3 首创的"构
 - **测量方法论教训**：删 PG 会话后前端仍持旧 session 引用，消息只在 DOM 乐观渲染却没落库，
   一度测出"15ms 假快"。回显测量必须①先点「新会话」②用 `button` 选择器关内测弹窗
   （通用文本选择器匹配不到 button，弹窗遮挡输入框会得到 dom=-1）③交叉验证 PG 事件落库。
+
+## og5 只读账号补授业务 schema 读权（2026-08-23，user 批准执行）
+
+目的：让慢 SQL 的执行计划真正可得（此前 `sqlreview_collect` 的 EXPLAIN 全部 permission denied）。
+
+```
+GRANT USAGE  ON SCHEMA gsbench_e2e_20260801_100g, gsbench TO opendb_ro;      -- schema 可见
+GRANT SELECT ON ALL TABLES IN SCHEMA gsbench_e2e_20260801_100g, gsbench TO opendb_ro;  -- 表可读
+```
+两条都是**只读**权限，符合平台只读定位。分两步的原因：只给 USAGE 时报错从
+`permission denied for schema` 变为 `permission denied for relation`——EXPLAIN 需要表级 SELECT。
+
+**配套的最小健壮性修复**（不触碰 skill 方法论）：og 的 unique_sql 文本把参数记成 `?` 占位符，
+直接 EXPLAIN 必然语法报错。`explainOne` 失败后自动用 `? → NULL` 的等价文本重试一次，
+并在 note 里如实标注"计划取自归一化文本"。
+**实测**：og5 Top5 慢 SQL 由 0/5 可得 → **4/5 可得**（剩下 1 条是 UPDATE，只读账号无法 EXPLAIN 写语句，
+符合定位）；会话侧复验工具结果含 4 处 Seq Scan 计划行，此前为 0。
+
+生产接入清单更新：平台只读账号 = MONADMIN + AUDITADMIN + 业务 schema 的 USAGE/SELECT + 事务级只读。
+新建表需 `ALTER DEFAULT PRIVILEGES` 才自动继承（未做，按需再议）。

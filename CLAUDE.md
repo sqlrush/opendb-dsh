@@ -41,6 +41,12 @@
 
 ## 插件纪律
 
+**借鉴成果不得大改（user 2026-08-23 定）**：四个任务插件（health/sqlreview/wdr/ddl）与 skill-pg 的
+方法论、SOP 内容、规则集、阈值，均借鉴自 `~/opendb_skill`（原 opencode_skill）与 `~/gh_skill` 两个项目
+——**不要对这两个项目的成果做大规模改动**。允许的只是不触碰方法论的健壮性/接口修复（例：EXPLAIN 前
+把 `?` 占位符归一化为 NULL）；凡涉及改 SOP 步骤、增删规则、调阈值、改判定语义，先问 user。
+（教训：2026-08-23 曾把四份 SOP 改写为"确定性工具优先"以提速，user 要求回滚。）
+
 所有功能开发必须落为插件（dsh 核心=万物皆插件）。任务类型=双半边插件（server 注册 TaskType +
 client registerTaskPanel）。领域 UI 独立 client 插件；ui-harness/ui-opendb 只做底座。
 插件地图与每节点交付清单见 docs/ROADMAP.md §7。
