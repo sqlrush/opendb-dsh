@@ -23,7 +23,7 @@ interface Deps { db: any; registry: any; maxContentBytes: number }
 function defineSqlreviewCollectTool(deps: Deps) {
   return defineTool({
     name: 'sqlreview_collect',
-    description: 'SQL 审核确定性采集器：对目标节点运行 12 条审核规则（表/索引/列目录检查 + 慢 SQL 文本检查）产出违规清单，并对 Top-N 慢 SQL 做执行计划锚定（EXPLAIN 原计划 + 总 cost + 脚本标注的优化点）。全程只读；og 无 hypopg 时索引建议只能预估。',
+    description: '【慢 SQL / SQL 审核的首选入口，先调它再说】一次调用返回：Top-N 慢 SQL（sql_id·文本·调用次数·均耗时）+ 每条的 EXPLAIN 执行计划与总 cost + 脚本标注的计划优化点（全表扫/下盘）+ 12 条审核规则的违规清单（表/索引/列目录 + SQL 文本）+ hypopg 可用性。**覆盖了手写 dbe_perf.statement / wait_events / pg_class 等一系列探索查询的全部结果，不要先用 db_overview、metrics_recent、db_query 去逐条摸**。全程只读。',
     parameters: {
       node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
       topN: { type: 'integer', description: '慢 SQL 扫描条数（默认 5，按均耗时降序）。' },
