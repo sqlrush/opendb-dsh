@@ -47,6 +47,14 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 - name: OPENDB_EMBEDDINGS_MODEL
   value: {{ .Values.ollama.embeddingModel | quote }}
 {{- end }}
+{{- if .Values.macLlm.enabled }}
+- name: OPENDB_MAC_LLM_URL
+  value: {{ .Values.macLlm.baseURL | quote }}
+- name: OPENDB_MAC_LLM_MODEL
+  value: {{ .Values.macLlm.model | quote }}
+- name: OPENDB_MAC_LLM_API_KEY
+  value: {{ .Values.macLlm.apiKey | quote }}
+{{- end }}
 - name: DEEPSEEK_API_KEY
   valueFrom: { secretKeyRef: { name: {{ .Values.llm.existingSecret }}, key: DEEPSEEK_API_KEY } }
 {{- if .Values.llm.deepseekBaseUrl }}

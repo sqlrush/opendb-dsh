@@ -81,6 +81,23 @@ ollama:
   storageClassName: ""
   resources: { requests: { cpu: 500m, memory: 2Gi }, limits: { memory: 6Gi } }
 
+# ── 本机推理：mac 宿主上的 Ollama + Qwen3.8-27B（2026-08-24 实测选型）──────────
+# 定位=仅作为可选模型进选择器，默认模型不动（仍 deepseek-v4-pro）。
+# baseURL 用 host.orb.internal：pod 实测可达且 k3s 拉镜像本来就用这个名字。
+#   （198.19.248.254 会被 mac 上代理 TUN 的 fake-IP 段 198.18.0.0/15 吃掉，勿用；
+#     en0 的 172.20.10.x 是热点网段会变，也勿用。）
+# 选型依据：三档实测，长上下文下 27b-mtp-q8_0 单轮总耗时比 27b-mlx 快 35~39%
+#   （预填充 620~716 vs 217~317 tok/s，dsh 负载是预填充主导）；27b-mlx-bf16 三项全输已淘汰。
+macLlm:
+  enabled: true
+  baseURL: http://host.orb.internal:11434/v1
+  model: qwen3.8:27b-mtp-q8_0
+  # Ollama 不校验 Authorization，但 pi-ai 对「手工声明的路由」必须拿到一个凭据：
+  # 省略 apiKeyEnv 会走 pi-ai 自己的环境发现，发现不到就整轮失败
+  # （2026-08-24 实测：turn/end → PI_AI_ERROR "No API key for provider: mac-ollama"）。
+  # 所以这里给哑值；它不是机密，真值在 Ollama 侧根本不参与鉴权。
+  apiKey: "ollama-local-no-auth"
+
 # ── W6: KEDA 扩缩（需先在集群装 keda operator：helm install keda kedacore/keda -n keda）──
 keda:
   enabled: true

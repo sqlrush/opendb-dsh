@@ -125,6 +125,38 @@
   config:
     provider: deepseek-official
     model: deepseek-v4-pro
+# ── 本机推理：mac 宿主 Ollama + Qwen3.8-27B（user 2026-08-24：仅作为可选模型）──
+# dsh-base 已把 llm-pi-ai 以休眠姿态挂上（零路由）；这里手工声明一条路由把它唤醒。
+# 默认模型不动，此模型只是多在选择器里出现一项。
+# 不填 apiKeyEnv = 该路由免认证，符合 Ollama。
+- id: llm-pi-ai
+  config:
+    providers:
+      mac-ollama:
+        displayName: 本机 M5 Max
+        api: openai-completions
+        baseURL: !!js process.env.OPENDB_MAC_LLM_URL ?? 'http://host.orb.internal:11434/v1'
+        # Ollama 免鉴权，但 pi-ai 对手工声明的路由必须拿到凭据：省略此项会走
+        # pi-ai 自身的环境发现，发现不到则整轮 PI_AI_ERROR「No API key」。
+        apiKeyEnv: OPENDB_MAC_LLM_API_KEY
+        models:
+          - id: !!js process.env.OPENDB_MAC_LLM_MODEL ?? 'qwen3.8:27b-mtp-q8_0'
+            name: Qwen3.8 27B (本机)
+            # 必须与 mac 上 launchd plist 里的 OLLAMA_CONTEXT_LENGTH 一致，
+            # 否则服务端静默截断 prompt。改一处必须改另一处。
+            contextWindow: 131072
+            # 实测：qwen3.8 思考默认开启，预算给小了会被思考吃光、正文返回空
+            # （2026-08-24 实测 max_tokens=3000 时正文只剩 1 字节）。故给足。
+            maxTokens: 32768
+            # 2026-08-24 实测确认 reasoning_effort 被真正解析：
+            #   伪造档位 → HTTP 400 并列出合法值；难题上思考量 low<medium<xhigh 单调递增
+            #   （5829/6588 → 8221/9454 → 16819/24610 字节，两次采样一致）。
+            reasoningEfforts:
+              off: none
+              low: low
+              medium: medium
+              xhigh: xhigh
+
 # ── 任务重做 #1/#2：健康检查 + SQL 审核优化（Host 侧=类型注册+引擎调度）────────
 - insert:
     - id: task-health

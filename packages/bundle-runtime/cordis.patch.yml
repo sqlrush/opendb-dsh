@@ -139,6 +139,30 @@
   config:
     provider: deepseek-official
     model: deepseek-v4-pro
+# ── 本机推理：mac 宿主 Ollama + Qwen3.8-27B（user 2026-08-24：仅作为可选模型）──
+# Runtime 才是真正发起模型调用的一侧，路由必须在这里也声明一份（与 bundle-host 保持同形）。
+- id: llm-pi-ai
+  config:
+    providers:
+      mac-ollama:
+        displayName: 本机 M5 Max
+        api: openai-completions
+        baseURL: !!js process.env.OPENDB_MAC_LLM_URL ?? 'http://host.orb.internal:11434/v1'
+        # 必填：省略则 pi-ai 走环境发现并整轮失败，见 bundle-host 同处注释。
+        apiKeyEnv: OPENDB_MAC_LLM_API_KEY
+        models:
+          - id: !!js process.env.OPENDB_MAC_LLM_MODEL ?? 'qwen3.8:27b-mtp-q8_0'
+            name: Qwen3.8 27B (本机)
+            # 与 mac launchd plist 的 OLLAMA_CONTEXT_LENGTH 强耦合，改一处必须改另一处。
+            contextWindow: 131072
+            maxTokens: 32768
+            # 档位实测依据见 bundle-host 同处注释。
+            reasoningEfforts:
+              off: none
+              low: low
+              medium: medium
+              xhigh: xhigh
+
 # ── 任务重做 #1/#2：类型双侧注册（工具在独立包，见 tool-*-collect）────────────
 - insert:
     - id: task-health
