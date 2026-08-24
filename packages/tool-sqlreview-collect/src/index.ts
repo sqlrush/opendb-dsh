@@ -55,9 +55,24 @@ function defineSqlreviewCollectTool(deps: Deps) {
         hypopg = Number(r.rows[0]?.n ?? 0) > 0;
       } catch { notes.push('hypopg 探测降级（pg_available_extensions 不可读）'); }
 
-      const counts: Record<RuleLevel, number> = { ok: 0, notice: 0, warn: 0, critical: 0 };
-      for (const f of ruleFindings) counts[f.level] += 1;
-      for (const s of sqlItems) for (const pf of s.planFindings) counts[pf.level] += 1;
+      /**
+       * det.counts 是「规则违规 + 执行计划发现」两类之和，而 ruleFindings 数组只装前者——
+       * 模型每次都据此判定「det.counts 与明细计数不一致」并写进 collectionNotes
+       * （2026-08-24 user 报障：大盘环图写 26 条、下面只列 20 条）。
+       * counts 的值一个不改（判定语义不动），只把来源拆明白，让读的人/模型一眼看出 26 = 20 + 6。
+       */
+      const zero = (): Record<RuleLevel, number> => ({ ok: 0, notice: 0, warn: 0, critical: 0 });
+      const ruleCounts = zero();
+      for (const f of ruleFindings) ruleCounts[f.level] += 1;
+      const planCounts = zero();
+      for (const s of sqlItems) for (const pf of s.planFindings) planCounts[pf.level] += 1;
+      const counts: Record<RuleLevel, number> = {
+        ok: ruleCounts.ok + planCounts.ok,
+        notice: ruleCounts.notice + planCounts.notice,
+        warn: ruleCounts.warn + planCounts.warn,
+        critical: ruleCounts.critical + planCounts.critical,
+      };
+      const planFindingTotal = Object.values(planCounts).reduce((a, b) => a + b, 0);
       const worst = worstRuleLevel([
         ...ruleFindings,
         ...sqlItems.flatMap((s) => s.planFindings.map((pf) => ({ rule: pf.code, level: pf.level, object: s.key, problem: '', advice: '', evidence: '' } as RuleFinding))),
@@ -66,7 +81,13 @@ function defineSqlreviewCollectTool(deps: Deps) {
       const payload = {
         scope: 'sql-set',
         node: node.name,
-        det: { worst, counts },
+        det: {
+          worst,
+          counts,                        // 总计 = 规则违规 + 计划发现（语义与旧版一致，值未变）
+          countsBySource: { rule: ruleCounts, plan: planCounts },
+          totals: { rule: ruleFindings.length, plan: planFindingTotal, all: ruleFindings.length + planFindingTotal },
+          countsNote: `det.counts 是两类之和：规则违规 ${ruleFindings.length} 条（见 ruleFindings）+ 执行计划发现 ${planFindingTotal} 条（见各 sqlItems[].planFindings）。两者数量本就不同，不是计数错误。`,
+        },
         hypopg: { available: hypopg, note: hypopg ? '可用：可虚拟索引实证' : '不可用：索引类建议只能 estimated（og-lite 常态）' },
         ruleFindings,
         sqlItems: sqlItems.map((s) => ({

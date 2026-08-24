@@ -123,6 +123,24 @@ export function apply(ctx: Context): void {
              FROM dsh_session_events e
              ${scope}
              GROUP BY e.session_id
+             -- 任务运行会话不进侧栏（2026-08-23 user 报障：连点「立即运行」灌进 14 条同名会话）。
+             -- 放 HAVING 而非 WHERE：每组只判一次，不对上百万事件行逐行反查。
+             -- 双判据：run 行还在时靠外键认；run 被删（tasks/remove 会级联删）后会话成孤儿，
+             -- 靠 engine 注入的固定前缀「【任务运行】」认——只认前缀不认标题，标题会被 LLM 改写。
+             HAVING NOT EXISTS (SELECT 1 FROM dsh_task_runs tr WHERE tr.session_id = e.session_id)
+                AND NOT EXISTS (SELECT 1 FROM dsh_session_events x
+                                WHERE x.session_id = e.session_id
+                                  AND x.type = 'user/message'
+                                  AND coalesce(x.data->'source'->>'kind', 'user') = 'user'
+                                  AND x.data->'content'->0->>'text' LIKE '【任务运行】%')
+                -- 已归档会话（dsh 原生 registry-global 归档集）。在后端认而不在前端认：
+                -- 原生把它暴露成组件内 useWorkspaces store，ctx.workspaces 上没有这个属性
+                -- （2026-08-24 user 报「点归档没反馈」的根因——归档其实成功了，是列表不知道）。
+                AND NOT EXISTS (
+                      SELECT 1 FROM dsh_kv_units u
+                      CROSS JOIN LATERAL jsonb_array_elements_text(
+                        coalesce(u.global->'archivedSessionIds', '[]'::jsonb)) a(sid)
+                      WHERE u.unit = 'workspace' AND a.sid = e.session_id)
              ORDER BY max(e.time) DESC
              LIMIT $1`,
             vals,
@@ -175,13 +193,32 @@ export function apply(ctx: Context): void {
           const runs = await tasks.listRuns({ limit: 200 });
           const lastByTask = new Map<string, any>();
           for (const r of runs) if (!lastByTask.has(r.taskId)) lastByTask.set(r.taskId, r);
+          // 归档集一次查全：侧栏据此隐藏，任务页仍可经 archived:true 看到（归档 ≠ 删除）
+          const arch = await tasks.pool.query('SELECT task_id FROM opendb_archived_tasks');
+          const archived = new Set<string>(arch.rows.map((r: any) => r.task_id));
           const enriched = [];
           for (const t of list) {
             const last = lastByTask.get(t.id);
             const report = last !== undefined ? await tasks.getReport(last.id) : undefined;
-            enriched.push({ ...t, lastRun: last, lastReport: report ? { severity: report.severity, summary: report.summary } : undefined });
+            enriched.push({
+              ...t, lastRun: last, archived: archived.has(t.id),
+              lastReport: report ? { severity: report.severity, summary: report.summary } : undefined,
+            });
           }
           return { ok: true, value: { tasks: enriched } };
+        }
+        // 任务归档（user 2026-08-24：对齐 dsh 原生「归档会话」的三点菜单）。
+        // 会话归档不走这里——那是 dsh 原生能力，客户端 ctx.workspaces.archiveSession 直连。
+        case 'tasks/archive':
+        case 'tasks/unarchive': {
+          if (typeof payload?.id !== 'string' || payload.id === '') return bad('id required');
+          if (endpoint === 'tasks/archive') {
+            await tasks.pool.query(
+              'INSERT INTO opendb_archived_tasks (task_id) VALUES ($1) ON CONFLICT DO NOTHING', [payload.id]);
+          } else {
+            await tasks.pool.query('DELETE FROM opendb_archived_tasks WHERE task_id = $1', [payload.id]);
+          }
+          return { ok: true, value: { id: payload.id, archived: endpoint === 'tasks/archive' } };
         }
         case 'tasks/create': {
           if (typeof payload?.agentId !== 'string' || typeof payload?.type !== 'string' || typeof payload?.name !== 'string') return bad('agentId, type, name required');

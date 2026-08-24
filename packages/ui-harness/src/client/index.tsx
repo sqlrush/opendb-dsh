@@ -39,6 +39,15 @@ function takeOverBranding(): void {
     document.title = 'opendb-harness';
     const style = document.createElement('style');
     style.setAttribute('data-opendb-harness', 'brand');
+    // 新会话主页顶部的图标（替代官方海豚）：34×25 数据库圆柱，与左上角字标同款画法。
+    // 作为 mask 使用——形状用不透明黑描边，实际颜色由 background: currentColor 决定，
+    // 因此明暗主题都不用各配一份。
+    const DB_MASK = '<svg xmlns="http://www.w3.org/2000/svg" width="34" height="25" viewBox="0 0 34 25">'
+      + '<g fill="none" stroke="%23000" stroke-width="2" stroke-linecap="round">'
+      + '<ellipse cx="17" cy="5.4" rx="10.6" ry="3.9"/>'
+      + '<path d="M6.4 5.4v14.2c0 2.15 4.75 3.9 10.6 3.9s10.6-1.75 10.6-3.9V5.4"/>'
+      + '<path d="M6.4 12.5c0 2.15 4.75 3.9 10.6 3.9s10.6-1.75 10.6-3.9"/>'
+      + '</g></svg>';
     // 官方 logo 行原位替换：隐藏海豚 svg 与 deepseek 字（保留右侧折叠按钮），
     // ::before 注入整行 opendb 版 SVG（db 圆柱 + opendb 粗字 + HARNESS 黑胶囊）。
     const logoSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="196" height="26" viewBox="0 0 196 26"><g fill="none" stroke="%23111" stroke-width="1.7" stroke-linecap="round"><ellipse cx="12" cy="6.8" rx="8.6" ry="3.3"/><path d="M3.4 6.8v12.4c0 1.8 3.85 3.3 8.6 3.3s8.6-1.5 8.6-3.3V6.8"/><path d="M3.4 13c0 1.8 3.85 3.3 8.6 3.3s8.6-1.5 8.6-3.3"/></g><text x="28" y="19.5" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="18" font-weight="700" fill="%23111">opendb</text><rect x="97" y="5.5" width="64" height="16" rx="4" fill="%23111"/><text x="129" y="17" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="9.5" font-weight="700" letter-spacing="1.2" fill="%23fff">HARNESS</text></svg>';
@@ -53,6 +62,43 @@ function takeOverBranding(): void {
       '.odbTable tbody td{transition:background .08s ease}',
       '.odbTitle{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;line-height:20px;margin:0 6px 0 4px}',
       '.odbTime{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:20px;flex:none}',
+      // ── 新会话主页品牌化（user 2026-08-24）：海豚→数据库图标、标语、版本徽章 ──
+      // 全程纯 CSS 覆盖官方组件，绝不碰它的 DOM（W5.5 白屏事故）；class 名带 CSS Modules
+      // 哈希前缀（pXSMma_），一律用 [class*=] 前缀匹配，官方改版换哈希也不会失配。
+      // 图标走 mask + currentColor 而非 background-image：颜色自动跟随明暗主题。
+      `[class*="fishHitbox"] svg{display:none !important}`,
+      // 不覆盖 display——官方是 flex+align-items:center，与文字中心线严丝合缝（实测中心差 0）；
+      // 之前改成 inline-block 会退化成基线对齐，图标整体下沉，就是 user 说的「没对齐」。
+      // 只补尺寸（svg 隐藏后容器会塌）与着色。
+      `[class*="fishHitbox"]{width:34px;height:25px;flex:none;background:currentColor;` +
+        `-webkit-mask:url('data:image/svg+xml;utf8,${DB_MASK}') no-repeat center/contain;` +
+        `mask:url('data:image/svg+xml;utf8,${DB_MASK}') no-repeat center/contain}`,
+      // 标语：原文字号归零隐藏（保留节点与 grid 布局），::before 注入新文案
+      `[class*="headlineText"]{font-size:0 !important}`,
+      `[class*="headlineText"]::before{content:"交互皆对话，万物皆插件";font-size:26px;line-height:32px;` +
+        `font-weight:500;color:var(--dsw-alias-label-primary, #0f1115);white-space:nowrap}`,
+      // 徽章：父元素 font-size:0 会让行盒按 0 算、由 ::before 撑高，比原生高出几 px；
+      // 显式给回 line-height 并让伪元素以 inline-block 参与，量回原生的 21px 高度。
+      `[class*="previewBadge"]{font-size:0 !important;line-height:18px !important}`,
+      `[class*="previewBadge"]::before{content:"opendb-harness 预览版";display:inline-block;` +
+        `font-size:12px;line-height:18px;font-weight:500;vertical-align:top}`,
+      // 首页 hero 行的「工作区选择器 + Agent 预设选择器」整行隐藏（user 2026-08-24）：
+      // ① 工作区——对外已不暴露智能体概念（侧栏那层同期撤掉），且只有一个工作区，选择无意义；
+      // ② Agent 预设（「标准模式」）——dsh 四种内置预设（标准/PTC/极简/创造）依赖 tool-bash、
+      //    tool-fs、tool-str-replace-editor、tool-web、tool-workflow，这些按设计 D5 在
+      //    bundle-runtime 里全部 disabled，四种预设在本平台一个都跑不动，留着是错误入口。
+      // 以后要做面向 DBA 的自有预设（巡检/优化/应急）时，去掉这条即可放出选择器。
+      `[class*="heroWorkspaceRow"]{display:none !important}`,
+      // 行尾三点：常驻 DOM、hover 才显形（对齐 dsh 原生列表行的隐藏操作菜单）
+      '.odbDots{opacity:0;transition:opacity .1s ease;color:var(--dsw-alias-label-tertiary)}',
+      '.odbRow:hover .odbDots{opacity:1}',
+      '.odbDots:hover{color:var(--dsw-alias-label-primary)}',
+      // 三点弹出菜单项的 hover（纯 CSS，避免每项一个 JS 状态）
+      '.odbMenuItem:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      // 任务运行中的脉冲点（RunningBar）——与会话等模型时的呼吸反馈同一语言
+      '@keyframes odbPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.72)}}',
+      '.odbPulse{animation:odbPulse 1.15s ease-in-out infinite}',
+      '@media (prefers-reduced-motion: reduce){.odbPulse{animation:none;opacity:.75}}',
     ].join('\n');
     document.head.appendChild(style);
   } catch { /* branding is cosmetic — never block boot */ }

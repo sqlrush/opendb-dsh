@@ -4,10 +4,9 @@
  * 任务页 = 框架：任务列表 + 详情面板槽——不同任务对应不同插件，插件的 client 半边
  * 经 registerTaskPanel(typeKey, Panel) 注册专属 UI；未注册的类型用默认面板（运行历史+报告）。
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { getState, setState, subscribe, getTaskPanel, getResourcePanel, getNodePanel } from './state.ts';
 
-const hsSel = () => getState().selectedTaskId;
 
 export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown) => Promise<any>) {
   const S: Record<string, React.CSSProperties> = {
@@ -31,8 +30,11 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   };
   const sevColor = (s?: string) => s === 'critical' ? 'var(--dsw-alias-state-error-primary)' : s === 'warn' ? '#c9862d' : 'var(--dsw-alias-label-secondary)';
 
-  /** 默认任务面板：运行历史 + 报告 + 操作（任务插件未注册专属面板时使用）。 */
-  function DefaultTaskPanel({ task }: { task: any }) {
+  /**
+   * 默认任务面板：运行历史 + 报告 + 操作（任务插件未注册专属面板时使用）。
+   * runId：从「历史」跳来时高亮那一行——没有专属大盘的类型，至少能定位到那次。
+   */
+  function DefaultTaskPanel({ task, runId }: { task: any; runId?: string }) {
     const [runs, setRuns] = useState<any[]>([]);
     const refresh = async () => { try { setRuns((await call('runs/list', { taskId: task.id })).runs); } catch { /* retry */ } };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, [task.id]);
@@ -42,12 +44,24 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
           <b>{task.name}</b><span style={S.dim}>{task.type} · {task.cron ?? '手动'}</span>
           <span style={{ marginLeft: 'auto', ...S.dim, fontSize: 12 }}>{task.enabled ? (task.cron ? '定时运行中' : '手动触发') : '已停用'}</span>
         </div>
-        <div style={{ ...S.dim, fontSize: 12, margin: '8px 0' }}>要调整这个任务（改周期/改策略/停用），直接在会话里告诉智能体即可。专属大盘由任务插件提供，当前为默认视图。</div>
+        {/*
+          兜底视图的醒目标识（user 2026-08-24：「报告又没有报告了，内容和历史列表基本一致」——
+          说的就是掉到这里。以前只有一行灰色小字提"当前为默认视图"，看不出是异常态）。
+          该任务类型注册过专属面板才会有大盘；掉到这里通常是那个 client 插件没加载上，刷新即可。
+        */}
+        <div style={{
+          margin: '10px 0 14px', padding: '9px 12px', borderRadius: 8, fontSize: 13,
+          border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-interactive-bg-hover)',
+        }}>
+          <b>当前是默认视图，不是「{task.type}」的专属大盘。</b>
+          <span style={{ ...S.dim, marginLeft: 6 }}>该类型的面板插件这次没加载上——刷新页面通常即可恢复；若刷新后仍是这个视图，请告诉我。</span>
+        </div>
+        <div style={{ ...S.dim, fontSize: 12, margin: '8px 0' }}>要调整这个任务（改周期/改策略/停用），直接在会话里告诉智能体即可。</div>
         <table style={S.table}>
           <thead><tr><th style={S.th}>时间</th><th style={S.th}>触发</th><th style={S.th}>状态</th><th style={S.th}>报告</th></tr></thead>
           <tbody>
             {runs.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} style={r.id === runId ? { background: 'var(--dsw-alias-interactive-bg-hover)' } : undefined}>
                 <td style={S.td}>{String(r.firedAt).replace('T', ' ').slice(0, 19)}</td>
                 <td style={S.td}><span style={S.dim}>{r.triggerKind}</span></td>
                 <td style={S.td}>{r.status}{r.error ? <span style={{ color: sevColor('critical') }}> {r.error}</span> : null}</td>
@@ -61,17 +75,48 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
-  /** 任务运行历史（页内 tab「历史」）：只读表 */
-  function TaskHistory({ task }: { task: any }) {
+  /**
+   * 运行中指示条（user 2026-08-23：点了立即运行要像会话等模型出结果那样有 think 反馈）。
+   * 脉冲点 + 秒表，跑完由 TasksPage 的 2s 轮询自动撤下并刷新报告。
+   */
+  function RunningBar({ n, since }: { n: number; since: number }) {
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1_000); return () => clearInterval(t); }, []);
+    const sec = Math.max(0, Math.round((now - since) / 1000));
+    const el = sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m${String(sec % 60).padStart(2, '0')}s`;
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, padding: '10px 14px',
+        border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 10,
+        background: 'var(--dsw-alias-interactive-bg-hover)', fontSize: 13.5,
+      }}>
+        <span className="odbPulse" style={{
+          width: 8, height: 8, borderRadius: '50%', flex: 'none',
+          background: 'var(--dsw-alias-label-brand, #4176e6)',
+        }} />
+        <span>智能体正在执行{n > 1 ? `（${n} 个运行排队中）` : ''}…</span>
+        <span style={{ ...S.dim, fontVariantNumeric: 'tabular-nums' }}>已用时 {el}</span>
+        <span style={{ marginLeft: 'auto', ...S.dim, fontSize: 12 }}>完成后本页自动刷出报告</span>
+      </div>
+    );
+  }
+
+  /** 任务运行历史（页内 tab「历史」）：只读表。onOpenReport = 跳去那一次的完整大盘。 */
+  function TaskHistory({ task, onOpenReport }: { task: any; onOpenReport: (runId: string) => void }) {
     const [runs, setRuns] = useState<any[]>([]);
     useEffect(() => {
       let alive = true;
       call('runs/list', { taskId: task.id }).then((v) => { if (alive) setRuns(v?.runs ?? []); }).catch(() => {});
       return () => { alive = false; };
     }, [task.id]);
+    // 任务运行会话已从侧栏隐藏（避免刷屏），这里是唯一追溯入口：排查任务为什么跑歪时点进去看模型全过程。
+    const openRunSession = (sessionId: string) => {
+      setState({ view: 'chat' });
+      try { ctx.sessions.open(sessionId); } catch { /* 会话已被清理：退回聊天区即可 */ }
+    };
     return (
       <table style={S.table}>
-        <thead><tr><th style={S.th}>时间</th><th style={S.th}>触发</th><th style={S.th}>状态</th><th style={S.th}>报告</th></tr></thead>
+        <thead><tr><th style={S.th}>时间</th><th style={S.th}>触发</th><th style={S.th}>状态</th><th style={S.th}>报告</th><th style={S.th}>大盘</th><th style={S.th}>过程</th></tr></thead>
         <tbody>
           {runs.map((r) => (
             <tr key={r.id}>
@@ -79,9 +124,18 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
               <td style={S.td}><span style={S.dim}>{r.triggerKind}</span></td>
               <td style={S.td}>{r.status}{r.error ? <span style={{ color: sevColor('critical') }}> {r.error}</span> : null}</td>
               <td style={S.td}>{r.report !== undefined ? <span style={{ color: sevColor(r.report.severity) }}>{r.report.severity} · {r.report.summary}</span> : <span style={S.dim}>-</span>}</td>
+              {/* 用户报障：跑过多次后历史只有一张表，进不去那一次的详细大盘 */}
+              <td style={S.td}>{r.report !== undefined
+                ? <span onClick={() => onOpenReport(String(r.id))}
+                    style={{ cursor: 'pointer', color: 'var(--dsw-alias-label-brand, #4176e6)', whiteSpace: 'nowrap' }}>看报告 →</span>
+                : <span style={S.dim}>-</span>}</td>
+              <td style={S.td}>{typeof r.sessionId === 'string' && r.sessionId !== ''
+                ? <span onClick={() => openRunSession(r.sessionId)}
+                    style={{ cursor: 'pointer', color: 'var(--dsw-alias-label-brand, #4176e6)', whiteSpace: 'nowrap' }}>查看会话 →</span>
+                : <span style={S.dim}>-</span>}</td>
             </tr>
           ))}
-          {runs.length === 0 && <tr><td style={S.td} colSpan={4}><span style={S.dim}>还没有运行记录</span></td></tr>}
+          {runs.length === 0 && <tr><td style={S.td} colSpan={6}><span style={S.dim}>还没有运行记录</span></td></tr>}
         </tbody>
       </table>
     );
@@ -109,9 +163,18 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
    * dsh 式页头（大标题 + meta）+ 文字 tab（报告/历史/配置，蓝下划线）——与 R4 设计稿一致。
    */
   function TasksPage() {
+    // 订阅整个 store：selectedTaskId 之外还要读 selectedRunId（「历史」跳过来指定的那次运行）
+    const hs = useSyncExternalStore(subscribe, getState);
     const [tasks, setTasks] = useState<any[]>([]);
     const [tab, setTab] = useState<'report' | 'history' | 'config'>('report');
-    const selected = hsSel();
+    // busy：正在飞的操作 key。空串=空闲。按钮据此禁用——2026-08-23 user 报障根因：
+    // act 是 async 但按钮无任何 pending 反馈，连点 14 次落了 14 条 run（maxConcurrent=2 → 6 条跑到超时）。
+    const [busy, setBusy] = useState('');
+    // live：该任务当前 queued/running 的运行（thinking 态数据源）
+    const [live, setLive] = useState<{ n: number; since: number } | null>(null);
+    // liveRef：轮询闭包读不到最新 live（也读不到「乐观点亮」写入的值），用 ref 做真相
+    const liveRef = useRef(false);
+    const selected = hs.selectedTaskId;
     const refresh = async () => {
       try {
         setTasks((await call('tasks/list', {})).tasks);
@@ -119,7 +182,32 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 20_000); return () => clearInterval(t); }, []);
     const task = tasks.find((t) => t.id === selected) ?? tasks[0];
-    useEffect(() => { setTab('report'); }, [task?.id]);
+    // 换任务时回到「报告 · 最新」——否则会拿着上一个任务的 runId 去查这个任务
+    useEffect(() => { setTab('report'); setState({ selectedRunId: '' }); }, [task?.id]);
+    // 运行态 2s 轮询：有在跑的 run 就亮 thinking 条，跑完自动熄灭并刷新报告（user：要像会话等模型那样有反馈）
+    const taskId = task?.id;
+    useEffect(() => {
+      if (taskId === undefined) return;
+      let alive = true;
+      const poll = async () => {
+        try {
+          const rs: any[] = (await call('runs/list', { taskId })).runs ?? [];
+          if (!alive) return;
+          const act = rs.filter((r) => r.status === 'queued' || r.status === 'running');
+          if (act.length > 0) {
+            const ts = act.map((r) => Date.parse(r.firedAt ?? '') || Date.now());
+            setLive({ n: act.length, since: Math.min(...ts) });
+            liveRef.current = true;
+          } else {
+            setLive(null);
+            if (liveRef.current) { liveRef.current = false; void refresh(); }   // 刚跑完：拉一次最新报告
+          }
+        } catch { /* 轮询失败保持上次状态 */ }
+      };
+      void poll();
+      const t = setInterval(() => void poll(), 2_000);
+      return () => { alive = false; clearInterval(t); };
+    }, [taskId]);
     if (tasks.length === 0) return <Empty icon="▤" title="还没有任务" hint="在会话里说一句就能建，例如「每天早上八点巡检所有节点」" />;
     if (task === undefined) return null;
     const Panel = getTaskPanel(task.type) ?? DefaultTaskPanel;
@@ -128,14 +216,33 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
      * 走 ui-opendb 既有 RPC：tasks/update（启停）、tasks/runNow（立即执行）、tasks/remove（删除）。
      * 「修改」仍在会话里说（纲领：策略变更靠对话），这里只放三个不可含糊的动作。
      */
-    const act = async (fn: () => Promise<unknown>, confirmText?: string) => {
+    const act = async (key: string, fn: () => Promise<unknown>, confirmText?: string) => {
+      if (busy !== '') return;                                  // 状态锁：飞行中的操作未回来，后续点击一律吞掉
       if (confirmText !== undefined && !window.confirm(confirmText)) return;
+      setBusy(key);
       try { await fn(); } catch (e) { window.alert(String((e as Error)?.message ?? e)); }
+      finally { setBusy(''); }
       await refresh();
     };
-    const opBtn = (label: string, onClick: () => void, danger = false) => (
-      <button style={{ ...S.btn, ...(danger ? { color: 'var(--dsw-alias-state-error-primary)' } : {}) }} onClick={onClick}>{label}</button>
-    );
+    /**
+     * 操作按钮：飞行期间整组禁用，当事按钮换成进行时文案。
+     * hold=额外锁（「立即运行」传 live!==null）——runNow 的 RPC 只是入队，90ms 就返回，
+     * 光靠 busy 挡不住连点；真正的闸门是"还有 run 在跑就不许再发"。
+     */
+    const opBtn = (key: string, label: string, busyLabel: string, onClick: () => void, danger = false, hold = false) => {
+      const locked = busy !== '' || hold;
+      return (
+        <button
+          disabled={locked}
+          style={{
+            ...S.btn,
+            ...(danger ? { color: 'var(--dsw-alias-state-error-primary)' } : {}),
+            ...(locked ? { opacity: 0.45, cursor: 'default' } : {}),
+          }}
+          onClick={onClick}
+        >{busy === key ? busyLabel : label}</button>
+      );
+    };
     const pt = (key: 'report' | 'history' | 'config', label: string) => (
       <span onClick={() => setTab(key)} style={{
         fontSize: 15, cursor: 'pointer', padding: '4px 1px 9px', borderBottom: `2px solid ${tab === key ? 'var(--dsw-alias-label-brand, #4176e6)' : 'transparent'}`,
@@ -152,15 +259,36 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
             {' '}· 调整周期或范围，在会话里说一句即可
           </span>
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            {opBtn('▶ 立即运行', () => void act(() => call('tasks/runNow', { id: task.id })))}
-            {opBtn(task.enabled ? '⏸ 暂停' : '▶ 启用', () => void act(() => call('tasks/update', { id: task.id, patch: { enabled: !task.enabled } })))}
-            {opBtn('🗑 删除', () => void act(() => call('tasks/remove', { id: task.id }), `确认删除任务「${task.name}」？其运行记录与报告一并删除，不可恢复。`), true)}
+            {opBtn('run', live !== null ? '● 运行中' : '▶ 立即运行', '提交中…',
+              () => void act('run', async () => {
+                await call('tasks/runNow', { id: task.id });
+                // 乐观点亮：不等 2s 轮询，松手即锁 + 即刻出 thinking 条；ref 同步置位，
+                // 否则 run 秒完时轮询判不出"从有到无"，报告不会自动刷出来
+                liveRef.current = true;
+                setLive({ n: 1, since: Date.now() });
+              }), false, live !== null)}
+            {opBtn('toggle', task.enabled ? '⏸ 暂停' : '▶ 启用', '处理中…',
+              () => void act('toggle', () => call('tasks/update', { id: task.id, patch: { enabled: !task.enabled } })))}
+            {opBtn('del', '🗑 删除', '删除中…',
+              () => void act('del', () => call('tasks/remove', { id: task.id }), `确认删除任务「${task.name}」？其运行记录与报告一并删除，不可恢复。`), true)}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--dsw-alias-border-l1)', margin: '10px 0 20px' }}>
           {pt('report', '报告')}{pt('history', '历史')}{pt('config', '配置')}
         </div>
-        {tab === 'report' ? <Panel task={task} call={call} /> : tab === 'history' ? <TaskHistory task={task} /> : <TaskConfig task={task} />}
+        {live !== null && <RunningBar n={live.n} since={live.since} />}
+        {tab === 'report' && hs.selectedRunId !== '' && (
+          <div style={{ ...S.dim, fontSize: 13, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>正在看历史某次运行的报告</span>
+            <span onClick={() => setState({ selectedRunId: '' })}
+              style={{ cursor: 'pointer', color: 'var(--dsw-alias-label-brand, #4176e6)' }}>回到最新 →</span>
+          </div>
+        )}
+        {tab === 'report'
+          ? <Panel task={task} runId={hs.selectedRunId} call={call} />
+          : tab === 'history'
+            ? <TaskHistory task={task} onOpenReport={(runId) => { setState({ selectedRunId: runId }); setTab('report'); }} />
+            : <TaskConfig task={task} />}
       </div>
     );
   }
