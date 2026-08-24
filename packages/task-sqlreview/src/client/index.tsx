@@ -51,7 +51,11 @@ function DigLink({ text }: { text: string }) {
 }
 
 /** 违规分布环图（中心=总数） */
-function Donut({ counts }: { counts: any }) {
+/**
+ * 违规分布环图。totals（工具新增）在时补一行来源拆分——环图总数是「规则违规 + 计划发现」
+ * 两类之和，只列规则那 20 条会让人以为数字对不上（2026-08-24 user 报障）。
+ */
+function Donut({ counts, totals }: { counts: any; totals?: any }) {
   const parts = [
     { k: 'critical', c: T.sev.critical.c }, { k: 'warn', c: T.sev.warn.c }, { k: 'notice', c: T.sev.notice.c },
   ].map((p) => ({ ...p, n: Number(counts?.[p.k] ?? 0) }));
@@ -71,12 +75,17 @@ function Donut({ counts }: { counts: any }) {
           }) : null}
         </g>
         <text x={55} y={52} textAnchor="middle" fontSize={20} fontWeight={600} fill={T.ink}>{total}</text>
-        <text x={55} y={68} textAnchor="middle" fontSize={10} fill={T.dim}>条违规</text>
+        <text x={55} y={68} textAnchor="middle" fontSize={10} fill={T.dim}>条问题</text>
       </svg>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13.5, color: T.sub }}>
         {parts.map((p) => (
           <span key={p.k}><i style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 3, marginRight: 6, background: p.c, fontStyle: 'normal' }} />{sev(p.k).cn} {p.n}{total > 0 ? ` · ${Math.round((p.n / total) * 100)}%` : ''}</span>
         ))}
+        {totals !== undefined && Number(totals.plan) >= 0 && (
+          <span style={{ fontSize: 12, color: T.dim, marginTop: 2 }}>
+            = 规则违规 {Number(totals.rule)} 条 + 执行计划发现 {Number(totals.plan)} 条
+          </span>
+        )}
       </div>
     </div>
   );
@@ -248,9 +257,11 @@ function RunStrip({ runs, selId, onSel }: { runs: any[]; selId: string; onSel: (
   );
 }
 
-export function SqlReviewPanel({ task, call }: { task: any; call: (endpoint: string, payload?: unknown) => Promise<any> }) {
+export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: string; call: (endpoint: string, payload?: unknown) => Promise<any> }) {
   const [runs, setRuns] = useState<any[]>([]);
   const [selId, setSelId] = useState('');
+  // 外部指定（「历史」tab 的「看报告 →」）优先于本面板底部趋势条的点选
+  useEffect(() => { setSelId(typeof runId === 'string' ? runId : ''); }, [runId]);
   const [error, setError] = useState('');
   useEffect(() => {
     let alive = true;
@@ -292,11 +303,11 @@ export function SqlReviewPanel({ task, call }: { task: any; call: (endpoint: str
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
-        <div style={{ ...card, minWidth: 260 }}><Donut counts={counts} /></div>
+        <div style={{ ...card, minWidth: 260 }}><Donut counts={counts} totals={data.det?.totals} /></div>
         <div style={{ ...card, flex: 1, minWidth: 260, display: 'flex' }}><RuleBars findings={(data.ruleFindings ?? []) as any[]} /></div>
       </div>
 
-      <H2>规范审核 <Hint>确定性规则 · 级别不可被解读下调</Hint></H2>
+      <H2>规范审核 <Hint>确定性规则 · 级别不可被解读下调 · 共 {(data.ruleFindings ?? []).length} 条</Hint></H2>
       <RuleTable findings={data.ruleFindings ?? []} />
 
       <H2>SQL 优化 <Hint>本组 {items.length} 条 · 原计划标注 → 优化 → cost 对比</Hint></H2>
@@ -338,12 +349,19 @@ export function SqlReviewPanel({ task, call }: { task: any; call: (endpoint: str
   );
 }
 
+/**
+ * 注册面板：与 ui-harness 的加载顺序无关。桥已在就直接注册，否则把自己排进 __pending，
+ * 由后到的 ui-harness 兑现。原先是 250ms×40 轮询，超 10 秒永久放弃——两者并发加载，
+ * 慢机器上必然掉回 DefaultTaskPanel（2026-08-24 user 报障：任务页只剩一张 4 列表，进不去大盘）。
+ */
+function registerPanel(key: string, Comp: any): void {
+  if (typeof window === 'undefined') return;
+  const w = window as any;
+  if (w.__opendbHarness__?.registerTaskPanel !== undefined) { w.__opendbHarness__.registerTaskPanel(key, Comp); return; }
+  w.__opendbHarness__ = w.__opendbHarness__ ?? {};
+  w.__opendbHarness__.__pending = [...(w.__opendbHarness__.__pending ?? []), { kind: 'task', key, comp: Comp }];
+}
+
 export function apply(_ctx: any): void {
-  let tries = 0;
-  const timer = setInterval(() => {
-    tries += 1;
-    const bridge = (window as any).__opendbHarness__;
-    if (bridge?.registerTaskPanel !== undefined) { bridge.registerTaskPanel('sqlreview', SqlReviewPanel); clearInterval(timer); }
-    else if (tries > 40) clearInterval(timer);
-  }, 250);
+  registerPanel('sqlreview', SqlReviewPanel);
 }

@@ -120,13 +120,17 @@ export function apply(ctx: any): void {
     return r.value;
   };
   const Panel = makePanel(call);
-  let tries = 0;
-  const timer = setInterval(() => {
-    tries += 1;
-    const bridge = (window as any).__opendbHarness__;
-    if (bridge?.registerNodePanel) {
-      bridge.registerNodePanel(Panel);
-      clearInterval(timer);
-    } else if (tries > 40) clearInterval(timer);
-  }, 250);
+  registerNodePanelSafe(Panel);
+}
+
+/**
+ * 注册节点面板：与 ui-harness 的加载顺序无关。桥已在就直接注册，否则排进 __pending，
+ * 由后到的 ui-harness 兑现。原先 250ms×40 轮询超 10 秒永久放弃——并发加载下会丢面板。
+ */
+function registerNodePanelSafe(Comp: any): void {
+  if (typeof window === 'undefined') return;
+  const w = window as any;
+  if (w.__opendbHarness__?.registerNodePanel !== undefined) { w.__opendbHarness__.registerNodePanel(Comp); return; }
+  w.__opendbHarness__ = w.__opendbHarness__ ?? {};
+  w.__opendbHarness__.__pending = [...(w.__opendbHarness__.__pending ?? []), { kind: 'node', comp: Comp }];
 }

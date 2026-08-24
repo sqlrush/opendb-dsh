@@ -132,13 +132,18 @@ export function apply(ctx: any): void {
     return r.value;
   };
   const Panel = makePanel(call);
-  let tries = 0;
-  const timer = setInterval(() => {
-    tries += 1;
-    const bridge = (window as any).__opendbHarness__;
-    if (bridge?.registerTaskPanel) {
-      bridge.registerTaskPanel('monitor-dashboard', Panel);
-      clearInterval(timer);
-    } else if (tries > 40) clearInterval(timer);
-  }, 250);
+  registerPanel('monitor-dashboard', Panel);
+}
+
+/**
+ * 注册面板：与 ui-harness 的加载顺序无关。桥已在就直接注册，否则把自己排进 __pending，
+ * 由后到的 ui-harness 兑现。原先是 250ms×40 轮询，超 10 秒永久放弃——两者并发加载，
+ * 慢机器上必然掉回 DefaultTaskPanel（2026-08-24 user 报障：任务页只剩一张 4 列表，进不去大盘）。
+ */
+function registerPanel(key: string, Comp: any): void {
+  if (typeof window === 'undefined') return;
+  const w = window as any;
+  if (w.__opendbHarness__?.registerTaskPanel !== undefined) { w.__opendbHarness__.registerTaskPanel(key, Comp); return; }
+  w.__opendbHarness__ = w.__opendbHarness__ ?? {};
+  w.__opendbHarness__.__pending = [...(w.__opendbHarness__.__pending ?? []), { kind: 'task', key, comp: Comp }];
 }
