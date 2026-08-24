@@ -13,7 +13,7 @@
   "files": ["lib"],
   "dsh": { "client": { "platform": "web" } },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node build-client.mjs",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node build-client.mjs",
     "test": "node --experimental-strip-types --test --test-concurrency=1 --test-timeout=60000 test/*.test.ts"
   },
   "peerDependencies": {

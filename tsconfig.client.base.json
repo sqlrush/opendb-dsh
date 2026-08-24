@@ -1,0 +1,19 @@
+{
+  "//": "client 半边（浏览器）的类型检查基线。只查不产出——产物仍由各包的 build-client.mjs（esbuild）打包。",
+  "//2": "背景：src/client 长期被各包 tsconfig 的 exclude 排除，esbuild 又不做类型检查，形成盲区。",
+  "//3": "2026-08-24 一天内两个线上 bug 都藏在这里：TasksPage 里 hs 未定义（整页 ErrorBoundary 兜底），",
+  "//4": "以及面板注册的加载顺序竞争。user 拍板补上这道检查。",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "types": [],
+    "noEmit": true
+  }
+}
