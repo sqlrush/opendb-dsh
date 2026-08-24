@@ -51,7 +51,13 @@ const SKILLS: { name: string; description: string; content: string; source: stri
   {
     source: 'runtime',
     name: 'og-capacity-review',
-    description: '容量与连接水位评估 SOP：连接使用率、库大小趋势、会话构成的健康判读',
+    // 只收窄适用边界，不动 SOP 步骤/规则/阈值（借鉴成果不大改）。
+    // 2026-08-24 报障：user 问「og5 是否过载」，模型据此 SOP 只采了连接水位/会话构成，
+    // 判「未过载」却漏掉 WALFlushWait 占真实等待 58%、TPS 3621 这些性能事实——
+    // 容量看「还能装多少」，过载看「现在跑得动吗」，是两个问题。
+    description: '容量与连接水位评估 SOP：连接使用率、库大小趋势、会话构成的健康判读。'
+      + '仅限容量/水位类问题；「是否过载/卡顿/变慢/瓶颈在哪」属性能诊断，'
+      + '须用 health_collect 拿全维度（含主机负载、真实等待事件分布、LWLock 争用），不要只看连接水位下结论。',
     content: [
       '# 容量与连接水位评估（openGauss）',
       '',

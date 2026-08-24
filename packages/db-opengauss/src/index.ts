@@ -24,6 +24,32 @@ export const OPENGAUSS_DIALECT: Dialect = {
     ...BASELINE_METRICS,
     { key: 'instance_time', title: '实例时间分布', sql: "SELECT 'db.instance_time.' || lower(stat_name) AS metric, value::float8 AS value FROM dbe_perf.instance_time" },
     { key: 'wait_total', title: '等待事件总量', sql: "SELECT 'db.wait_events_total' AS metric, coalesce(sum(total_wait_time), 0)::float8 AS value FROM dbe_perf.wait_events" },
+    // ── 2026-08-24 user 报障补齐：og5 实测 TPS 3621 / WALFlushWait 55%，而模型判「未过载」，
+    //    因为这些维度当时一个都没采。以下四组把「过载」判据的原料补全。 ──
+    // OS 层（dbe_perf.os_runtime）：此前完全空白——连 CPU 使用率都没有，光看 CPU 就该判出来的场景判不出来。
+    // BUSY/IDLE/IOWAIT 是累计 jiffies，入库后由消费方做差分得瞬时率；LOAD 本身即瞬时值。
+    {
+      key: 'os_runtime',
+      title: 'OS 运行时（CPU/负载/内存）',
+      sql: "SELECT 'db.os.' || lower(name) AS metric, value::float8 AS value FROM dbe_perf.os_runtime "
+        + "WHERE name IN ('BUSY_TIME','IDLE_TIME','IOWAIT_TIME','USER_TIME','SYS_TIME','LOAD',"
+        + "'NUM_CPUS','PHYSICAL_MEMORY_BYTES','AVG_BUSY_TIME','AVG_IDLE_TIME','AVG_IOWAIT_TIME')",
+    },
+    // 等待事件按类：此前只存 wait_events_total 一个总数，历史趋势里看不出 WALFlushWait 的占比变化。
+    // 同样排除 STATUS（非等待，且 wait cmd 空闲占 99.94%），口径与 health 的 WAIT_EVENTS_REAL 一致。
+    {
+      key: 'wait_by_type',
+      title: '等待事件按类',
+      sql: "SELECT 'db.wait_by_type.' || lower(type) AS metric, sum(total_wait_time)::float8 AS value "
+        + "FROM dbe_perf.wait_events WHERE total_wait_time > 0 AND upper(type) <> 'STATUS' GROUP BY type",
+    },
+    // QPS 原料：statement 的累计调用数与耗时，差分即得 QPS 与平均延迟。
+    {
+      key: 'stmt_totals',
+      title: 'SQL 调用累计',
+      sql: "SELECT 'db.stmt_calls' AS metric, coalesce(sum(n_calls), 0)::float8 AS value FROM dbe_perf.statement "
+        + "UNION ALL SELECT 'db.stmt_elapse_us', coalesce(sum(total_elapse_time), 0)::float8 FROM dbe_perf.statement",
+    },
   ],
   dictionary: BASELINE_DICTIONARY,
 };

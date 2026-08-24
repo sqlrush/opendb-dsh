@@ -32,11 +32,16 @@ test('buildPrompt 写明锚定纪律与 data 结构', async () => {
   assert.match(prompt, /data 结构/);
 });
 
-test('worstOf 取最差；12 个采集器齐备', () => {
+test('worstOf 取最差；13 个采集器齐备', () => {
   assert.equal(worstOf(['ok', 'notice', 'critical', 'warn']), 'critical');
   assert.equal(worstOf([]), 'ok');
-  assert.equal(COLLECTORS.length, 12);
+  // 13 = 原 12 维 + 2026-08-24 新增的主机资源（os）维度
+  assert.equal(COLLECTORS.length, 13);
+  assert.ok(COLLECTORS.some((c) => c.key === 'os'));
   assert.ok(THRESHOLDS.connRatio.critical > THRESHOLDS.connRatio.warn);
+  // 主机负载阈值必须单调：notice < warn < critical
+  assert.ok(THRESHOLDS.loadPerCore.notice < THRESHOLDS.loadPerCore.warn);
+  assert.ok(THRESHOLDS.loadPerCore.warn < THRESHOLDS.loadPerCore.critical);
 });
 
 function nodeHealth(node: string, partial: Partial<NodeHealth>): NodeHealth {

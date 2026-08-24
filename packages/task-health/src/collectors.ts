@@ -48,7 +48,24 @@ export const THRESHOLDS = {
   waitTopShare: { notice: 0.4 },
   lwlockShare: { notice: 0.2, warn: 0.4 },
   activeSessions: { notice: 50 },
+  // 2026-08-24 新增（主机资源维度）。建议值，待 user 确认后定稿：
+  // loadPerCore = LOAD / NUM_CPUS，业界通用的 CPU 饱和判据——1.0 即所有核都排满队。
+  // 0.7 起提示（还有余量但已偏高）、1.0 饱和、2.0 队列堆积一倍即严重。
+  loadPerCore: { notice: 0.7, warn: 1.0, critical: 2.0 },
+  // IOWait 占 CPU 忙时的比例：0.2 起提示，0.4 以上基本可判定磁盘是瓶颈。
+  iowaitShare: { notice: 0.2, warn: 0.4 },
 } as const;
+
+/**
+ * 「真实等待」口径：dbe_perf.wait_events 里的 STATUS 类不是等待事件，而是会话当前在做什么
+ * （analyze / Sort / vacuum / flush data / wait cmd）。其中 wait cmd＝等客户端发命令，属于空闲，
+ * 在累计值里独占 99.94%——把它算进分母，等待类判据就全被稀释成 0（2026-08-24 og5 实证：
+ * lwlockShare 0.03% vs 排除后 63%）。等待分析只看 LWLOCK_EVENT / LOCK_EVENT / IO_EVENT 等。
+ * 排除后 Top1 = WALFlushWait 57.9%，与 gstop 实测的 55.5% 吻合（残差来自累计值 vs 采样窗口）。
+ */
+const WAIT_EVENTS_REAL =
+  "SELECT type, event, wait, total_wait_time FROM dbe_perf.wait_events "
+  + "WHERE total_wait_time > 0 AND upper(type) <> 'STATUS'";
 
 const num = (v: unknown): number => (v === null || v === undefined ? 0 : Number(v));
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
@@ -87,7 +104,11 @@ async function dimOverview(q: QueryFn): Promise<DimResult> {
 // ── 2 等待事件（dbe_perf.wait_events；PG 无此视图则降级）───────────────────
 async function dimWaits(q: QueryFn): Promise<DimResult> {
   const dim = 'waits'; const title = '等待事件';
-  const rows = (await q('SELECT type, event, wait, total_wait_time FROM dbe_perf.wait_events WHERE total_wait_time > 0 ORDER BY total_wait_time DESC LIMIT 8', 8)).rows;
+  // 排除 STATUS 类：那不是等待事件，是「当前在做什么」（analyze/Sort/vacuum/flush data），
+  // 其中 wait cmd（等客户端发命令＝空闲）在累计值里独占 99.94%，会把真实等待彻底淹没。
+  // 2026-08-24 实证：不排除时 Top1 永远是 wait cmd 占 100%，这条告警长期毫无意义；
+  // 排除后 og5 的 Top1 是 WALFlushWait 57.9%，与 user 的 gstop 实测 55.5% 吻合。
+  const rows = (await q(`${WAIT_EVENTS_REAL} ORDER BY total_wait_time DESC LIMIT 8`, 8)).rows;
   const findings: DetFinding[] = [];
   const total = rows.reduce((s, r) => s + num(r.total_wait_time), 0);
   if (rows.length > 0 && total > 0) {
@@ -156,7 +177,9 @@ async function dimBloat(q: QueryFn): Promise<DimResult> {
 // ── 6 LWLock（dbe_perf.wait_events 里 LWLock 类占比）───────────────────────
 async function dimLwlock(q: QueryFn): Promise<DimResult> {
   const dim = 'lwlock'; const title = 'LWLock';
-  const rows = (await q("SELECT type, sum(total_wait_time)::float8 AS w FROM dbe_perf.wait_events GROUP BY type", 20)).rows;
+  // 同 dimWaits：分母必须是「真实等待」。含 STATUS 时 og5 实测 lwlockShare=0.03%，
+  // 永远够不到 notice 线 0.2，这个维度等于没有；排除后是 63%，直接命中 warn。
+  const rows = (await q(`SELECT type, sum(total_wait_time)::float8 AS w FROM (${WAIT_EVENTS_REAL}) t GROUP BY type`, 20)).rows;
   const total = rows.reduce((s, r) => s + num(r.w), 0);
   const lw = rows.filter((r) => str(r.type).toUpperCase().includes('LWLOCK')).reduce((s, r) => s + num(r.w), 0);
   const findings: DetFinding[] = [];
@@ -274,4 +297,59 @@ export const COLLECTORS: { key: string; title: string; run: (q: QueryFn) => Prom
   { key: 'replication', title: '主备复制', run: dimReplication },
   { key: 'objects', title: '对象与索引', run: dimObjects },
   { key: 'concurrency', title: '事务并发', run: dimConcurrency },
+  { key: 'os', title: '主机资源', run: dimOs },
 ];
+
+/**
+ * 主机资源（dbe_perf.os_runtime）——2026-08-24 新增。
+ *
+ * user 报障：og5 跑着 TPS 3621 的压测，问「是否过载」却被判「未过载」，且连 CPU 都没看。
+ * 查下来采集层根本没有任何 OS 层指标，模型无从判起。
+ *
+ * 判据用 **load per core**（LOAD / NUM_CPUS）而不是 CPU 使用率：BUSY/IDLE 是自实例启动
+ * 以来的累计 jiffies，单次采集只能算出全时段平均（og5 实测 6.75%），瞬时使用率必须两次
+ * 采样做差分——那是 metrics 侧的事（db.os.* 已入库，趋势图与 metrics_recent 可消费）。
+ * LOAD 本身就是瞬时值，单次采集即可判读，是这里唯一可靠的即时过载信号。
+ */
+async function dimOs(q: QueryFn): Promise<DimResult> {
+  const dim = 'os'; const title = '主机资源';
+  const findings: DetFinding[] = [];
+  let rows: Record<string, unknown>[];
+  try {
+    rows = (await q("SELECT name, value FROM dbe_perf.os_runtime WHERE name IN ('LOAD','NUM_CPUS','BUSY_TIME','IDLE_TIME','IOWAIT_TIME','PHYSICAL_MEMORY_BYTES')", 10)).rows;
+  } catch (cause) {
+    // 非 openGauss 或无 dbe_perf 读权：降级而不是让整份体检失败
+    return { dim, title, ok: false, findings, evidence: { note: `os_runtime 不可读：${String((cause as Error).message ?? cause).slice(0, 80)}` } };
+  }
+  const pick = (n: string): number => num(rows.find((r) => str(r.name).toUpperCase() === n)?.value);
+  const load = pick('LOAD');
+  const cpus = pick('NUM_CPUS');
+  const busy = pick('BUSY_TIME');
+  const idle = pick('IDLE_TIME');
+  const iowait = pick('IOWAIT_TIME');
+  const perCore = cpus > 0 ? load / cpus : 0;
+  if (cpus > 0 && perCore >= THRESHOLDS.loadPerCore.critical) {
+    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'critical', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${THRESHOLDS.loadPerCore.critical}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}，已严重过载`, evidence: `load=${load} cpus=${cpus}` }));
+  } else if (cpus > 0 && perCore >= THRESHOLDS.loadPerCore.warn) {
+    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'warn', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${THRESHOLDS.loadPerCore.warn}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}，CPU 已饱和`, evidence: `load=${load} cpus=${cpus}` }));
+  } else if (cpus > 0 && perCore >= THRESHOLDS.loadPerCore.notice) {
+    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'notice', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${THRESHOLDS.loadPerCore.notice}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}`, evidence: `load=${load} cpus=${cpus}` }));
+  }
+  // IOWait 占 busy 的比例：累计值之比，反映这台机器长期是不是被 IO 拖着
+  const ioShare = busy > 0 ? iowait / busy : 0;
+  if (ioShare >= THRESHOLDS.iowaitShare.warn) {
+    findings.push(finding({ dim, code: 'OS_IOWAIT_HIGH', level: 'warn', metric: 'iowait_share', value: Math.round(ioShare * 100) / 100, threshold: `>=${THRESHOLDS.iowaitShare.warn}`, detail: `IOWait 占 CPU 忙时 ${(ioShare * 100).toFixed(0)}%，磁盘可能是瓶颈`, evidence: `iowait=${iowait} busy=${busy}` }));
+  } else if (ioShare >= THRESHOLDS.iowaitShare.notice) {
+    findings.push(finding({ dim, code: 'OS_IOWAIT_HIGH', level: 'notice', metric: 'iowait_share', value: Math.round(ioShare * 100) / 100, threshold: `>=${THRESHOLDS.iowaitShare.notice}`, detail: `IOWait 占 CPU 忙时 ${(ioShare * 100).toFixed(0)}%`, evidence: `iowait=${iowait} busy=${busy}` }));
+  }
+  return {
+    dim, title, ok: true, findings,
+    evidence: {
+      load, cpus, loadPerCore: Math.round(perCore * 100) / 100,
+      // 累计口径，仅作参考——瞬时使用率看 db.os.* 的时间序列差分
+      cpuUsedRatioCumulative: busy + idle > 0 ? Math.round((busy / (busy + idle)) * 1000) / 1000 : 0,
+      iowaitShare: Math.round(ioShare * 1000) / 1000,
+      memoryBytes: pick('PHYSICAL_MEMORY_BYTES'),
+    },
+  };
+}
