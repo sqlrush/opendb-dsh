@@ -527,3 +527,32 @@ build-image 在 `FROM node:22-bookworm-slim` 解析 manifest 时 Bad Gateway，�
 也没有该镜像（buildx 缓存不算）。**绕法**：`docker pull --platform linux/arm64 docker.m.daocloud.io/library/node:22-bookworm-slim`
 → `docker tag … node:22-bookworm-slim`，buildx（docker driver）优先用本地副本，不再联网解析。
 注意 macOS 没有 `timeout` 命令（脚本里用了会静默跳过）。
+
+## 中毒 Runtime pod：用户消息一半凭空消失（2026-08-25，user 报障）
+
+**现象**：问「最近 5 分钟」正常，连问两次「最近 15 分钟」提问消失、无回应。库里这两条连 user/message 都没有。
+
+**取证链**：runtime 日志 `run failed … error: deadlock detected` ×2，都在 pod c75n7；dsh PG 与 og5 那一分钟都
+**没有**任何死锁记录；认领→失败只隔 **9ms**（PG 死锁检测至少等 deadlock_timeout=1s）→ 不是当场死锁，是缓存的
+rejected Promise。c75n7 启动于 04:37:14 UTC，PG 日志 04:37:41 有一条真死锁：迁移 `002_tenant.sql` 的
+`ALTER TABLE … IF NOT EXISTS`（AccessExclusiveLock）撞上另一台的 `claimNext` `FOR UPDATE`，牺牲方是 c75n7 上
+某个服务的 `runMigrations` → 该服务 `this.ready` 永久 rejected（构造器里 `this.ready.catch(() => {})` 吞掉）→
+此后 c75n7 每次 `agents.resume` 瞬间抛同一个错。c75n7 自启动 0 次成功、3 次失败；另一台 3 成功 0 失败。
+两台 SKIP LOCKED 随机认领 → 用户消息一半消失。readiness 200、pod Running，**从外面完全看不出来**。
+
+**三层根治**：
+1. `runMigrations`：可重试错误（55P03 锁超时 / 40P01 死锁牺牲 / 40001 串行化）退避重试；新增
+   `opendb_schema_migrations` 台账，只跑未应用过的文件——稳态启动一条 DDL 都不跑，锁风暴从源头消失。
+2. `runtime-worker`：模块级 `migrationFailures()` 计数，>0 则**拒绝认领**（认领必失败还吞消息）且健康端口回 503；
+   失败日志改打 code/detail/where/stack（此前只有 `String(err)`，六个字查了两小时）。
+3. Helm：Runtime 加 livenessProbe（readiness 摘端点拦不住自拉式认领），503 连续 3 次由 k8s 重启自愈。
+
+**即时处置**：`kubectl delete pod c75n7` 重建（迁移重跑即恢复）。队列里 631/632 两行（用户的两个提问）
+已 admitted 不会重投，属死信；用户后来的消息一切正常。
+
+**修复首次上线自己踩的坑**：台账表的 `CREATE TABLE IF NOT EXISTS` 我放在了 advisory 锁外——IF NOT EXISTS
+挡不住两个进程**同时**建表，第二个撞 `pg_type_typname_nsp_index` duplicate key（23505）。collector 的三个
+PG 服务同时启动全撞上，`registry.listNodes` 随之失败、**指标采集停摆**（两台 Runtime 恰好没撞）。
+修法：建表也放进 advisory 事务锁内，且该步把 23505 视为可重试（重试时表已在即成功）。
+这次也验证了新防线：失败被 `[migrations] FAILED` 显式打出来（不再被 `.catch(() => {})` 静默吞掉），
+第一时间就看见了。
