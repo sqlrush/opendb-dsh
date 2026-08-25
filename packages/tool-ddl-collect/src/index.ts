@@ -8,11 +8,11 @@ import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { pickNode, clampText } from '@opendb-dsh/tool-db';
-import { dictToTimeline, auditToTimeline, mergeTimeline, scanDdlRules, worstOf, timelineStats } from '@opendb-dsh/task-ddl';
+import { dictToTimeline, auditToTimeline, mergeTimeline, scanDdlRules, worstOf, timelineStats, withDdlThresholds } from '@opendb-dsh/task-ddl';
 import type { TimelineEntry, DdlLevel } from '@opendb-dsh/task-ddl';
 
 export const name = 'tool-ddl-collect';
-export const inject = ['opendbDb', 'opendbRegistry', 'opendbDictionary'];
+export const inject = ['opendbDb', 'opendbRegistry', 'opendbDictionary', 'opendbThresholds'];
 export const Config = z.object({
   maxContentBytes: z.number().step(1).min(4096).default(30000),
   maxEntries: z.number().step(1).min(20).default(120),
@@ -20,7 +20,7 @@ export const Config = z.object({
 
 const LEVEL_CN: Record<string, string> = { ok: '正常', notice: '关注', warn: '告警', critical: '严重' };
 
-interface Deps { db: any; registry: any; dictionary: any; maxContentBytes: number; maxEntries: number }
+interface Deps { db: any; registry: any; dictionary: any; thresholds: any; maxContentBytes: number; maxEntries: number }
 
 function defineDdlCollectTool(deps: Deps) {
   return defineTool({
@@ -38,12 +38,14 @@ function defineDdlCollectTool(deps: Deps) {
       const { node } = await pickNode(deps.registry, exec, typeof args.node === 'string' && args.node !== '' ? args.node : undefined);
       const hours = Math.max(1, Math.min(Number(args.hours ?? 168), 24 * 30));
       const notes: string[] = [];
+      // 运行时阈值：平台阈值服务的覆盖值；服务不可读则退回代码默认值
+      const T = withDdlThresholds(await deps.thresholds.resolve('ddl').catch(() => ({})));
 
       // ① 平台字典变更（主干）
       let dictEntries: TimelineEntry[] = [];
       try {
         const rows = await deps.dictionary.changes({ nodeId: node.id, sinceHours: hours, limit: 500 });
-        dictEntries = dictToTimeline(rows.map((r: any) => ({ time: r.time, kind: r.kind, sch: r.sch, name: r.name, change: r.change })));
+        dictEntries = dictToTimeline(rows.map((r: any) => ({ time: r.time, kind: r.kind, sch: r.sch, name: r.name, change: r.change })), T.floodFoldCount);
       } catch (cause) { notes.push(`字典变更源降级：${String((cause as Error).message ?? cause).slice(0, 120)}`); }
 
       // ② 节点审计（用户归因）
@@ -74,8 +76,8 @@ function defineDdlCollectTool(deps: Deps) {
       } catch { /* dbe_perf 缺失已有其他任务覆盖，不重复记 note */ }
 
       // 合并 + 规则 + 统计
-      const timeline = mergeTimeline(dictEntries, auditEntries).slice(0, deps.maxEntries);
-      const ruleFindings = scanDdlRules(timeline);
+      const timeline = mergeTimeline(dictEntries, auditEntries, T.mergeWindowMinutes * 60 * 1000).slice(0, deps.maxEntries);
+      const ruleFindings = scanDdlRules(timeline, 480, T);
       const stats = timelineStats(timeline);
       const counts: Record<DdlLevel, number> = { ok: 0, notice: 0, warn: 0, critical: 0 };
       for (const f of ruleFindings) counts[f.level] += 1;
@@ -114,6 +116,7 @@ export function apply(ctx: Context, config: { maxContentBytes?: number; maxEntri
       db: anyCtx.opendbDb,
       registry: anyCtx.opendbRegistry,
       dictionary: anyCtx.opendbDictionary,
+      thresholds: anyCtx.opendbThresholds,
       maxContentBytes: config.maxContentBytes ?? 30000,
       maxEntries: config.maxEntries ?? 120,
     };

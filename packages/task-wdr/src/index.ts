@@ -7,15 +7,17 @@
 import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import type { TaskType, TaskRecord, TaskBuildContext } from '@opendb-dsh/tasks';
+import { WDR_THRESHOLD_SPECS } from './wdr.ts';
 
 export {
   deltaInstanceTime, dbTimeClasses, deltaTopSql, deltaStatDatabase, deltaWaits,
   judgeWindow, worstOf, attributeSql, LEVEL_ORDER, WDR_THRESHOLDS,
+  WDR_THRESHOLD_SPECS, withWdrThresholds,
 } from './wdr.ts';
-export type { WdrFinding, WdrLevel, TopSqlItem, DbStatDelta } from './wdr.ts';
+export type { WdrFinding, WdrLevel, TopSqlItem, DbStatDelta, WdrThresholds } from './wdr.ts';
 
 export const name = 'task-wdr';
-export const inject = ['opendbTasks'];
+export const inject = ['opendbTasks', 'opendbThresholds'];
 
 interface WdrConfig { node: string; beginSnap: number; endSnap: number; topN: number; focus: string }
 
@@ -103,4 +105,5 @@ export const WDR_TASK_TYPE: TaskType<WdrConfig> = {
 export function apply(ctx: Context): void {
   const anyCtx = ctx as any;
   ctx.effect(() => anyCtx.opendbTasks.register(WDR_TASK_TYPE), 'task-wdr.type');
+  ctx.effect(() => anyCtx.opendbThresholds.register(WDR_THRESHOLD_SPECS), 'task-wdr.thresholds');
 }

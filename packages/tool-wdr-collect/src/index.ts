@@ -13,9 +13,10 @@ import {
   judgeWindow, worstOf,
 } from '@opendb-dsh/task-wdr';
 import type { WdrFinding, WdrLevel } from '@opendb-dsh/task-wdr';
+import { withWdrThresholds } from '@opendb-dsh/task-wdr';
 
 export const name = 'tool-wdr-collect';
-export const inject = ['opendbDb', 'opendbRegistry'];
+export const inject = ['opendbDb', 'opendbRegistry', 'opendbThresholds'];
 export const Config = z.object({
   maxContentBytes: z.number().step(1).min(4096).default(30000),
 });
@@ -29,7 +30,7 @@ const iso = (v: unknown): string => {
   return Number.isNaN(d.getTime()) ? str(v) : d.toISOString();
 };
 
-interface Deps { db: any; registry: any; maxContentBytes: number }
+interface Deps { db: any; registry: any; thresholds: any; maxContentBytes: number }
 
 function defineWdrCollectTool(deps: Deps) {
   return defineTool({
@@ -122,7 +123,9 @@ FROM snapshot.snap_summary_statement WHERE ${pair} ORDER BY snap_total_elapse_ti
       } catch (cause) { notes.push(`Checkpoint 降级：${String((cause as Error).message ?? cause).slice(0, 120)}`); }
 
       // 6) 确定性判定
-      const findings: WdrFinding[] = judgeWindow({ windowMinutes: minutes, dbTimeUs: dbTime.total, dbStats, ckpt, topSql });
+      // 运行时阈值：平台阈值服务的覆盖值；服务不可读则退回代码默认值
+      const T = withWdrThresholds(await deps.thresholds.resolve('wdr').catch(() => ({})));
+      const findings: WdrFinding[] = judgeWindow({ windowMinutes: minutes, dbTimeUs: dbTime.total, dbStats, ckpt, topSql }, T);
       const counts: Record<WdrLevel, number> = { ok: 0, notice: 0, warn: 0, critical: 0 };
       for (const f of findings) counts[f.level] += 1;
       const worst = worstOf(findings);
@@ -165,6 +168,7 @@ export function apply(ctx: Context, config: { maxContentBytes?: number } = {}): 
     const deps: Deps = {
       db: anyCtx.opendbDb,
       registry: anyCtx.opendbRegistry,
+      thresholds: anyCtx.opendbThresholds,
       maxContentBytes: config.maxContentBytes ?? 30000,
     };
     c.effect(() => c.tools.register(defineWdrCollectTool(deps)), 'tool-wdr-collect.wdr_collect');

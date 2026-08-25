@@ -270,6 +270,61 @@ function ReportCard({ block }: { block: any }) {
   );
 }
 
+// ── 阈值清单卡（threshold_list：默认 vs 当前，被改过的置顶）────────────────────
+const PLUGIN_CN: Record<string, string> = { health: '健康检查', sqlreview: 'SQL 审核', wdr: 'WDR', ddl: 'DDL 追溯' };
+function ThresholdListCard({ block }: { block: any }) {
+  if (block?.kind !== 'tool-result') return <Running label="读取平台阈值" />;
+  const p = parsePayload(block);
+  if (p === undefined) return <Failed label="平台阈值" block={block} />;
+  const groups = (p.groups ?? []) as any[];
+  const changed = groups.flatMap((g) => (g.items ?? []).filter((i: any) => i.overridden).map((i: any) => ({ ...i, plugin: g.plugin })));
+  return (
+    <div style={shell}>
+      <Band level={changed.length > 0 ? 'notice' : 'ok'} title={`平台阈值 · ${Number(p.total ?? 0)} 个判据`} right={changed.length > 0 ? `${changed.length} 个已改动` : '全部为默认值'} />
+      <Body>
+        {changed.slice(0, 6).map((i: any) => (
+          <Row key={`${i.plugin}/${i.key}`} level="notice" code={`${PLUGIN_CN[i.plugin] ?? i.plugin} · ${i.key}`} text={i.label} right={`${i.defaultText} → ${i.currentText}`} />
+        ))}
+        {changed.length === 0 && groups.map((g) => (
+          <Row key={g.plugin} text={`${g.title} · ${(g.items ?? []).length} 个判据`} right="默认值" />
+        ))}
+        {groups.length === 0 && <Row text="没有被改过的阈值——全部为代码默认值" />}
+      </Body>
+      <Foot note="判定方向与阶梯由代码固定 · 只有数值可改" extra="完整大盘见任务页「阈值配置」" />
+    </div>
+  );
+}
+
+// ── 阈值修改/重置卡（threshold_set / threshold_reset：旧值 → 新值）─────────────
+function ThresholdChangeCard({ block }: { block: any }) {
+  const argsRaw = block?.kind === 'tool-result' ? block?.call?.argsRaw : block?.argsRaw;
+  let args: any;
+  try { args = JSON.parse(String(argsRaw ?? '{}')); } catch { args = {}; }
+  if (block?.kind !== 'tool-result') return <Running label={`修改阈值 ${String(args.plugin ?? '')}/${String(args.key ?? '')}`} />;
+  const p = parsePayload(block);
+  if (p === undefined) {
+    // 校验失败：工具返回的是纯文本原因，如实显示
+    return (
+      <div style={shell}>
+        <Band level="warn" title="阈值未修改" />
+        <Body><div style={{ fontSize: 13.5, color: T.ink, padding: '6px 0', whiteSpace: 'pre-wrap' }}>{resultText(block).replace(/^--.*\n?/, '')}</div></Body>
+        <Foot note="校验拒绝（超范围或破坏阶梯单调）· 未做任何修改" />
+      </div>
+    );
+  }
+  const isReset = p.action === 'reset';
+  return (
+    <div style={shell}>
+      <Band level={isReset ? 'ok' : 'notice'} title={`${isReset ? '阈值已重置' : '阈值已修改'} · ${PLUGIN_CN[p.plugin] ?? p.plugin}`} right={String(p.effective ?? '')} />
+      <Body>
+        <Row code={String(p.key ?? '')} text={String(p.label ?? '')} right={`${p.oldText} → ${p.newText}`} />
+        {p.reason ? <Row text={`原因：${String(p.reason)}`} /> : null}
+      </Body>
+      <Foot note={`影响规则 ${String(p.rule ?? '')} · 已记入变更历史`} extra="完整大盘见任务页「阈值配置」" />
+    </div>
+  );
+}
+
 const CARDS: [string, any][] = [
   ['health_collect', HealthCard],
   ['sqlreview_collect', SqlReviewCard],
@@ -277,6 +332,9 @@ const CARDS: [string, any][] = [
   ['ddl_collect', DdlCard],
   ['rules_catalog', RulesCard],
   ['task_report', ReportCard],
+  ['threshold_list', ThresholdListCard],
+  ['threshold_set', ThresholdChangeCard],
+  ['threshold_reset', ThresholdChangeCard],
 ];
 
 export function apply(ctx: any): void {

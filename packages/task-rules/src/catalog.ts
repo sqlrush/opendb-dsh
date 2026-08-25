@@ -140,6 +140,6 @@ export function catalogMarkdown(pluginFilter?: string): string {
     for (const n of g.notes ?? []) out.push(`> ${n}`);
     out.push(`> 实现：\`${g.source}\``, '');
   }
-  out.push('（阈值当前为代码内置；可配置化在排期——要调整先在会话里说，人工落码）');
+  out.push('（本目录的阈值数字是代码默认值；当前生效值与改动记录用 threshold_list 查看，会话里可直接改——见「阈值配置」插件）');
   return out.join('\n');
 }

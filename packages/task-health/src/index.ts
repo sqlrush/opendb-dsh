@@ -9,15 +9,17 @@
 import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import type { TaskType, TaskRecord, TaskBuildContext } from '@opendb-dsh/tasks';
+import { HEALTH_THRESHOLD_SPECS } from './collectors.ts';
 
 // 采集半边（collectNode/summarize/analyzeCluster + 12 维采集器）供 tool-health-collect 复用
 export { collectNode, summarize, analyzeCluster } from './collect.ts';
 export type { HealthCollectResult, NodeHealth, ClusterFinding } from './collect.ts';
-export { COLLECTORS, THRESHOLDS, worstOf, LEVEL_ORDER } from './collectors.ts';
+export { COLLECTORS, THRESHOLDS, HEALTH_THRESHOLD_SPECS, withThresholds, worstOf, LEVEL_ORDER } from './collectors.ts';
+export type { Thresholds } from './collectors.ts';
 export type { DetFinding, DetLevel, DimResult, QueryFn } from './collectors.ts';
 
 export const name = 'task-health';
-export const inject = ['opendbTasks'];
+export const inject = ['opendbTasks', 'opendbThresholds'];
 
 interface HealthConfig { nodes: string[]; node: string; dims: string[]; focus: string }
 
@@ -128,4 +130,6 @@ export function apply(ctx: Context): void {
   // 包内嵌套 inject 注册工具两轮 e2e 均静默不生效（多依赖数组版 + 单依赖链式版都不行）——
   // W4 事故复盘的结论再次验证：工具注册必须独立 function plugin + 顶层 inject 数据服务。
   ctx.effect(() => anyCtx.opendbTasks.register(HEALTH_TASK_TYPE), 'task-health.type');
+  // 向平台阈值服务登记本插件的阈值规格（默认值 = THRESHOLDS 常量）；采集时由 tool-health-collect 取覆盖值
+  ctx.effect(() => anyCtx.opendbThresholds.register(HEALTH_THRESHOLD_SPECS), 'task-health.thresholds');
 }

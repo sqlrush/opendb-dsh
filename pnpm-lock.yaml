@@ -901,6 +901,9 @@ importers:
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../thresholds-pg
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -923,6 +926,9 @@ importers:
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../thresholds-pg
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../tool-db
@@ -1070,6 +1076,31 @@ importers:
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../thresholds-pg
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
+  packages/task-thresholds:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/tasks':
+        specifier: workspace:*
+        version: link:../tasks
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -1092,6 +1123,9 @@ importers:
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../thresholds-pg
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -1146,6 +1180,22 @@ importers:
       pg:
         specifier: ^8.13.1
         version: 8.23.0
+
+  packages/thresholds-pg:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
 
   packages/tool-db:
     dependencies:
@@ -1342,6 +1392,22 @@ importers:
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-tools':
+        specifier: ^0.1.0-rc.6
+        version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
+
+  packages/tool-thresholds:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../thresholds-pg
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -1602,6 +1668,9 @@ importers:
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../../packages/task-sqlreview
+      '@opendb-dsh/task-thresholds':
+        specifier: workspace:*
+        version: link:../../packages/task-thresholds
       '@opendb-dsh/task-wdr':
         specifier: workspace:*
         version: link:../../packages/task-wdr
@@ -1611,6 +1680,9 @@ importers:
       '@opendb-dsh/tenant-context':
         specifier: workspace:*
         version: link:../../packages/tenant-context
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../../packages/thresholds-pg
       '@opendb-dsh/ui-harness':
         specifier: workspace:*
         version: link:../../packages/ui-harness
@@ -1710,6 +1782,9 @@ importers:
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../../packages/task-sqlreview
+      '@opendb-dsh/task-thresholds':
+        specifier: workspace:*
+        version: link:../../packages/task-thresholds
       '@opendb-dsh/task-wdr':
         specifier: workspace:*
         version: link:../../packages/task-wdr
@@ -1719,6 +1794,9 @@ importers:
       '@opendb-dsh/tenant-context':
         specifier: workspace:*
         version: link:../../packages/tenant-context
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../../packages/thresholds-pg
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../../packages/tool-db
@@ -1752,6 +1830,9 @@ importers:
       '@opendb-dsh/tool-task-report':
         specifier: workspace:*
         version: link:../../packages/tool-task-report
+      '@opendb-dsh/tool-thresholds':
+        specifier: workspace:*
+        version: link:../../packages/tool-thresholds
       '@opendb-dsh/tool-wdr-collect':
         specifier: workspace:*
         version: link:../../packages/tool-wdr-collect

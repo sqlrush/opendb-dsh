@@ -12,7 +12,8 @@
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
-    "@opendb-dsh/tasks": "workspace:*"
+    "@opendb-dsh/tasks": "workspace:*",
+    "@opendb-dsh/thresholds-pg": "workspace:*"
   },
   "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
 }

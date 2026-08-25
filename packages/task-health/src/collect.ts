@@ -2,7 +2,7 @@
  * 采集编排：单节点 12 维 → NodeHealth；多节点 → ClusterHealth（跨实例共性 / 参数漂移 / 最差上浮）。
  * 汇总 ≠ N 份单机报告钉在一起——集群层的增量价值在横向分析（设计稿裁决点⑧）。
  */
-import { COLLECTORS, worstOf, LEVEL_ORDER, type DetFinding, type DetLevel, type DimResult, type QueryFn } from './collectors.ts';
+import { COLLECTORS, THRESHOLDS, worstOf, LEVEL_ORDER, type DetFinding, type DetLevel, type DimResult, type QueryFn, type Thresholds } from './collectors.ts';
 
 export interface NodeHealth {
   node: string;
@@ -25,13 +25,14 @@ export interface HealthCollectResult {
   clusterFindings: ClusterFinding[];
 }
 
-export async function collectNode(name: string, q: QueryFn, dims?: string[]): Promise<NodeHealth> {
+// T：运行时阈值（默认 = 代码常量）。tool-health-collect 用平台阈值服务的覆盖值合并后传入。
+export async function collectNode(name: string, q: QueryFn, dims?: string[], T: Thresholds = THRESHOLDS): Promise<NodeHealth> {
   const wanted = dims === undefined || dims.length === 0 ? COLLECTORS : COLLECTORS.filter((c) => dims.includes(c.key));
   const results: DimResult[] = [];
   const notes: string[] = [];
   for (const c of wanted) {
     try {
-      results.push(await c.run(q));
+      results.push(await c.run(q, T));
     } catch (cause) {
       const msg = String((cause as Error).message ?? cause).slice(0, 160);
       results.push({ dim: c.key, title: c.title, ok: false, findings: [], note: msg });

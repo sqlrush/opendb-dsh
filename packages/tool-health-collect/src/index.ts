@@ -8,10 +8,10 @@ import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { resolvePlatformAgent, clampText } from '@opendb-dsh/tool-db';
-import { collectNode, summarize, type HealthCollectResult } from '@opendb-dsh/task-health';
+import { collectNode, summarize, withThresholds, type HealthCollectResult } from '@opendb-dsh/task-health';
 
 export const name = 'tool-health-collect';
-export const inject = ['opendbDb', 'opendbRegistry'];
+export const inject = ['opendbDb', 'opendbRegistry', 'opendbThresholds'];
 export const Config = z.object({
   maxContentBytes: z.number().step(1).min(4096).default(28000),
   maxNodes: z.number().step(1).min(1).default(16).description('单次采集允许的最大实例数（防 token 爆炸）'),
@@ -19,7 +19,7 @@ export const Config = z.object({
 
 const LEVEL_CN: Record<string, string> = { ok: '正常', notice: '关注', warn: '告警', critical: '严重' };
 
-interface Deps { db: any; registry: any; maxContentBytes: number; maxNodes: number }
+interface Deps { db: any; registry: any; thresholds: any; maxContentBytes: number; maxNodes: number }
 
 function defineHealthCollectTool(deps: Deps) {
   return defineTool({
@@ -44,11 +44,26 @@ function defineHealthCollectTool(deps: Deps) {
         return { content: `实例数 ${picked.length} 超过单次上限 ${deps.maxNodes}——请用 metrics_fleet_overview 先聚合，或分批指定 nodes。` };
       }
       const dims: string[] = Array.isArray(args.dims) ? args.dims.map(String) : [];
+      // 运行时阈值：平台阈值服务的覆盖值套回常量形状；服务不可用则退回代码默认值（不阻塞采集）
+      let thresholdNote = '';
+      let flat: Record<string, number> = {};
+      let T = withThresholds({});
+      try { flat = await deps.thresholds.resolve('health'); T = withThresholds(flat); }
+      catch (cause) { thresholdNote = `阈值服务不可读（${String((cause as Error).message ?? cause).slice(0, 80)}），本次按代码默认阈值判定`; }
+      // 报告自证：本次判定用的是哪套阈值（覆盖项单列），历史报告回看时不必猜当时的阈值
+      const defaults = withThresholds({});
+      const flatDefaults: Record<string, number> = {};
+      for (const [g, v] of Object.entries(defaults)) {
+        if (typeof v === 'number') flatDefaults[g] = v;
+        else for (const [tier, n] of Object.entries(v as Record<string, number>)) flatDefaults[`${g}.${tier}`] = n;
+      }
+      const overrides = Object.fromEntries(Object.entries(flat).filter(([k, v]) => flatDefaults[k] !== undefined && flatDefaults[k] !== v));
       const results = [];
       for (const node of picked) {
         const q = (sql: string, maxRows = 20) => deps.db.query(node, sql, { maxRows });
         try {
-          results.push(await collectNode(node.name, q, dims));
+          const nh = await collectNode(node.name, q, dims, T);
+          results.push(thresholdNote === '' ? nh : { ...nh, collectionNotes: [...nh.collectionNotes, thresholdNote] });
         } catch (cause) {
           results.push({
             node: node.name, worst: 'warn' as const,
@@ -80,6 +95,8 @@ function defineHealthCollectTool(deps: Deps) {
         })),
         clusterFindings: summary.clusterFindings,
         collectedAt: summary.collectedAt,
+        // 本次判定所用阈值：只列与代码默认值不同的键（空 = 全部默认）；完整清单用 threshold_list
+        thresholds: { overrides, source: Object.keys(overrides).length > 0 ? 'platform-overrides' : 'code-defaults' },
       };
       return { content: clampText(`${header}\n${JSON.stringify(payload, null, 1)}`, deps.maxContentBytes) };
     },
@@ -92,6 +109,7 @@ export function apply(ctx: Context, config: { maxContentBytes?: number; maxNodes
     const deps: Deps = {
       db: anyCtx.opendbDb,
       registry: anyCtx.opendbRegistry,
+      thresholds: anyCtx.opendbThresholds,
       maxContentBytes: config.maxContentBytes ?? 28000,
       maxNodes: config.maxNodes ?? 16,
     };

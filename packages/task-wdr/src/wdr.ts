@@ -5,6 +5,8 @@
  * 纯函数，不碰连接——采集在 tool-wdr-collect，本文件可单测。
  */
 
+import { specsFrom, applyOverrides, type ThresholdSpec } from '@opendb-dsh/thresholds-pg';
+
 export type WdrLevel = 'ok' | 'notice' | 'warn' | 'critical';
 export const LEVEL_ORDER: Record<WdrLevel, number> = { ok: 0, notice: 1, warn: 2, critical: 3 };
 
@@ -27,6 +29,26 @@ export const WDR_THRESHOLDS = {
   rollbackRatio: { notice: 0.05, warn: 0.2 },
   blkSqlShare: { warn: 0.3 },                 // 锁等待型 SQL 占窗口 elapsed 比例
 } as const;
+
+/** 运行时阈值类型：与 WDR_THRESHOLDS 同形状、数值放宽为 number（阈值可配置化，2026-08-24） */
+export type WdrThresholds = {
+  [K in keyof typeof WDR_THRESHOLDS]: { [L in keyof (typeof WDR_THRESHOLDS)[K]]: number };
+};
+
+const WDR_THRESHOLD_META = {
+  avgActive: { label: '平均活跃会话', rule: 'WDR_LOAD_HIGH', cmp: '>=' as const, unit: 'x' as const, desc: 'ΔDB_TIME / 窗口时长' },
+  tempBytes: { label: '临时文件字节', rule: 'WDR_TEMP_SPILL', cmp: '>=' as const, unit: 'bytes' as const, desc: '窗口内 Δtemp_bytes（库级）' },
+  cacheHit: { label: '窗口命中率', rule: 'WDR_CACHE_LOW', cmp: '<' as const, unit: 'ratio' as const, desc: '窗口内 blks delta 命中率，低于阈值告警' },
+  ckptReqShare: { label: '被动 checkpoint 占比', rule: 'WDR_CKPT_REQ', cmp: '>=' as const, unit: 'ratio' as const, desc: '窗口 delta 的 req / (timed + req)' },
+  rollbackRatio: { label: '回滚率', rule: 'WDR_ROLLBACK_HIGH', cmp: '>=' as const, unit: 'ratio' as const, desc: '窗口事务数 > 100 时的 rollback 占比' },
+  blkSqlShare: { label: '锁等待型 SQL 份额', rule: 'WDR_SQL_BLOCKED', cmp: '>=' as const, unit: 'ratio' as const, desc: 'attr=blk 的 Top SQL 占窗口耗时' },
+};
+
+export const WDR_THRESHOLD_SPECS: ThresholdSpec[] = specsFrom('wdr', WDR_THRESHOLDS, WDR_THRESHOLD_META);
+
+export function withWdrThresholds(flat: Record<string, number>): WdrThresholds {
+  return applyOverrides(WDR_THRESHOLDS, flat);
+}
 
 const n = (v: unknown): number => (v === null || v === undefined ? 0 : Number(v));
 
@@ -163,9 +185,8 @@ export function judgeWindow(input: {
   dbStats: DbStatDelta[];
   ckpt: { timed: number; req: number };
   topSql: TopSqlItem[];
-}): WdrFinding[] {
+}, T: WdrThresholds = WDR_THRESHOLDS): WdrFinding[] {
   const out: WdrFinding[] = [];
-  const T = WDR_THRESHOLDS;
   const wallUs = input.windowMinutes * 60 * 1_000_000;
   if (wallUs > 0 && input.dbTimeUs > 0) {
     const avgActive = Math.round((input.dbTimeUs / wallUs) * 100) / 100;

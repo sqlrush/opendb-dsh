@@ -17,6 +17,8 @@
     "@opendb-dsh/task-sqlreview": "workspace:*",
     "@opendb-dsh/task-wdr": "workspace:*",
     "@opendb-dsh/task-rules": "workspace:*",
+    "@opendb-dsh/task-thresholds": "workspace:*",
+    "@opendb-dsh/thresholds-pg": "workspace:*",
     "@opendb-dsh/task-ddl": "workspace:*",
     "@opendb-dsh/task-incident": "workspace:*",
     "@opendb-dsh/task-monitor-dashboard": "workspace:*",

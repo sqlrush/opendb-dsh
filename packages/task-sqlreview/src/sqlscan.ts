@@ -6,6 +6,8 @@
  * - og-lite 无 hypopg：索引类建议 verify 只能是 estimated；改写类由模型 EXPLAIN 实证（cost 可比）。
  */
 
+import { SQLREVIEW_THRESHOLDS, type SqlreviewThresholds } from './rules.ts';
+
 export interface PlanFinding { code: string; line: number; level: 'notice' | 'warn'; detail: string }
 
 export interface SqlItem {
@@ -43,13 +45,13 @@ export function topCost(planLines: string[]): number | undefined {
 }
 
 /** 计划行确定性标注：全表扫（含大行数升级）与外排提示 */
-export function annotatePlan(planLines: string[]): PlanFinding[] {
+export function annotatePlan(planLines: string[], T: SqlreviewThresholds = SQLREVIEW_THRESHOLDS): PlanFinding[] {
   const out: PlanFinding[] = [];
   planLines.forEach((line, i) => {
     const seq = line.match(/Seq Scan on (\S+)/);
     if (seq !== null) {
       const rows = line.match(/rows=(\d+)/);
-      const big = rows !== null && Number(rows[1]) > 100000;
+      const big = rows !== null && Number(rows[1]) > T.seqScanWarnRows;
       out.push({
         code: 'PLAN_SEQSCAN', line: i, level: big ? 'warn' : 'notice',
         detail: `全表扫描 ${seq[1]}${rows !== null ? `（估算 ${rows[1]} 行）` : ''}${big ? '——行数大，优先怀疑缺索引' : ''}`,
@@ -80,11 +82,11 @@ ORDER BY total_elapse_time / n_calls DESC LIMIT ${Math.max(1, Math.min(topN, 20)
 }
 
 /** 单条 SQL 的计划锚定：EXPLAIN → cost + 标注；失败如实降级 */
-export async function explainOne(q: QueryFn, text: string): Promise<Pick<SqlItem, 'explainOk' | 'plan' | 'planCost' | 'planFindings' | 'note'>> {
+export async function explainOne(q: QueryFn, text: string, T: SqlreviewThresholds = SQLREVIEW_THRESHOLDS): Promise<Pick<SqlItem, 'explainOk' | 'plan' | 'planCost' | 'planFindings' | 'note'>> {
   const attempt = async (sql: string) => {
     const r = await q(`EXPLAIN ${sql}`, 40);
     const lines = r.rows.map((row) => str(Object.values(row)[0])).slice(0, 30);
-    return { explainOk: true, plan: lines, planCost: topCost(lines), planFindings: annotatePlan(lines) };
+    return { explainOk: true, plan: lines, planCost: topCost(lines), planFindings: annotatePlan(lines, T) };
   };
   try {
     return await attempt(text);
@@ -104,7 +106,7 @@ export async function explainOne(q: QueryFn, text: string): Promise<Pick<SqlItem
   }
 }
 
-export async function scanSql(q: QueryFn, topN: number, extraSqls: string[], notes: string[]): Promise<SqlItem[]> {
+export async function scanSql(q: QueryFn, topN: number, extraSqls: string[], notes: string[], T: SqlreviewThresholds = SQLREVIEW_THRESHOLDS): Promise<SqlItem[]> {
   let top: { text: string; calls: number; avgMs: number; totalMs: number }[] = [];
   try {
     top = await fetchTopSql(q, topN);
@@ -117,7 +119,7 @@ export async function scanSql(q: QueryFn, topN: number, extraSqls: string[], not
   ];
   const out: SqlItem[] = [];
   for (const s of seed.slice(0, Math.max(topN, seed.length > topN ? seed.length : topN))) {
-    const anchored = await explainOne(q, s.text);
+    const anchored = await explainOne(q, s.text, T);
     out.push({ key: shortKey(s.text), text: s.text.slice(0, 1200), calls: s.calls, avgMs: s.avgMs, totalMs: s.totalMs, ...anchored });
   }
   return out;

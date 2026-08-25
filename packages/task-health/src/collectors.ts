@@ -5,6 +5,8 @@
  * SQL 以 openGauss（og-lite 5.x）为准，兼容 PostgreSQL 的部分自动降级。
  */
 
+import { specsFrom, applyOverrides, type ThresholdSpec } from '@opendb-dsh/thresholds-pg';
+
 export type DetLevel = 'ok' | 'notice' | 'warn' | 'critical';
 
 export interface DetFinding {
@@ -57,6 +59,42 @@ export const THRESHOLDS = {
 } as const;
 
 /**
+ * 运行时阈值类型：与 THRESHOLDS 同形状、数值放宽为 number。
+ * 各采集器改为接收 T 参数（默认 = 代码常量），由 tool-health-collect 用平台阈值服务的
+ * 覆盖值合并后传入——判定逻辑与默认值一字不动，只是数值来源可被会话修改
+ * （user 2026-08-24：阈值可配置化）。
+ */
+export type Thresholds = {
+  [K in keyof typeof THRESHOLDS]: (typeof THRESHOLDS)[K] extends number ? number : { [L in keyof (typeof THRESHOLDS)[K]]: number };
+};
+
+/** 阈值元数据（展示与校验用；判定方向须与各 dim 里的比较写法一致） */
+const THRESHOLD_META = {
+  connRatio: { label: '连接占用', rule: 'CONN_HIGH', cmp: '>=' as const, unit: 'ratio' as const, desc: '当前连接数 / max_connections' },
+  cacheHit: { label: '缓存命中率', rule: 'CACHE_LOW', cmp: '<' as const, unit: 'ratio' as const, desc: 'blks_hit/(hit+read)，低于阈值告警' },
+  xactSec: { label: '长事务时长', rule: 'XACT_LONG', cmp: '>=' as const, unit: 's' as const, desc: '事务自 xact_start 起已持续秒数' },
+  bloatRatio: { label: '死元组膨胀率', rule: 'BLOAT_HIGH', cmp: '>=' as const, unit: 'ratio' as const, desc: 'n_dead_tup / n_live_tup' },
+  bloatMinLive: { label: '膨胀扫描下限', rule: 'BLOAT_HIGH', cmp: '>=' as const, unit: 'count' as const, desc: '只检查活元组数超过此值的表' },
+  slowAvgMs: { label: '慢 SQL 均耗时', rule: 'SLOWSQL', cmp: '>=' as const, unit: 'ms' as const, desc: 'dbe_perf.statement 平均耗时' },
+  slowManyCount: { label: '慢 SQL 条数', rule: 'SLOWSQL_MANY', cmp: '>=' as const, unit: 'count' as const, desc: '均耗时超 warn 线的 SQL 达到此条数即告警' },
+  blockedSessions: { label: '被阻塞会话数', rule: 'LOCK_CHAIN', cmp: '>=' as const, unit: 'count' as const, desc: 'pg_locks 未授予锁的等待会话' },
+  ckptReqShare: { label: '被动 checkpoint 占比', rule: 'CKPT_REQ', cmp: '>=' as const, unit: 'ratio' as const, desc: 'checkpoints_req / (timed + req)' },
+  waitTopShare: { label: '等待集中度', rule: 'WAIT_CONC', cmp: '>=' as const, unit: 'ratio' as const, desc: 'Top1 等待事件占真实等待的比例（已排除 STATUS 空闲类）' },
+  lwlockShare: { label: 'LWLock 争用占比', rule: 'LWLOCK_HOT', cmp: '>=' as const, unit: 'ratio' as const, desc: 'LWLOCK 类等待 / 真实等待总量' },
+  activeSessions: { label: '活跃会话数', rule: 'SESS_ACTIVE_HIGH', cmp: '>=' as const, unit: 'count' as const, desc: "state='active' 的会话数" },
+  loadPerCore: { label: '每核负载', rule: 'OS_LOAD_HIGH', cmp: '>=' as const, unit: 'x' as const, desc: 'LOAD / NUM_CPUS，1.0 = 所有核排满队' },
+  iowaitShare: { label: 'IOWait 占比', rule: 'OS_IOWAIT_HIGH', cmp: '>=' as const, unit: 'ratio' as const, desc: 'IOWAIT_TIME / BUSY_TIME（累计口径）' },
+};
+
+/** 向平台阈值服务注册的规格：默认值直接取自 THRESHOLDS，永不漂移 */
+export const HEALTH_THRESHOLD_SPECS: ThresholdSpec[] = specsFrom('health', THRESHOLDS, THRESHOLD_META);
+
+/** 把服务返回的扁平覆盖表套回常量形状（新对象，不动 THRESHOLDS） */
+export function withThresholds(flat: Record<string, number>): Thresholds {
+  return applyOverrides(THRESHOLDS, flat);
+}
+
+/**
  * 「真实等待」口径：dbe_perf.wait_events 里的 STATUS 类不是等待事件，而是会话当前在做什么
  * （analyze / Sort / vacuum / flush data / wait cmd）。其中 wait cmd＝等客户端发命令，属于空闲，
  * 在累计值里独占 99.94%——把它算进分母，等待类判据就全被稀释成 0（2026-08-24 og5 实证：
@@ -75,7 +113,7 @@ function finding(partial: Omit<DetFinding, 'evidence'> & { evidence?: string }):
 }
 
 // ── 1 总览（版本 / 库大小 / 缓存命中 / 关键参数证据）─────────────────────────
-async function dimOverview(q: QueryFn): Promise<DimResult> {
+async function dimOverview(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'overview'; const title = '总览';
   const findings: DetFinding[] = [];
   const ver = await q('SELECT version()', 1);
@@ -85,10 +123,10 @@ async function dimOverview(q: QueryFn): Promise<DimResult> {
     "SELECT name, setting, unit FROM pg_settings WHERE name IN ('max_connections','work_mem','shared_buffers','checkpoint_timeout','wal_keep_segments','autovacuum')", 10);
   const hit = num(cache.rows[0]?.hit); const read = num(cache.rows[0]?.read);
   const ratio = hit + read > 0 ? hit / (hit + read) : 1;
-  if (ratio < THRESHOLDS.cacheHit.warn) {
-    findings.push(finding({ dim, code: 'CACHE_LOW', level: 'warn', metric: 'cache_hit_ratio', value: Math.round(ratio * 10000) / 10000, threshold: `<${THRESHOLDS.cacheHit.warn}`, detail: `shared_buffers 命中率 ${(ratio * 100).toFixed(2)}%，物理读占比偏高`, evidence: `blks_hit=${hit} blks_read=${read}` }));
-  } else if (ratio < THRESHOLDS.cacheHit.notice) {
-    findings.push(finding({ dim, code: 'CACHE_LOW', level: 'notice', metric: 'cache_hit_ratio', value: Math.round(ratio * 10000) / 10000, threshold: `<${THRESHOLDS.cacheHit.notice}`, detail: `命中率 ${(ratio * 100).toFixed(2)}%，低于 99% 基线`, evidence: `blks_hit=${hit} blks_read=${read}` }));
+  if (ratio < T.cacheHit.warn) {
+    findings.push(finding({ dim, code: 'CACHE_LOW', level: 'warn', metric: 'cache_hit_ratio', value: Math.round(ratio * 10000) / 10000, threshold: `<${T.cacheHit.warn}`, detail: `shared_buffers 命中率 ${(ratio * 100).toFixed(2)}%，物理读占比偏高`, evidence: `blks_hit=${hit} blks_read=${read}` }));
+  } else if (ratio < T.cacheHit.notice) {
+    findings.push(finding({ dim, code: 'CACHE_LOW', level: 'notice', metric: 'cache_hit_ratio', value: Math.round(ratio * 10000) / 10000, threshold: `<${T.cacheHit.notice}`, detail: `命中率 ${(ratio * 100).toFixed(2)}%，低于 99% 基线`, evidence: `blks_hit=${hit} blks_read=${read}` }));
   }
   return {
     dim, title, ok: true, findings,
@@ -102,7 +140,7 @@ async function dimOverview(q: QueryFn): Promise<DimResult> {
 }
 
 // ── 2 等待事件（dbe_perf.wait_events；PG 无此视图则降级）───────────────────
-async function dimWaits(q: QueryFn): Promise<DimResult> {
+async function dimWaits(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'waits'; const title = '等待事件';
   // 排除 STATUS 类：那不是等待事件，是「当前在做什么」（analyze/Sort/vacuum/flush data），
   // 其中 wait cmd（等客户端发命令＝空闲）在累计值里独占 99.94%，会把真实等待彻底淹没。
@@ -114,42 +152,42 @@ async function dimWaits(q: QueryFn): Promise<DimResult> {
   if (rows.length > 0 && total > 0) {
     const top = rows[0];
     const share = num(top.total_wait_time) / total;
-    if (share >= THRESHOLDS.waitTopShare.notice) {
-      findings.push(finding({ dim, code: 'WAIT_CONC', level: 'notice', metric: 'top_wait_share', value: Math.round(share * 100) / 100, threshold: `>=${THRESHOLDS.waitTopShare.notice}`, detail: `等待集中：${str(top.event)} 占 Top8 总等待 ${(share * 100).toFixed(0)}%`, evidence: rows.slice(0, 3).map((r) => `${str(r.event)}=${num(r.total_wait_time)}`).join(' ') }));
+    if (share >= T.waitTopShare.notice) {
+      findings.push(finding({ dim, code: 'WAIT_CONC', level: 'notice', metric: 'top_wait_share', value: Math.round(share * 100) / 100, threshold: `>=${T.waitTopShare.notice}`, detail: `等待集中：${str(top.event)} 占 Top8 总等待 ${(share * 100).toFixed(0)}%`, evidence: rows.slice(0, 3).map((r) => `${str(r.event)}=${num(r.total_wait_time)}`).join(' ') }));
     }
   }
   return { dim, title, ok: true, findings, evidence: { top: rows.slice(0, 5).map((r) => ({ type: str(r.type), event: str(r.event), totalWait: num(r.total_wait_time) })) } };
 }
 
 // ── 3 慢 SQL（dbe_perf.statement 按均耗时）──────────────────────────────────
-async function dimSlowSql(q: QueryFn): Promise<DimResult> {
+async function dimSlowSql(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'slowsql'; const title = '慢 SQL';
   const rows = (await q('SELECT left(query, 100) AS q, n_calls, total_elapse_time FROM dbe_perf.statement WHERE n_calls > 0 ORDER BY total_elapse_time DESC LIMIT 10', 10)).rows;
   const slow = rows
     .map((r) => ({ q: str(r.q), calls: num(r.n_calls), avgMs: num(r.total_elapse_time) / Math.max(1, num(r.n_calls)) / 1000 }))
-    .filter((r) => r.avgMs >= THRESHOLDS.slowAvgMs.notice);
+    .filter((r) => r.avgMs >= T.slowAvgMs.notice);
   const findings: DetFinding[] = [];
-  const worst3 = slow.filter((r) => r.avgMs >= THRESHOLDS.slowAvgMs.warn);
-  if (worst3.length >= THRESHOLDS.slowManyCount) {
-    findings.push(finding({ dim, code: 'SLOWSQL_MANY', level: 'warn', metric: 'slow_sql_count', value: worst3.length, threshold: `>=${THRESHOLDS.slowManyCount} 条均耗时>${THRESHOLDS.slowAvgMs.warn}ms`, detail: `${worst3.length} 条 SQL 平均耗时超 ${THRESHOLDS.slowAvgMs.warn}ms`, evidence: worst3.slice(0, 3).map((r) => `${r.avgMs.toFixed(0)}ms×${r.calls}: ${r.q.slice(0, 60)}`).join(' | ') }));
+  const worst3 = slow.filter((r) => r.avgMs >= T.slowAvgMs.warn);
+  if (worst3.length >= T.slowManyCount) {
+    findings.push(finding({ dim, code: 'SLOWSQL_MANY', level: 'warn', metric: 'slow_sql_count', value: worst3.length, threshold: `>=${T.slowManyCount} 条均耗时>${T.slowAvgMs.warn}ms`, detail: `${worst3.length} 条 SQL 平均耗时超 ${T.slowAvgMs.warn}ms`, evidence: worst3.slice(0, 3).map((r) => `${r.avgMs.toFixed(0)}ms×${r.calls}: ${r.q.slice(0, 60)}`).join(' | ') }));
   } else if (slow.length > 0) {
-    findings.push(finding({ dim, code: 'SLOWSQL', level: 'notice', metric: 'slow_sql_count', value: slow.length, threshold: `均耗时>${THRESHOLDS.slowAvgMs.notice}ms`, detail: `${slow.length} 条 SQL 平均耗时超 ${THRESHOLDS.slowAvgMs.notice}ms`, evidence: slow.slice(0, 3).map((r) => `${r.avgMs.toFixed(0)}ms×${r.calls}: ${r.q.slice(0, 60)}`).join(' | ') }));
+    findings.push(finding({ dim, code: 'SLOWSQL', level: 'notice', metric: 'slow_sql_count', value: slow.length, threshold: `均耗时>${T.slowAvgMs.notice}ms`, detail: `${slow.length} 条 SQL 平均耗时超 ${T.slowAvgMs.notice}ms`, evidence: slow.slice(0, 3).map((r) => `${r.avgMs.toFixed(0)}ms×${r.calls}: ${r.q.slice(0, 60)}`).join(' | ') }));
   }
   return { dim, title, ok: true, findings, evidence: { top: slow.slice(0, 5) } };
 }
 
 // ── 4 长·空闲事务 ───────────────────────────────────────────────────────────
-async function dimXact(q: QueryFn): Promise<DimResult> {
+async function dimXact(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'xact'; const title = '长·空闲事务';
-  const rows = (await q(`SELECT pid, coalesce(state,'') AS state, extract(epoch FROM (now() - xact_start))::bigint AS sec, left(coalesce(query,''), 80) AS q FROM pg_stat_activity WHERE xact_start IS NOT NULL AND now() - xact_start > interval '${THRESHOLDS.xactSec.notice} seconds' ORDER BY xact_start LIMIT 10`, 10)).rows;
+  const rows = (await q(`SELECT pid, coalesce(state,'') AS state, extract(epoch FROM (now() - xact_start))::bigint AS sec, left(coalesce(query,''), 80) AS q FROM pg_stat_activity WHERE xact_start IS NOT NULL AND now() - xact_start > interval '${T.xactSec.notice} seconds' ORDER BY xact_start LIMIT 10`, 10)).rows;
   const findings: DetFinding[] = [];
   for (const r of rows.slice(0, 5)) {
     const sec = num(r.sec);
     const idle = str(r.state).includes('idle in transaction');
-    const level: DetLevel = sec >= THRESHOLDS.xactSec.critical ? 'critical' : sec >= THRESHOLDS.xactSec.warn ? 'warn' : 'notice';
+    const level: DetLevel = sec >= T.xactSec.critical ? 'critical' : sec >= T.xactSec.warn ? 'warn' : 'notice';
     findings.push(finding({
       dim, code: idle ? 'XACT_IDLE' : 'XACT_LONG', level,
-      metric: 'xact_age_sec', value: sec, threshold: `>=${level === 'critical' ? THRESHOLDS.xactSec.critical : level === 'warn' ? THRESHOLDS.xactSec.warn : THRESHOLDS.xactSec.notice}s`,
+      metric: 'xact_age_sec', value: sec, threshold: `>=${level === 'critical' ? T.xactSec.critical : level === 'warn' ? T.xactSec.warn : T.xactSec.notice}s`,
       detail: `pid ${num(r.pid)} ${idle ? '空闲事务' : '事务运行'} ${Math.floor(sec / 60)}m${sec % 60}s（state=${str(r.state)}）`,
       evidence: `query: ${str(r.q)}`,
     }));
@@ -158,24 +196,24 @@ async function dimXact(q: QueryFn): Promise<DimResult> {
 }
 
 // ── 5 膨胀（死元组占比）─────────────────────────────────────────────────────
-async function dimBloat(q: QueryFn): Promise<DimResult> {
+async function dimBloat(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'bloat'; const title = '膨胀';
-  const rows = (await q(`SELECT schemaname || '.' || relname AS t, n_dead_tup::bigint AS dead, n_live_tup::bigint AS live, last_autovacuum FROM pg_stat_user_tables WHERE n_live_tup > ${THRESHOLDS.bloatMinLive} ORDER BY n_dead_tup DESC LIMIT 8`, 8)).rows;
+  const rows = (await q(`SELECT schemaname || '.' || relname AS t, n_dead_tup::bigint AS dead, n_live_tup::bigint AS live, last_autovacuum FROM pg_stat_user_tables WHERE n_live_tup > ${T.bloatMinLive} ORDER BY n_dead_tup DESC LIMIT 8`, 8)).rows;
   const findings: DetFinding[] = [];
   for (const r of rows) {
     const dead = num(r.dead); const live = num(r.live);
     const ratio = live > 0 ? dead / live : 0;
-    if (ratio >= THRESHOLDS.bloatRatio.warn) {
-      findings.push(finding({ dim, code: 'BLOAT_HIGH', level: 'warn', metric: 'dead_tup_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${THRESHOLDS.bloatRatio.warn}`, detail: `${str(r.t)} 死元组 ${(ratio * 100).toFixed(0)}%（dead ${dead} / live ${live}）`, evidence: `last_autovacuum=${str(r.last_autovacuum) || 'never'}` }));
-    } else if (ratio >= THRESHOLDS.bloatRatio.notice) {
-      findings.push(finding({ dim, code: 'BLOAT_MID', level: 'notice', metric: 'dead_tup_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${THRESHOLDS.bloatRatio.notice}`, detail: `${str(r.t)} 死元组 ${(ratio * 100).toFixed(0)}%`, evidence: `dead=${dead} live=${live}` }));
+    if (ratio >= T.bloatRatio.warn) {
+      findings.push(finding({ dim, code: 'BLOAT_HIGH', level: 'warn', metric: 'dead_tup_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${T.bloatRatio.warn}`, detail: `${str(r.t)} 死元组 ${(ratio * 100).toFixed(0)}%（dead ${dead} / live ${live}）`, evidence: `last_autovacuum=${str(r.last_autovacuum) || 'never'}` }));
+    } else if (ratio >= T.bloatRatio.notice) {
+      findings.push(finding({ dim, code: 'BLOAT_MID', level: 'notice', metric: 'dead_tup_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${T.bloatRatio.notice}`, detail: `${str(r.t)} 死元组 ${(ratio * 100).toFixed(0)}%`, evidence: `dead=${dead} live=${live}` }));
     }
   }
   return { dim, title, ok: true, findings: findings.slice(0, 5), evidence: { top: rows.slice(0, 5).map((r) => ({ t: str(r.t), dead: num(r.dead), live: num(r.live) })) } };
 }
 
 // ── 6 LWLock（dbe_perf.wait_events 里 LWLock 类占比）───────────────────────
-async function dimLwlock(q: QueryFn): Promise<DimResult> {
+async function dimLwlock(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'lwlock'; const title = 'LWLock';
   // 同 dimWaits：分母必须是「真实等待」。含 STATUS 时 og5 实测 lwlockShare=0.03%，
   // 永远够不到 notice 线 0.2，这个维度等于没有；排除后是 63%，直接命中 warn。
@@ -185,17 +223,17 @@ async function dimLwlock(q: QueryFn): Promise<DimResult> {
   const findings: DetFinding[] = [];
   if (total > 0) {
     const share = lw / total;
-    if (share >= THRESHOLDS.lwlockShare.warn) {
-      findings.push(finding({ dim, code: 'LWLOCK_HOT', level: 'warn', metric: 'lwlock_share', value: Math.round(share * 100) / 100, threshold: `>=${THRESHOLDS.lwlockShare.warn}`, detail: `LWLock 等待占总等待 ${(share * 100).toFixed(0)}%，存在内部争用热点`, evidence: `lwlock=${lw} total=${total}` }));
-    } else if (share >= THRESHOLDS.lwlockShare.notice) {
-      findings.push(finding({ dim, code: 'LWLOCK_HOT', level: 'notice', metric: 'lwlock_share', value: Math.round(share * 100) / 100, threshold: `>=${THRESHOLDS.lwlockShare.notice}`, detail: `LWLock 等待占比 ${(share * 100).toFixed(0)}%`, evidence: `lwlock=${lw} total=${total}` }));
+    if (share >= T.lwlockShare.warn) {
+      findings.push(finding({ dim, code: 'LWLOCK_HOT', level: 'warn', metric: 'lwlock_share', value: Math.round(share * 100) / 100, threshold: `>=${T.lwlockShare.warn}`, detail: `LWLock 等待占总等待 ${(share * 100).toFixed(0)}%，存在内部争用热点`, evidence: `lwlock=${lw} total=${total}` }));
+    } else if (share >= T.lwlockShare.notice) {
+      findings.push(finding({ dim, code: 'LWLOCK_HOT', level: 'notice', metric: 'lwlock_share', value: Math.round(share * 100) / 100, threshold: `>=${T.lwlockShare.notice}`, detail: `LWLock 等待占比 ${(share * 100).toFixed(0)}%`, evidence: `lwlock=${lw} total=${total}` }));
     }
   }
   return { dim, title, ok: true, findings, evidence: { lwlockShare: total > 0 ? Math.round((lw / total) * 100) / 100 : 0 } };
 }
 
 // ── 7 锁链（阻塞会话）───────────────────────────────────────────────────────
-async function dimLockChain(q: QueryFn): Promise<DimResult> {
+async function dimLockChain(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'lockchain'; const title = '锁与阻塞链';
   const rows = (await q(`SELECT w.pid AS waiter, l.pid AS holder, extract(epoch FROM (now() - w.query_start))::bigint AS wait_sec, left(coalesce(w.query,''), 60) AS waiter_query
 FROM pg_locks wl JOIN pg_locks l ON wl.locktype = l.locktype AND wl.relation IS NOT DISTINCT FROM l.relation AND l.granted
@@ -203,47 +241,47 @@ JOIN pg_stat_activity w ON w.pid = wl.pid JOIN pg_stat_activity h ON h.pid = l.p
 WHERE NOT wl.granted AND w.pid <> l.pid LIMIT 20`, 20)).rows;
   const blocked = new Set(rows.map((r) => num(r.waiter))).size;
   const findings: DetFinding[] = [];
-  if (blocked >= THRESHOLDS.blockedSessions.critical) {
+  if (blocked >= T.blockedSessions.critical) {
     const maxWait = Math.max(...rows.map((r) => num(r.wait_sec)));
-    findings.push(finding({ dim, code: 'LOCK_CHAIN', level: 'critical', metric: 'blocked_sessions', value: blocked, threshold: `>=${THRESHOLDS.blockedSessions.critical}`, detail: `${blocked} 个会话被阻塞，最长等待 ${Math.floor(maxWait / 60)}m`, evidence: rows.slice(0, 3).map((r) => `waiter ${num(r.waiter)}<-holder ${num(r.holder)}: ${str(r.waiter_query)}`).join(' | ') }));
-  } else if (blocked >= THRESHOLDS.blockedSessions.warn) {
-    findings.push(finding({ dim, code: 'LOCK_CHAIN', level: 'warn', metric: 'blocked_sessions', value: blocked, threshold: `>=${THRESHOLDS.blockedSessions.warn}`, detail: `${blocked} 个会话在等锁`, evidence: rows.slice(0, 3).map((r) => `waiter ${num(r.waiter)}<-holder ${num(r.holder)}`).join(' | ') }));
+    findings.push(finding({ dim, code: 'LOCK_CHAIN', level: 'critical', metric: 'blocked_sessions', value: blocked, threshold: `>=${T.blockedSessions.critical}`, detail: `${blocked} 个会话被阻塞，最长等待 ${Math.floor(maxWait / 60)}m`, evidence: rows.slice(0, 3).map((r) => `waiter ${num(r.waiter)}<-holder ${num(r.holder)}: ${str(r.waiter_query)}`).join(' | ') }));
+  } else if (blocked >= T.blockedSessions.warn) {
+    findings.push(finding({ dim, code: 'LOCK_CHAIN', level: 'warn', metric: 'blocked_sessions', value: blocked, threshold: `>=${T.blockedSessions.warn}`, detail: `${blocked} 个会话在等锁`, evidence: rows.slice(0, 3).map((r) => `waiter ${num(r.waiter)}<-holder ${num(r.holder)}`).join(' | ') }));
   }
   return { dim, title, ok: true, findings, evidence: { blocked, edges: rows.slice(0, 5).map((r) => ({ waiter: num(r.waiter), holder: num(r.holder), waitSec: num(r.wait_sec) })) } };
 }
 
 // ── 8 连接 ──────────────────────────────────────────────────────────────────
-async function dimConnections(q: QueryFn): Promise<DimResult> {
+async function dimConnections(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'connections'; const title = '连接';
   const used = num((await q('SELECT count(*)::int AS n FROM pg_stat_activity', 1)).rows[0]?.n);
   const max = num((await q("SELECT setting::int AS n FROM pg_settings WHERE name = 'max_connections'", 1)).rows[0]?.n);
   const ratio = max > 0 ? used / max : 0;
   const findings: DetFinding[] = [];
-  if (ratio >= THRESHOLDS.connRatio.critical) {
-    findings.push(finding({ dim, code: 'CONN_HIGH', level: 'critical', metric: 'conn_used_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${THRESHOLDS.connRatio.critical}`, detail: `连接占用 ${(ratio * 100).toFixed(0)}%（${used}/${max}），逼近上限`, evidence: `used=${used} max=${max}` }));
-  } else if (ratio >= THRESHOLDS.connRatio.warn) {
-    findings.push(finding({ dim, code: 'CONN_HIGH', level: 'warn', metric: 'conn_used_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${THRESHOLDS.connRatio.warn}`, detail: `连接占用 ${(ratio * 100).toFixed(0)}%（${used}/${max}）`, evidence: `used=${used} max=${max}` }));
+  if (ratio >= T.connRatio.critical) {
+    findings.push(finding({ dim, code: 'CONN_HIGH', level: 'critical', metric: 'conn_used_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${T.connRatio.critical}`, detail: `连接占用 ${(ratio * 100).toFixed(0)}%（${used}/${max}），逼近上限`, evidence: `used=${used} max=${max}` }));
+  } else if (ratio >= T.connRatio.warn) {
+    findings.push(finding({ dim, code: 'CONN_HIGH', level: 'warn', metric: 'conn_used_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${T.connRatio.warn}`, detail: `连接占用 ${(ratio * 100).toFixed(0)}%（${used}/${max}）`, evidence: `used=${used} max=${max}` }));
   }
   return { dim, title, ok: true, findings, evidence: { used, max, ratio: Math.round(ratio * 100) / 100 } };
 }
 
 // ── 9 Checkpoint / WAL ──────────────────────────────────────────────────────
-async function dimCkpt(q: QueryFn): Promise<DimResult> {
+async function dimCkpt(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'ckpt'; const title = 'Checkpoint/WAL';
   const r = (await q('SELECT checkpoints_timed::bigint AS timed, checkpoints_req::bigint AS req FROM pg_stat_bgwriter', 1)).rows[0];
   const timed = num(r?.timed); const req = num(r?.req);
   const share = timed + req > 0 ? req / (timed + req) : 0;
   const findings: DetFinding[] = [];
-  if (share >= THRESHOLDS.ckptReqShare.warn) {
-    findings.push(finding({ dim, code: 'CKPT_REQ', level: 'warn', metric: 'ckpt_req_share', value: Math.round(share * 100) / 100, threshold: `>=${THRESHOLDS.ckptReqShare.warn}`, detail: `被动 checkpoint 占 ${(share * 100).toFixed(0)}%——WAL 压力大或 checkpoint 参数过小`, evidence: `timed=${timed} req=${req}` }));
-  } else if (share >= THRESHOLDS.ckptReqShare.notice) {
-    findings.push(finding({ dim, code: 'CKPT_REQ', level: 'notice', metric: 'ckpt_req_share', value: Math.round(share * 100) / 100, threshold: `>=${THRESHOLDS.ckptReqShare.notice}`, detail: `被动 checkpoint 占 ${(share * 100).toFixed(0)}%`, evidence: `timed=${timed} req=${req}` }));
+  if (share >= T.ckptReqShare.warn) {
+    findings.push(finding({ dim, code: 'CKPT_REQ', level: 'warn', metric: 'ckpt_req_share', value: Math.round(share * 100) / 100, threshold: `>=${T.ckptReqShare.warn}`, detail: `被动 checkpoint 占 ${(share * 100).toFixed(0)}%——WAL 压力大或 checkpoint 参数过小`, evidence: `timed=${timed} req=${req}` }));
+  } else if (share >= T.ckptReqShare.notice) {
+    findings.push(finding({ dim, code: 'CKPT_REQ', level: 'notice', metric: 'ckpt_req_share', value: Math.round(share * 100) / 100, threshold: `>=${T.ckptReqShare.notice}`, detail: `被动 checkpoint 占 ${(share * 100).toFixed(0)}%`, evidence: `timed=${timed} req=${req}` }));
   }
   return { dim, title, ok: true, findings, evidence: { timed, req } };
 }
 
 // ── 10 复制 ─────────────────────────────────────────────────────────────────
-async function dimReplication(q: QueryFn): Promise<DimResult> {
+async function dimReplication(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'replication'; const title = '主备复制';
   const rows = (await q('SELECT client_addr::text AS addr, state, sync_state FROM pg_stat_replication', 8)).rows;
   const findings: DetFinding[] = [];
@@ -255,7 +293,7 @@ async function dimReplication(q: QueryFn): Promise<DimResult> {
 }
 
 // ── 11 对象与索引 ────────────────────────────────────────────────────────────
-async function dimObjects(q: QueryFn): Promise<DimResult> {
+async function dimObjects(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'objects'; const title = '对象与索引';
   const invalid = num((await q('SELECT count(*)::int AS n FROM pg_index WHERE NOT indisvalid', 1)).rows[0]?.n);
   const unused = (await q("SELECT schemaname || '.' || indexrelname AS idx FROM pg_stat_user_indexes WHERE idx_scan = 0 LIMIT 6", 6)).rows;
@@ -270,13 +308,13 @@ async function dimObjects(q: QueryFn): Promise<DimResult> {
 }
 
 // ── 12 并发 ─────────────────────────────────────────────────────────────────
-async function dimConcurrency(q: QueryFn): Promise<DimResult> {
+async function dimConcurrency(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'concurrency'; const title = '事务并发';
   const active = num((await q("SELECT count(*)::int AS n FROM pg_stat_activity WHERE state = 'active'", 1)).rows[0]?.n);
   const prepared = num((await q('SELECT count(*)::int AS n FROM pg_prepared_xacts', 1)).rows[0]?.n);
   const findings: DetFinding[] = [];
-  if (active >= THRESHOLDS.activeSessions.notice) {
-    findings.push(finding({ dim, code: 'SESS_ACTIVE_HIGH', level: 'notice', metric: 'active_sessions', value: active, threshold: `>=${THRESHOLDS.activeSessions.notice}`, detail: `活跃会话 ${active}，并发偏高`, evidence: '' }));
+  if (active >= T.activeSessions.notice) {
+    findings.push(finding({ dim, code: 'SESS_ACTIVE_HIGH', level: 'notice', metric: 'active_sessions', value: active, threshold: `>=${T.activeSessions.notice}`, detail: `活跃会话 ${active}，并发偏高`, evidence: '' }));
   }
   if (prepared > 0) {
     findings.push(finding({ dim, code: 'XACT_PREPARED', level: 'notice', metric: 'prepared_xacts', value: prepared, threshold: '>0', detail: `存在 ${prepared} 个悬挂的两阶段事务`, evidence: '' }));
@@ -284,7 +322,7 @@ async function dimConcurrency(q: QueryFn): Promise<DimResult> {
   return { dim, title, ok: true, findings, evidence: { active, prepared } };
 }
 
-export const COLLECTORS: { key: string; title: string; run: (q: QueryFn) => Promise<DimResult> }[] = [
+export const COLLECTORS: { key: string; title: string; run: (q: QueryFn, T: Thresholds) => Promise<DimResult> }[] = [
   { key: 'overview', title: '总览', run: dimOverview },
   { key: 'waits', title: '等待事件', run: dimWaits },
   { key: 'slowsql', title: '慢 SQL', run: dimSlowSql },
@@ -311,7 +349,7 @@ export const COLLECTORS: { key: string; title: string; run: (q: QueryFn) => Prom
  * 采样做差分——那是 metrics 侧的事（db.os.* 已入库，趋势图与 metrics_recent 可消费）。
  * LOAD 本身就是瞬时值，单次采集即可判读，是这里唯一可靠的即时过载信号。
  */
-async function dimOs(q: QueryFn): Promise<DimResult> {
+async function dimOs(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<DimResult> {
   const dim = 'os'; const title = '主机资源';
   const findings: DetFinding[] = [];
   let rows: Record<string, unknown>[];
@@ -328,19 +366,19 @@ async function dimOs(q: QueryFn): Promise<DimResult> {
   const idle = pick('IDLE_TIME');
   const iowait = pick('IOWAIT_TIME');
   const perCore = cpus > 0 ? load / cpus : 0;
-  if (cpus > 0 && perCore >= THRESHOLDS.loadPerCore.critical) {
-    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'critical', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${THRESHOLDS.loadPerCore.critical}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}，已严重过载`, evidence: `load=${load} cpus=${cpus}` }));
-  } else if (cpus > 0 && perCore >= THRESHOLDS.loadPerCore.warn) {
-    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'warn', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${THRESHOLDS.loadPerCore.warn}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}，CPU 已饱和`, evidence: `load=${load} cpus=${cpus}` }));
-  } else if (cpus > 0 && perCore >= THRESHOLDS.loadPerCore.notice) {
-    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'notice', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${THRESHOLDS.loadPerCore.notice}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}`, evidence: `load=${load} cpus=${cpus}` }));
+  if (cpus > 0 && perCore >= T.loadPerCore.critical) {
+    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'critical', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${T.loadPerCore.critical}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}，已严重过载`, evidence: `load=${load} cpus=${cpus}` }));
+  } else if (cpus > 0 && perCore >= T.loadPerCore.warn) {
+    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'warn', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${T.loadPerCore.warn}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}，CPU 已饱和`, evidence: `load=${load} cpus=${cpus}` }));
+  } else if (cpus > 0 && perCore >= T.loadPerCore.notice) {
+    findings.push(finding({ dim, code: 'OS_LOAD_HIGH', level: 'notice', metric: 'load_per_core', value: Math.round(perCore * 100) / 100, threshold: `>=${T.loadPerCore.notice}`, detail: `主机负载 ${load}，${cpus} 核折合每核 ${perCore.toFixed(2)}`, evidence: `load=${load} cpus=${cpus}` }));
   }
   // IOWait 占 busy 的比例：累计值之比，反映这台机器长期是不是被 IO 拖着
   const ioShare = busy > 0 ? iowait / busy : 0;
-  if (ioShare >= THRESHOLDS.iowaitShare.warn) {
-    findings.push(finding({ dim, code: 'OS_IOWAIT_HIGH', level: 'warn', metric: 'iowait_share', value: Math.round(ioShare * 100) / 100, threshold: `>=${THRESHOLDS.iowaitShare.warn}`, detail: `IOWait 占 CPU 忙时 ${(ioShare * 100).toFixed(0)}%，磁盘可能是瓶颈`, evidence: `iowait=${iowait} busy=${busy}` }));
-  } else if (ioShare >= THRESHOLDS.iowaitShare.notice) {
-    findings.push(finding({ dim, code: 'OS_IOWAIT_HIGH', level: 'notice', metric: 'iowait_share', value: Math.round(ioShare * 100) / 100, threshold: `>=${THRESHOLDS.iowaitShare.notice}`, detail: `IOWait 占 CPU 忙时 ${(ioShare * 100).toFixed(0)}%`, evidence: `iowait=${iowait} busy=${busy}` }));
+  if (ioShare >= T.iowaitShare.warn) {
+    findings.push(finding({ dim, code: 'OS_IOWAIT_HIGH', level: 'warn', metric: 'iowait_share', value: Math.round(ioShare * 100) / 100, threshold: `>=${T.iowaitShare.warn}`, detail: `IOWait 占 CPU 忙时 ${(ioShare * 100).toFixed(0)}%，磁盘可能是瓶颈`, evidence: `iowait=${iowait} busy=${busy}` }));
+  } else if (ioShare >= T.iowaitShare.notice) {
+    findings.push(finding({ dim, code: 'OS_IOWAIT_HIGH', level: 'notice', metric: 'iowait_share', value: Math.round(ioShare * 100) / 100, threshold: `>=${T.iowaitShare.notice}`, detail: `IOWait 占 CPU 忙时 ${(ioShare * 100).toFixed(0)}%`, evidence: `iowait=${iowait} busy=${busy}` }));
   }
   return {
     dim, title, ok: true, findings,

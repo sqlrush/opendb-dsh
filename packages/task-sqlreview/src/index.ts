@@ -7,14 +7,16 @@
 import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import type { TaskType, TaskRecord, TaskBuildContext } from '@opendb-dsh/tasks';
+import { SQLREVIEW_THRESHOLD_SPECS } from './rules.ts';
 
-export { runCatalogRules, textRules, worstRuleLevel, LEVEL_ORDER } from './rules.ts';
+export { runCatalogRules, textRules, worstRuleLevel, LEVEL_ORDER, SQLREVIEW_THRESHOLDS, SQLREVIEW_THRESHOLD_SPECS, withSqlreviewThresholds } from './rules.ts';
+export type { SqlreviewThresholds } from './rules.ts';
 export type { RuleFinding, RuleLevel, SlowSqlText } from './rules.ts';
 export { scanSql, explainOne, annotatePlan, topCost, shortKey } from './sqlscan.ts';
 export type { SqlItem, PlanFinding } from './sqlscan.ts';
 
 export const name = 'task-sqlreview';
-export const inject = ['opendbTasks'];
+export const inject = ['opendbTasks', 'opendbThresholds'];
 
 interface SqlReviewConfig { node: string; topN: number; sqls: string[]; focus: string }
 
@@ -100,4 +102,5 @@ export const SQLREVIEW_TASK_TYPE: TaskType<SqlReviewConfig> = {
 export function apply(ctx: Context): void {
   const anyCtx = ctx as any;
   ctx.effect(() => anyCtx.opendbTasks.register(SQLREVIEW_TASK_TYPE), 'task-sqlreview.type');
+  ctx.effect(() => anyCtx.opendbThresholds.register(SQLREVIEW_THRESHOLD_SPECS), 'task-sqlreview.thresholds');
 }

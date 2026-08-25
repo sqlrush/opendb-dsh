@@ -104,6 +104,9 @@
       name: '@opendb-dsh/tool-ddl-collect'
     - id: tool-rules-catalog
       name: '@opendb-dsh/tool-rules-catalog'
+    # threshold_list / threshold_set / threshold_reset（阈值配置的会话半边；set/reset 走 ask_user 确认流）
+    - id: tool-thresholds
+      name: '@opendb-dsh/tool-thresholds'
 # ── P1 W4: task_report 工具 + 任务类型注册表（Runtime 侧，engine:false）──────
 - insert:
     - id: opendb-tasks
@@ -124,6 +127,12 @@
       name: '@opendb-dsh/embeddings-openai-compat'
     - id: opendb-memory
       name: '@opendb-dsh/memory-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+    # 平台阈值服务（user 2026-08-24：阈值可配置化）——Runtime 侧供采集工具 resolve 覆盖值、
+    # threshold_* 工具读写；四个任务插件启动时向它注册规格（默认值 = 代码常量）
+    - id: opendb-thresholds
+      name: '@opendb-dsh/thresholds-pg'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: memory-context
@@ -175,6 +184,9 @@
       name: '@opendb-dsh/task-ddl'
     - id: task-rules
       name: '@opendb-dsh/task-rules'
+    # 阈值配置任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）
+    - id: task-thresholds
+      name: '@opendb-dsh/task-thresholds'
 # ── P2 W1：incident 任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）──────
 - insert:
     - id: task-incident

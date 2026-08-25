@@ -5,8 +5,40 @@
  * 洪峰折叠：同一时刻 >30 条字典变更（collector 首轮基线导入）折叠为单条 baseline 条目。
  */
 
+import { specsFrom, applyOverrides, type ThresholdSpec } from '@opendb-dsh/thresholds-pg';
+
 export type DdlLevel = 'ok' | 'notice' | 'warn' | 'critical';
 export const LEVEL_ORDER: Record<DdlLevel, number> = { ok: 0, notice: 1, warn: 2, critical: 3 };
+
+/**
+ * DDL 追溯里的数值判据（阈值可配置化，2026-08-24）：原先是函数默认参数与行内字面量，
+ * 提成常量后值一个不变，规则语义不动——只是让平台阈值服务能覆盖它们。
+ */
+export const DDL_THRESHOLDS = {
+  businessHourStart: 9,     // DDLR04：业务时段起（北京时间，含）
+  businessHourEnd: 20,      // DDLR04：业务时段止（不含）
+  churnCount: 3,            // DDLR05：同一对象在窗口内变更达到此次数
+  churnWindowHours: 24,     // DDLR05：变更抖动的时间窗口
+  mergeWindowMinutes: 15,   // 时间轴合并：审计条目按对象名 ±此分钟数吸附字典条目
+  floodFoldCount: 30,       // 洪峰折叠：同一时刻超过此条数的字典变更折叠为单条 baseline
+} as const;
+
+export type DdlThresholds = { [K in keyof typeof DDL_THRESHOLDS]: number };
+
+const DDL_THRESHOLD_META = {
+  businessHourStart: { label: '业务时段起始小时', rule: 'DDLR04', cmp: '>=' as const, unit: 'hour' as const, desc: '北京时间，此小时起算业务时段（含）' },
+  businessHourEnd: { label: '业务时段结束小时', rule: 'DDLR04', cmp: '<' as const, unit: 'hour' as const, desc: '北京时间，此小时止（不含）' },
+  churnCount: { label: '变更抖动次数', rule: 'DDLR05', cmp: '>=' as const, unit: 'count' as const, desc: '同一对象在窗口内变更达到此次数' },
+  churnWindowHours: { label: '变更抖动窗口', rule: 'DDLR05', cmp: '<=' as const, unit: 'hour' as const, desc: '计数窗口长度（小时）' },
+  mergeWindowMinutes: { label: '时间轴吸附窗口', rule: '时间轴合并', cmp: '<=' as const, unit: 'count' as const, desc: '审计条目按对象名 ±此分钟数吸附字典条目' },
+  floodFoldCount: { label: '洪峰折叠条数', rule: '时间轴折叠', cmp: '>' as const, unit: 'count' as const, desc: '同一时刻超过此条数的字典变更折叠为一条' },
+};
+
+export const DDL_THRESHOLD_SPECS: ThresholdSpec[] = specsFrom('ddl', DDL_THRESHOLDS, DDL_THRESHOLD_META);
+
+export function withDdlThresholds(flat: Record<string, number>): DdlThresholds {
+  return applyOverrides(DDL_THRESHOLDS, flat);
+}
 
 export interface TimelineEntry {
   time: string;                 // ISO
@@ -34,7 +66,7 @@ const iso = (v: unknown): string => {
 const s = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
 
 /** 字典变更 → 时间轴条目（含洪峰折叠） */
-export function dictToTimeline(rows: DictChangeRow[], collapseThreshold = 30): TimelineEntry[] {
+export function dictToTimeline(rows: DictChangeRow[], collapseThreshold: number = DDL_THRESHOLDS.floodFoldCount): TimelineEntry[] {
   const byTime = new Map<string, DictChangeRow[]>();
   for (const r of rows) {
     const t = iso(r.time);
@@ -68,7 +100,7 @@ export function auditToTimeline(rows: AuditRow[]): TimelineEntry[] {
 }
 
 /** 合并：审计条目按对象名 ±15 分钟吸附字典条目（吸附后字典条目获得 user/sqlText，action 保留字典语义） */
-export function mergeTimeline(dict: TimelineEntry[], audit: TimelineEntry[], windowMs = 15 * 60 * 1000): TimelineEntry[] {
+export function mergeTimeline(dict: TimelineEntry[], audit: TimelineEntry[], windowMs: number = DDL_THRESHOLDS.mergeWindowMinutes * 60 * 1000): TimelineEntry[] {
   const merged: TimelineEntry[] = dict.map((d) => ({ ...d }));
   const leftover: TimelineEntry[] = [];
   for (const a of audit) {
@@ -89,7 +121,7 @@ export function mergeTimeline(dict: TimelineEntry[], audit: TimelineEntry[], win
 }
 
 /** 规范扫描：确定性规则（对时间轴条目；时段按北京时间） */
-export function scanDdlRules(entries: TimelineEntry[], tzOffsetMinutes = 480): DdlRuleFinding[] {
+export function scanDdlRules(entries: TimelineEntry[], tzOffsetMinutes = 480, T: DdlThresholds = DDL_THRESHOLDS): DdlRuleFinding[] {
   const out: DdlRuleFinding[] = [];
   const real = entries.filter((e) => e.action !== 'baseline');
   for (const e of real) {
@@ -111,19 +143,22 @@ export function scanDdlRules(entries: TimelineEntry[], tzOffsetMinutes = 480): D
     // 业务时段变更（北京时间 09:00-20:00 的删除/变更类）
     const local = new Date(new Date(e.time).getTime() + tzOffsetMinutes * 60 * 1000);
     const hour = local.getUTCHours();
-    if (hour >= 9 && hour < 20 && (e.action === 'removed' || e.action === 'changed' || /\b(drop|alter|truncate)\b/.test(sql))) {
+    if (hour >= T.businessHourStart && hour < T.businessHourEnd && (e.action === 'removed' || e.action === 'changed' || /\b(drop|alter|truncate)\b/.test(sql))) {
       out.push({ rule: 'DDLR04', level: 'notice', object: e.object, time: e.time, problem: `业务时段（北京 ${String(hour).padStart(2, '0')} 点）执行破坏/变更类 DDL`, advice: '高危 DDL 建议移到低峰窗口', evidence: e.sqlText || `dict: ${e.action}` });
     }
   }
   // 变更抖动：同一对象 24h 内 ≥3 条
   const byObj = new Map<string, TimelineEntry[]>();
   for (const e of real) byObj.set(e.object, [...(byObj.get(e.object) ?? []), e]);
+  // k = 达到抖动所需的「第 N 次」下标偏移（churnCount=3 → 看第 i 与第 i+2 次的间隔）
+  const k = Math.max(1, Math.floor(T.churnCount)) - 1;
+  const windowMs = T.churnWindowHours * 3600 * 1000;
   for (const [obj, list] of byObj) {
-    if (list.length < 3) continue;
+    if (list.length < k + 1) continue;
     const times = list.map((e) => new Date(e.time).getTime()).sort((a, b) => a - b);
-    for (let i = 0; i + 2 < times.length; i += 1) {
-      if (times[i + 2] - times[i] <= 24 * 3600 * 1000) {
-        out.push({ rule: 'DDLR05', level: 'warn', object: obj, time: new Date(times[i + 2]).toISOString(), problem: `24 小时内同一对象变更 ≥3 次（共 ${list.length} 条）——变更抖动`, advice: '合并变更批次；确认是否脚本重试/回滚循环', evidence: list.slice(0, 3).map((e) => `${e.time} ${e.action}`).join(' | ') });
+    for (let i = 0; i + k < times.length; i += 1) {
+      if (times[i + k] - times[i] <= windowMs) {
+        out.push({ rule: 'DDLR05', level: 'warn', object: obj, time: new Date(times[i + k]).toISOString(), problem: `${T.churnWindowHours} 小时内同一对象变更 ≥${k + 1} 次（共 ${list.length} 条）——变更抖动`, advice: '合并变更批次；确认是否脚本重试/回滚循环', evidence: list.slice(0, 3).map((e) => `${e.time} ${e.action}`).join(' | ') });
         break;
       }
     }

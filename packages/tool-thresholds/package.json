@@ -1,0 +1,17 @@
+{
+  "name": "@opendb-dsh/tool-thresholds",
+  "version": "0.0.1",
+  "description": "threshold_list / threshold_set / threshold_reset tools: view and change platform alarm thresholds from a conversation (task-thresholds's session half, Runtime side)",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./package.json": "./package.json" },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json", "test": "echo no tests" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6" },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@opendb-dsh/thresholds-pg": "workspace:*"
+  },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@deepseek-ai/dsh-tools": "^0.1.0-rc.6" }
+}

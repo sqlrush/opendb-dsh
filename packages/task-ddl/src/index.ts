@@ -7,12 +7,14 @@
 import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import type { TaskType, TaskRecord, TaskBuildContext } from '@opendb-dsh/tasks';
+import { DDL_THRESHOLD_SPECS } from './ddl.ts';
 
-export { dictToTimeline, auditToTimeline, mergeTimeline, scanDdlRules, worstOf, timelineStats, LEVEL_ORDER } from './ddl.ts';
+export { dictToTimeline, auditToTimeline, mergeTimeline, scanDdlRules, worstOf, timelineStats, LEVEL_ORDER, DDL_THRESHOLDS, DDL_THRESHOLD_SPECS, withDdlThresholds } from './ddl.ts';
+export type { DdlThresholds } from './ddl.ts';
 export type { TimelineEntry, DdlRuleFinding, DdlLevel } from './ddl.ts';
 
 export const name = 'task-ddl';
-export const inject = ['opendbTasks'];
+export const inject = ['opendbTasks', 'opendbThresholds'];
 
 interface DdlConfig { node: string; hours: number; focus: string }
 
@@ -90,4 +92,5 @@ export const DDL_TASK_TYPE: TaskType<DdlConfig> = {
 export function apply(ctx: Context): void {
   const anyCtx = ctx as any;
   ctx.effect(() => anyCtx.opendbTasks.register(DDL_TASK_TYPE), 'task-ddl.type');
+  ctx.effect(() => anyCtx.opendbThresholds.register(DDL_THRESHOLD_SPECS), 'task-ddl.thresholds');
 }

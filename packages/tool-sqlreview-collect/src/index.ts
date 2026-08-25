@@ -7,18 +7,18 @@ import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { pickNode, clampText } from '@opendb-dsh/tool-db';
-import { runCatalogRules, textRules, worstRuleLevel, LEVEL_ORDER, scanSql, shortKey } from '@opendb-dsh/task-sqlreview';
+import { runCatalogRules, textRules, worstRuleLevel, LEVEL_ORDER, scanSql, shortKey, withSqlreviewThresholds } from '@opendb-dsh/task-sqlreview';
 import type { RuleFinding, RuleLevel, SqlItem } from '@opendb-dsh/task-sqlreview';
 
 export const name = 'tool-sqlreview-collect';
-export const inject = ['opendbDb', 'opendbRegistry'];
+export const inject = ['opendbDb', 'opendbRegistry', 'opendbThresholds'];
 export const Config = z.object({
   maxContentBytes: z.number().step(1).min(4096).default(30000),
 });
 
 const LEVEL_CN: Record<string, string> = { ok: '正常', notice: '关注', warn: '告警', critical: '严重' };
 
-interface Deps { db: any; registry: any; maxContentBytes: number }
+interface Deps { db: any; registry: any; thresholds: any; maxContentBytes: number }
 
 function defineSqlreviewCollectTool(deps: Deps) {
   return defineTool({
@@ -41,11 +41,13 @@ function defineSqlreviewCollectTool(deps: Deps) {
       const extraSqls: string[] = Array.isArray(args.sqls) ? args.sqls.map(String).slice(0, 10) : [];
 
       // 1) 慢 SQL 扫描 + 计划锚定
-      const sqlItems: SqlItem[] = await scanSql(q, topN, extraSqls, notes);
+      // 运行时阈值：平台阈值服务的覆盖值；服务不可读则退回代码默认值
+      const T = withSqlreviewThresholds(await deps.thresholds.resolve('sqlreview').catch(() => ({})));
+      const sqlItems: SqlItem[] = await scanSql(q, topN, extraSqls, notes, T);
       // 2) 规则引擎：目录类（联动慢 SQL 文本）+ 文本类
       const slowTexts = sqlItems.map((s) => s.text);
       const ruleFindings: RuleFinding[] = [
-        ...await runCatalogRules(q, slowTexts, notes),
+        ...await runCatalogRules(q, slowTexts, notes, T),
         ...textRules(sqlItems.map((s) => ({ key: s.key, text: s.text }))),
       ].sort((a, b) => LEVEL_ORDER[b.level] - LEVEL_ORDER[a.level]);
       // 3) hypopg 可用性（只探测不启用）
@@ -116,6 +118,7 @@ export function apply(ctx: Context, config: { maxContentBytes?: number } = {}): 
     const deps: Deps = {
       db: anyCtx.opendbDb,
       registry: anyCtx.opendbRegistry,
+      thresholds: anyCtx.opendbThresholds,
       maxContentBytes: config.maxContentBytes ?? 30000,
     };
     c.effect(() => c.tools.register(defineSqlreviewCollectTool(deps)), 'tool-sqlreview-collect.sqlreview_collect');

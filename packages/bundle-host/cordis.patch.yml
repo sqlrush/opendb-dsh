@@ -94,6 +94,12 @@
       name: '@opendb-dsh/memory-pg'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+    # 平台阈值服务（user 2026-08-24：阈值可配置化）——代码常量为默认、PG 存覆盖；
+    # 四个任务插件启动时向它注册规格，Host 侧供大盘读取（thresholds/list、thresholds/history）
+    - id: opendb-thresholds
+      name: '@opendb-dsh/thresholds-pg'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
     - id: memory-ingest
       name: '@opendb-dsh/memory-ingest'
 # ── W5.5 批次1: opendb-harness 产品壳（自研侧栏替换官方工作区区块 + 主区页面）──
@@ -169,6 +175,9 @@
       name: '@opendb-dsh/task-ddl'
     - id: task-rules
       name: '@opendb-dsh/task-rules'
+    # 阈值配置任务类型（大盘半边；会话半边 threshold_* 工具在 Runtime）
+    - id: task-thresholds
+      name: '@opendb-dsh/task-thresholds'
 # ── 插件地图：P2 W1 事件驱动运维（task-incident 双半边 + alert-ddl 告警器）────────
 - insert:
     - id: task-incident

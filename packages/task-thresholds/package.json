@@ -1,7 +1,7 @@
 {
-  "name": "@opendb-dsh/task-sqlreview",
+  "name": "@opendb-dsh/task-thresholds",
   "version": "0.0.1",
-  "description": "opendb-dsh SQL review & tune task type: deterministic rules engine + plan-anchored optimization, read-only (task redo #2)",
+  "description": "opendb-dsh threshold configuration task type: dashboard of every alarm/judgment threshold (defaults vs live overrides + change history); edits happen in conversation via tool-thresholds (user 2026-08-24)",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -12,8 +12,7 @@
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
-    "@opendb-dsh/tasks": "workspace:*",
-    "@opendb-dsh/thresholds-pg": "workspace:*"
+    "@opendb-dsh/tasks": "workspace:*"
   },
   "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
 }

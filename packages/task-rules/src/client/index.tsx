@@ -75,8 +75,8 @@ export function RulesPanel(_props: { task: any; call: (endpoint: string, payload
         </div>
       ))}
       <div style={{ fontSize: 13.5, color: T.dim, border: `1px dashed ${T.line}`, borderRadius: 8, padding: '10px 16px', marginTop: 18 }}>
-        📋 阈值当前为代码内置（改动走版本发布，单测守护目录与实现同步）；阈值可配置化（会话说一句即调）在排期。
-        客户规范经知识库对照——参考不改判（KB 契约）。
+        📋 本目录里的阈值数字是代码默认值（单测守护目录与实现同步）；当前生效值、改动记录与会话内修改见任务页「阈值配置」——
+        在会话里说一句「把 X 的 warn 改成 Y」，智能体复述确认后落库，下一次采集起生效。客户规范经知识库对照——参考不改判（KB 契约）。
       </div>
     </div>
   );
