@@ -122,6 +122,9 @@
 - insert:
     - id: ui-task-inline
       name: '@opendb-dsh/ui-task-inline'
+    # 会话内图表卡：接管 metrics_chart / chart_render 的渲染（SVG 折线/面积/柱状 + hover + 阈值线）
+    - id: ui-chart
+      name: '@opendb-dsh/ui-chart'
 # ── 插件地图：ui-node-monitor（节点监控面板，client-only，W6 拆包还债）─────────
 - insert:
     - id: ui-node-monitor

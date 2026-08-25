@@ -21,7 +21,7 @@ const TEXT_OUTPUT = {
 function defineMetricsRecentTool(deps: Deps) {
   return defineTool({
     name: 'metrics_recent',
-    description: '查看节点的监控指标（collector 定时采集）：不带 metric 时返回每个指标的最新值；带 metric 时返回该指标最近 N 分钟的时间序列。',
+    description: '查看节点的监控指标（collector 定时采集）：不带 metric 时返回每个指标的最新值；带 metric 时返回该指标最近 N 分钟的时间序列（文本表格）。**用户要看曲线/趋势/对比图时不要用本工具，用 metrics_chart——它会在会话里渲染成交互式图表，并自动完成计数器差分。**',
     parameters: {
       node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
       metric: { type: 'string', description: '指标名（如 db.sessions.active、db.size_bytes.postgres）；省略则列出全部指标的最新值。' },

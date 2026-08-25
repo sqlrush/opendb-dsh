@@ -1,0 +1,14 @@
+{
+  "name": "@opendb-dsh/ui-chart",
+  "version": "0.0.1",
+  "description": "Inline chart cards in the conversation (client-only): SVG line/area/bar renderer for metrics_chart / chart_render tool results (user 2026-08-24: charts are a core capability)",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": { ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" }, "./client": "./lib/client.js", "./package.json": "./package.json" },
+  "dsh": { "client": { "platform": "web" } },
+  "files": ["lib"],
+  "scripts": { "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node build-client.mjs", "test": "echo no tests" },
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
+}

@@ -22,6 +22,7 @@
     "@opendb-dsh/tool-thresholds": "workspace:*",
     "@opendb-dsh/tool-ddl-collect": "workspace:*",
     "@opendb-dsh/tool-metrics": "workspace:*",
+    "@opendb-dsh/tool-chart": "workspace:*",
     "@opendb-dsh/tasks": "workspace:*",
     "@opendb-dsh/task-health": "workspace:*",
     "@opendb-dsh/task-sqlreview": "workspace:*",

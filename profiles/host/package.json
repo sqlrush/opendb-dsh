@@ -40,6 +40,7 @@
     "@opendb-dsh/platform-status": "workspace:*",
     "@opendb-dsh/onboarding": "workspace:*",
     "@opendb-dsh/ui-task-inline": "workspace:*",
+    "@opendb-dsh/ui-chart": "workspace:*",
     "@opendb-dsh/ui-node-monitor": "workspace:*"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "@opendb-dsh/bundle-host"] } }

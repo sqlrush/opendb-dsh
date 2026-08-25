@@ -1197,6 +1197,22 @@ importers:
         specifier: ^8.11.10
         version: 8.21.0
 
+  packages/tool-chart:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: ^3.18.1
+        version: 3.18.1
+      '@opendb-dsh/tool-db':
+        specifier: workspace:*
+        version: link:../tool-db
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@deepseek-ai/dsh-tools':
+        specifier: ^0.1.0-rc.6
+        version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
+
   packages/tool-db:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -1434,6 +1450,21 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: ^0.1.0-rc.6
         version: 0.1.0-rc.6(f8724372086ccc1457fc84e7becee2e0)
+
+  packages/ui-chart:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
 
   packages/ui-harness:
     devDependencies:
@@ -1683,6 +1714,9 @@ importers:
       '@opendb-dsh/thresholds-pg':
         specifier: workspace:*
         version: link:../../packages/thresholds-pg
+      '@opendb-dsh/ui-chart':
+        specifier: workspace:*
+        version: link:../../packages/ui-chart
       '@opendb-dsh/ui-harness':
         specifier: workspace:*
         version: link:../../packages/ui-harness
@@ -1797,6 +1831,9 @@ importers:
       '@opendb-dsh/thresholds-pg':
         specifier: workspace:*
         version: link:../../packages/thresholds-pg
+      '@opendb-dsh/tool-chart':
+        specifier: workspace:*
+        version: link:../../packages/tool-chart
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../../packages/tool-db

@@ -94,6 +94,10 @@
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-metrics
       name: '@opendb-dsh/tool-metrics'
+    # metrics_chart / chart_render：服务端差分+降采样+阈值线，会话里由 ui-chart 渲染成交互曲线
+    #（user 2026-08-24：曲线/趋势/对比图是核心功能，此前模型只能用 ▇ 字符画柱子）
+    - id: tool-chart
+      name: '@opendb-dsh/tool-chart'
     - id: tool-health-collect
       name: '@opendb-dsh/tool-health-collect'
     - id: tool-sqlreview-collect
