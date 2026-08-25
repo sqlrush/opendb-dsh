@@ -484,3 +484,24 @@ GRANT SELECT ON ALL TABLES IN SCHEMA gsbench_e2e_20260801_100g, gsbench TO opend
 
 生产接入清单更新：平台只读账号 = MONADMIN + AUDITADMIN + 业务 schema 的 USAGE/SELECT + 事务级只读。
 新建表需 `ALTER DEFAULT PRIVILEGES` 才自动继承（未做，按需再议）。
+
+## 阈值可配置化插件上线（2026-08-24，user 拍板：平台配置可写、实时生效、改前必确认）
+
+三个新包：`thresholds-pg`（服务，PG 存覆盖、代码常量为默认）、`tool-thresholds`（threshold_list/set/reset，
+Runtime）、`task-thresholds`（任务类型 + 大盘）。四个任务插件的判定函数改为接收阈值参数（默认 = 常量，
+值一字未改）；sqlreview/ddl 埋在 SQL 与行内的字面量提成常量。迁移 014。
+e2e 全通：threshold_list 卡 6s；改阈值 → 模型复述 → 原生 ask_user 确认卡（1/1 已回答）→ threshold_set 卡 6s；
+落库 + 变更历史 + 大盘高亮「1 个已改动」；确认卡跨进程持久（脚本关页后重开会话仍在）。
+
+**事故 1：新包只加了 bundle 没加 profiles 依赖 → 新 pod `ERR_MODULE_NOT_FOUND` 崩循环。**
+dsh 从 `/var/lib/dsh/profiles/<profile>/` 解析插件，`profiles/host|runtime/package.json` 必须列 workspace 依赖，
+否则镜像能建、pod 起不来。且因 rollout 卡住，旧 pod 继续服务，**不看 `get pods` 察觉不到**。
+已写进 CLAUDE.md「新建插件包三处缺一不可」。
+
+**事故 2：滚动窗口内跑浏览器验证 → 插件脚本 502 → 页面「Failed to load plugins」→ e2e 误判。**
+rollout 刚完成时新 pod 尚在预热，`manifest.webmanifest` 200 不代表插件脚本全 200。验证前应对
+`/plugins/@opendb-dsh/*/client.js` 逐个 curl 200 再开浏览器；e2e 脚本里也要在 goto 后断言页面不含
+「Failed to load plugins」。
+
+**教训 3：dsh 原生 ask_user 选项是 `button[role=radio]`**，不是 `<button>` 文本也不是 label——自动化点确认
+要按这个选。待答期间主输入框被锁，往里打字不会被当作回答。

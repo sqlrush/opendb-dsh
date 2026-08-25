@@ -38,6 +38,10 @@
   实测都静默不生效——2026-08-21 task-health 两轮 e2e 复证，最终拆 tool-health-collect 独立包根治。
   defineTool 的 object 参数必须显式 `additionalProperties`。Runtime 侧改动走镜像 + rollout；仅前端改动走热更。
 - 分钟级 cron 任务测试后必须禁用（每次触发都消耗模型 token）。
+- **新建插件包三处缺一不可**：`packages/<pkg>` 本体、`bundle-host/bundle-runtime` 的 cordis.patch.yml 插入行、
+  **`profiles/host|runtime/package.json` 的 workspace 依赖**。dsh 从 `/var/lib/dsh/profiles/<profile>/` 解析插件，
+  漏第三处 = 镜像能建、pod 启动 `ERR_MODULE_NOT_FOUND` 崩循环（2026-08-24 thresholds 三包实证；
+  旧 pod 因 rollout 卡住仍在服务，不会立刻察觉）。加完要 `pnpm install` 更新 lockfile（Docker 用 --frozen-lockfile）。
 
 ## 插件纪律
 
