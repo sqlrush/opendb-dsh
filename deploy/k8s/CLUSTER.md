@@ -505,3 +505,25 @@ rollout 刚完成时新 pod 尚在预热，`manifest.webmanifest` 200 不代表�
 
 **教训 3：dsh 原生 ask_user 选项是 `button[role=radio]`**，不是 `<button>` 文本也不是 label——自动化点确认
 要按这个选。待答期间主输入框被锁，往里打字不会被当作回答。
+
+## 会话内图表（2026-08-24，user：曲线/趋势/对比图是核心功能）
+
+prd 截图：用户要 QPS/TPS 曲线，模型在代码块里用 ▇ 字符"画"柱子——平台没有画图工具，指标层只有
+`metrics_recent` 吐文本表格，而 TPS/QPS/CPU 原料又都是累计计数器，模型自己差分还会把半个窗口当一根柱。
+
+两个新包：`tool-chart`（Runtime：`metrics_chart` 从指标库取数、服务端差分/比例/降采样、叠平台阈值线；
+`chart_render` 让模型对任意数据出图）+ `ui-chart`（会话内联卡：纯 SVG 折线/面积/柱状，坐标轴、网格、
+多序列图例、阈值虚线、hover 十字线与数值提示、min/avg/max/last）。语义指标目录 17 个（tps/qps/cpu/
+cache_hit/connections/load_per_core/…），原始 db.* 键也能画。payload 里时间压成"距 t0 秒数"，
+120 点一条序列约 1.5KB，模型读得起。工具描述明写"要图必须用工具，不要用文本/ASCII 画"，
+`metrics_recent` 描述反向引导；输出头写"图已渲染，用两三句解读趋势即可"。
+
+e2e：「画 og5 最近 2 小时的 TPS 和 QPS 曲线」→ 6s 出卡（两张图）、hover 提示 `08-25 11:03:09 | og5 | 28.83/s`、
+图例 最新/均/峰、回复零 ▇ 字符，模型解读"两波尖峰=压测"；「每核负载」图叠出 notice/warn/critical 三条虚线。
+一处修正：模型有时传原始键 `db.connections_used_ratio` 而非 `connections`，目录加了原始键→语义定义的反查，
+否则丢阈值映射与人读标签。
+坑：docker 从 mac 出不去 Docker Hub（`curl registry-1.docker.io` HTTP 000，docker 走 proxy.orb.internal:8305），
+build-image 在 `FROM node:22-bookworm-slim` 解析 manifest 时 Bad Gateway，重试三次都不行；本地 image store
+也没有该镜像（buildx 缓存不算）。**绕法**：`docker pull --platform linux/arm64 docker.m.daocloud.io/library/node:22-bookworm-slim`
+→ `docker tag … node:22-bookworm-slim`，buildx（docker driver）优先用本地副本，不再联网解析。
+注意 macOS 没有 `timeout` 命令（脚本里用了会静默跳过）。
