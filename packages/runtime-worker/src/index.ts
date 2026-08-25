@@ -3,9 +3,25 @@ import { Service, type Context } from '@deepseek-ai/cordis';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { createServer, type Server } from 'node:http';
 import type pg from 'pg';
-import { createPool, runMigrations } from '@opendb-dsh/session-persistence-pg';
+import { createPool, runMigrations, migrationFailures } from '@opendb-dsh/session-persistence-pg';
 import { claimNext, heartbeat, markStale, pendingInterrupts, release, type Claimed } from './claim.ts';
 import { PgUserQuestionProvider } from './questions-provider.ts';
+
+/** 「拒绝认领」日志节流（每分钟一条），避免中毒期间每 2s 刷一行 */
+let lastRefuseLog = 0;
+
+/** pg DatabaseError 的关键字段一并打出来——2026-08-25 只打 String(err) 时，"deadlock detected" 六个字查了两小时 */
+function describeError(err: unknown): string {
+  const e = err as { message?: string; code?: string; detail?: string; hint?: string; where?: string; stack?: string };
+  const parts = [String(e?.message ?? err)];
+  if (e?.code) parts.push(`code=${e.code}`);
+  if (e?.detail) parts.push(`detail=${e.detail}`);
+  if (e?.hint) parts.push(`hint=${e.hint}`);
+  if (e?.where) parts.push(`where=${String(e.where).slice(0, 200)}`);
+  const stack = typeof e?.stack === 'string' ? e.stack.split('\n').slice(1, 4).map((s) => s.trim()).join(' <- ') : '';
+  if (stack !== '') parts.push(`at ${stack}`);
+  return parts.join(' | ');
+}
 
 export { claimNext, heartbeat, markStale, pendingInterrupts, release } from './claim.ts';
 export { PgUserQuestionProvider } from './questions-provider.ts';
@@ -65,7 +81,9 @@ export default class RuntimeWorker extends Service {
     const anyCtx = ctx as any;
     ctx.effect(() => anyCtx.userQuestions.registerProvider(new PgUserQuestionProvider(this.pool)), 'runtimeWorker.questions');
     this.server = createServer((_req, res) => {
-      res.statusCode = this.stopping ? 503 : 200;
+      // 迁移失败 = 本进程某个 PG 服务的 ready 永久 rejected（2026-08-25 中毒 pod 事故）：
+      // 回 503 让 livenessProbe 重启本 pod；readiness 单独摘端点拦不住自拉式认领
+      res.statusCode = this.stopping || migrationFailures() > 0 ? 503 : 200;
       res.end(this.stopping ? 'draining' : 'ok');
     }).listen(config.healthPort);
 
@@ -76,10 +94,19 @@ export default class RuntimeWorker extends Service {
         try {
           await markStale(this.pool, this.config.staleMs);
           if (this.inFlight.size < this.config.maxConcurrent) {
-            const claimed = await claimNext(this.pool, this.config.runtimeClass, this.config.podName);
-            if (claimed) {
-              const p = this.run(claimed).finally(() => this.inFlight.delete(p));
-              this.inFlight.add(p);
+            // 本进程有 PG 服务迁移失败时绝不认领：认领了也必失败，还会把用户消息吞掉
+            //（队列行已 admitted 不再重投）。tick 照常跑（markStale 清扫不停），等 livenessProbe 重启本 pod
+            if (migrationFailures() > 0) {
+              if (Date.now() - lastRefuseLog > 60_000) {
+                lastRefuseLog = Date.now();
+                process.stderr.write(`[runtime-worker] refusing to claim: ${migrationFailures()} migration failure(s) in this process; health=503, awaiting restart\n`);
+              }
+            } else {
+              const claimed = await claimNext(this.pool, this.config.runtimeClass, this.config.podName);
+              if (claimed) {
+                const p = this.run(claimed).finally(() => this.inFlight.delete(p));
+                this.inFlight.add(p);
+              }
             }
           }
         } catch (err) {
@@ -141,7 +168,7 @@ export default class RuntimeWorker extends Service {
       await release(this.pool, sessionId, this.config.podName, 'idle');
       process.stderr.write(`[runtime-worker] released ${sessionId} idle\n`);
     } catch (err) {
-      process.stderr.write(`[runtime-worker] run failed for ${sessionId}: ${String(err)}\n`);
+      process.stderr.write(`[runtime-worker] run failed for ${sessionId}: ${describeError(err)}\n`);
       await release(this.pool, sessionId, this.config.podName, 'interrupted');
     } finally {
       clearInterval(hb);

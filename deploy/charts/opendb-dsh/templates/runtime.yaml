@@ -36,6 +36,9 @@ spec:
                   optional: true
           ports: [{ containerPort: {{ $.Values.runtime.healthPort }} }]
           readinessProbe: { httpGet: { path: /, port: {{ $.Values.runtime.healthPort }} }, initialDelaySeconds: 5, periodSeconds: 5 }
+          # livenessProbe（2026-08-25 中毒 pod 事故）：Runtime 是自拉式认领，readiness 摘端点拦不住它继续
+          # 吃消息；迁移失败时健康端口回 503，连续 3 次即由 k8s 重启自愈。initialDelay 给足迁移重试时间。
+          livenessProbe: { httpGet: { path: /, port: {{ $.Values.runtime.healthPort }} }, initialDelaySeconds: 90, periodSeconds: 20, failureThreshold: 3 }
           resources: {{- toYaml .resources | nindent 12 }}
 ---
 {{- end }}

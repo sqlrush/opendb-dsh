@@ -18,7 +18,7 @@ import { createPool, rollbackAndRelease } from './pool.ts';
 import { runMigrations } from './schema.ts';
 
 export { createPool, rollbackAndRelease } from './pool.ts';
-export { runMigrations, SQL_DIR } from './schema.ts';
+export { runMigrations, migrationFailures, SQL_DIR } from './schema.ts';
 
 interface EventRow {
   seq: number;
