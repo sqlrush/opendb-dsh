@@ -34,8 +34,10 @@ minio:
   consolePort: 9001
 
 host:
-  replicas: 3               # P3: 多副本 + sticky cookie + 引擎 leader 竞选（autoscale 启用时 KEDA 接管副本数）
-  autoscale: { min: 3, max: 6, targetConnections: 50 }   # P3 HPA-by-WS（KEDA metrics-api）
+  # 2026-08-25 user 定：预览阶段 Host 收到 1 副本（滚动后浏览器三条连接分家 → 新会话草稿置灰）；
+  # 多副本时靠 host-fanout 插件跨副本扇出（已实现），需要时把 min 调回 3 即可
+  replicas: 1               # P3: 多副本 + sticky cookie + 引擎 leader 竞选（autoscale 启用时 KEDA 接管副本数）
+  autoscale: { min: 1, max: 6, targetConnections: 50 }   # P3 HPA-by-WS（KEDA metrics-api）
   port: 3080
   # k8s-cp.orb.local = OrbStack 注册的系统 resolver 域名，对 mac 睡眠/换网免疫（IP 直连路由会被热点切换挤掉）
   extraTrustedHosts: ["192.168.139.164", "192.168.139.164:30080", "k8s-cp.orb.local", "localhost:18080", "127.0.0.1:18080"]

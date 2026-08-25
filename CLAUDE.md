@@ -38,6 +38,16 @@
   实测都静默不生效——2026-08-21 task-health 两轮 e2e 复证，最终拆 tool-health-collect 独立包根治。
   defineTool 的 object 参数必须显式 `additionalProperties`。Runtime 侧改动走镜像 + rollout；仅前端改动走热更。
 - 分钟级 cron 任务测试后必须禁用（每次触发都消耗模型 token）。
+- **队列/派发纪律（2026-08-25 中毒 Runtime 复盘）**：Host 从不写会话日志（单写者：Runtime 分配 seq，Host 只镜像），
+  所以 Host 侧**绝不能用 dsh 真 Inbox**（它会 append `agent/inbox/spliced`）；排队投影走 `QueueInbox`（PG 队列表）。
+  用户提问的归属：Host 持有到 `user/message` 落日志为止——Runtime 失败重投（≤3 次）、死信 `failed_at` 由 Host 以
+  `agent/error` 报给用户；改队列逻辑必须跑 `scripts/e2e-queue.mjs` 与 `scripts/e2e-queue-outage.mjs`。
+  Host Service 无亲和，浏览器的 HTTP 与 WS 可能落在不同 Host 副本：任何"只在收到 RPC 的那台才有"的状态都是 bug
+  ——dsh apiproxy 的两条推送流只转发本副本事件，跨副本靠 `host-fanout` 插件（PG NOTIFY 让被触碰的会话在所有副本活起来）；
+  预览阶段 Host 定为 1 副本（2026-08-25 user 定），调回多副本前先跑 `/tmp/puppw/cross-pod-probe.mjs`。
+- **在 mac 上跑构建/测试的 ssh 命令**：非交互 PATH 缺 `/opt/homebrew/bin`（kubectl/pnpm）与 `/usr/local/bin`（docker），
+  且起始目录是 $HOME——命令必须显式 `export PATH` + `cd /Users/sqlrush/dsh-k8s`，并检查 `build-image.sh` 退出码，
+  否则会像 2026-08-25 那样拿旧镜像滚动一整轮。此机（Linux VM）没有 node/pnpm/kubectl。
 - **新建插件包三处缺一不可**：`packages/<pkg>` 本体、`bundle-host/bundle-runtime` 的 cordis.patch.yml 插入行、
   **`profiles/host|runtime/package.json` 的 workspace 依赖**。dsh 从 `/var/lib/dsh/profiles/<profile>/` 解析插件，
   漏第三处 = 镜像能建、pod 启动 `ERR_MODULE_NOT_FOUND` 崩循环（2026-08-24 thresholds 三包实证；

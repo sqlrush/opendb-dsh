@@ -16,6 +16,8 @@
       name: '@opendb-dsh/session-persistence-pg'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+        # Host 从不是运行中会话的写者：resume 时 dsh 补的 turn 闭合 / end-seed 若落库会顶掉 Runtime 同 seq 的事件（2026-08-25）
+        guardRunningThreads: true
     - id: agent-loop-dispatch
       name: '@opendb-dsh/agent-loop-dispatch'
       config:
@@ -137,7 +139,6 @@
 # ── 本机推理：mac 宿主 Ollama + Qwen3.8-27B（user 2026-08-24：仅作为可选模型）──
 # dsh-base 已把 llm-pi-ai 以休眠姿态挂上（零路由）；这里手工声明一条路由把它唤醒。
 # 默认模型不动，此模型只是多在选择器里出现一项。
-# 不填 apiKeyEnv = 该路由免认证，符合 Ollama。
 - id: llm-pi-ai
   config:
     providers:
@@ -221,6 +222,13 @@
       name: '@opendb-dsh/host-notify-bridge'
       config:
         connectionString: !!js process.env.OPENDB_PG_URL
+# ── 2026-08-25：Host 副本扇出——任一副本触碰的会话在所有副本上活起来，mux/host 推送流落在哪台都完整 ──
+- insert:
+    - id: host-fanout
+      name: '@opendb-dsh/host-fanout'
+      config:
+        connectionString: !!js process.env.OPENDB_PG_URL
+        podName: !!js process.env.OPENDB_POD_NAME ?? process.env.HOSTNAME
 # ── P3：knowledge-vector（Qdrant 加速层——PG 真相，故障回退 pgvector）───────────
 - insert:
     - id: opendb-vector-search

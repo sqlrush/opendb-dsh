@@ -10,6 +10,7 @@
 import { Component, type ReactNode } from 'react';
 import { makeSidebar } from './sidebar.tsx';
 import { makeOverlay } from './overlay.tsx';
+import { startQueueSync } from './queue-sync.ts';
 
 export { registerTaskPanel } from './state.ts';
 
@@ -89,6 +90,9 @@ function takeOverBranding(): void {
       //    bundle-runtime 里全部 disabled，四种预设在本平台一个都跑不动，留着是错误入口。
       // 以后要做面向 DBA 的自有预设（巡检/优化/应急）时，去掉这条即可放出选择器。
       `[class*="heroWorkspaceRow"]{display:none !important}`,
+      // 例外（user 2026-08-25 报障）：草稿未绑定工作区时原生会禁用输入框并提示「选择一个工作区开始」，
+      // 此时必须让原生的工作区选择行露出来，否则用户没有任何自救入口（只藏"正常态"那一行）
+      `body:has(textarea:disabled) [class*="heroWorkspaceRow"]{display:flex !important}`,
       // 行尾三点：常驻 DOM、hover 才显形（对齐 dsh 原生列表行的隐藏操作菜单）
       '.odbDots{opacity:0;transition:opacity .1s ease;color:var(--dsw-alias-label-tertiary)}',
       '.odbRow:hover .odbDots{opacity:1}',
@@ -130,6 +134,12 @@ export function apply(ctx: any): void {
     { name: 'shell.overlay', id: 'harness-main', order: 40, inject: () => ({}) },
     SafeMain,
   ));
+
+  // 排队投影 → 原生 queue dock（见 queue-sync.ts）；同步器自身永不抛，这里再兜一层不让它影响启动
+  try {
+    const stop = startQueueSync(ctx, call);
+    if (typeof ctx.effect === 'function') ctx.effect(() => stop, 'harness.queueSync');
+  } catch { /* 无排队展示也不能挡住整个 UI */ }
 
   takeOverBranding();
 }

@@ -8,10 +8,14 @@ import { ensureThread } from './queue.ts';
 import { trace } from './debug.ts';
 
 export { ProxyAgent } from './proxy-agent.ts';
-export { ensureThread, enqueue, interrupt, threadStatus, pendingQueue } from './queue.ts';
+export { QueueInbox, projectQueue, queueFrameItems } from './queue-inbox.ts';
+export {
+  ensureThread, enqueue, interrupt, threadStatus, pendingQueue, openRows, removePending, replacePending,
+  settleDurable, unreportedFailures, markReported, reapStaleThread,
+} from './queue.ts';
 export { mirrorOnce, bridgeQuestionsOnce } from './tailer.ts';
 
-export interface DispatchConfig { connectionString: string; runtimeClass: string; tailMs: number }
+export interface DispatchConfig { connectionString: string; runtimeClass: string; tailMs: number; staleMs: number }
 
 /**
  * Replaces `dsh-agent-loop` in the Host process: an AgentFactory whose agents are
@@ -23,6 +27,8 @@ export default class DispatchAgentLoop extends Service {
     connectionString: z.string().required(),
     runtimeClass: z.string().default('default'),
     tailMs: z.number().default(400),
+    // 与 runtime-worker.staleMs 对齐：Host 自己也回收心跳过期的 running 线程（Runtime 全挂时没人跑 markStale）
+    staleMs: z.number().default(30000),
   });
 
   private readonly pool: pg.Pool;
@@ -77,7 +83,9 @@ export default class DispatchAgentLoop extends Service {
   }
 
   private async publish(ownerCtx: any, session: any, options: any, source: 'startup' | 'resume') {
-    const agent = new ProxyAgent(this.loopCtx, session, options.agentOptions ?? {}, this.pool, this.config.tailMs, this.svc.sessionPersistence);
+    const agent = new ProxyAgent(this.loopCtx, session, options.agentOptions ?? {}, {
+      pool: this.pool, tailMs: this.config.tailMs, staleMs: this.config.staleMs, persistence: this.svc.sessionPersistence,
+    });
     const commit = await options.setup?.(agent.ctx);
     const detachSession = agent.ctx.sessions.enter(session);
     const detachAgent = this.svc.agents.enter(agent, ownerCtx?.agent);

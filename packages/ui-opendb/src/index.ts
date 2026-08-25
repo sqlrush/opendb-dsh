@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
+import { openRows, projectQueue, queueFrameItems } from '@opendb-dsh/agent-loop-dispatch';
 
 export const name = 'ui-opendb';
 export const inject = ['connection', 'webServer', 'opendbRegistry', 'opendbTasks', 'opendbMetrics', 'opendbDictionary', 'opendbThresholds'];
@@ -219,6 +220,23 @@ export function apply(ctx: Context): void {
         }
         // 任务归档（user 2026-08-24：对齐 dsh 原生「归档会话」的三点菜单）。
         // 会话归档不走这里——那是 dsh 原生能力，客户端 ctx.workspaces.archiveSession 直连。
+        // 排队投影（2026-08-25 中毒 Runtime 复盘）：客户端每秒拉一次，合成原生 session/queue 帧喂给 dsh 的
+        // queue dock。直接读 PG 而不读本副本的 ProxyAgent——HTTP RPC 与 WS 可能落在不同 Host 副本。
+        case 'queue/list': {
+          if (typeof payload?.sessionId !== 'string' || payload.sessionId === '') return bad('sessionId required');
+          const rows = await openRows(tasks.pool, payload.sessionId);
+          const ids = rows.map((r) => r.messageId).filter((x): x is string => typeof x === 'string');
+          const durable = new Set<string>();
+          if (ids.length > 0) {
+            const d = await tasks.pool.query(
+              `SELECT data->>'id' AS id FROM dsh_session_events
+                WHERE session_id = $1 AND type = 'user/message' AND data->>'id' = ANY($2::text[])`,
+              [payload.sessionId, ids],
+            );
+            for (const row of d.rows as Array<{ id: string }>) durable.add(row.id);
+          }
+          return { ok: true, value: { sessionId: payload.sessionId, items: queueFrameItems(projectQueue(rows, durable)) } };
+        }
         case 'tasks/archive':
         case 'tasks/unarchive': {
           if (typeof payload?.id !== 'string' || payload.id === '') return bad('id required');

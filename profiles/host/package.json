@@ -29,6 +29,7 @@
     "@opendb-dsh/memory-pg": "workspace:*",
     "@opendb-dsh/memory-graph": "workspace:*",
     "@opendb-dsh/host-notify-bridge": "workspace:*",
+    "@opendb-dsh/host-fanout": "workspace:*",
     "@opendb-dsh/knowledge-pg": "workspace:*",
     "@opendb-dsh/knowledge-vector": "workspace:*",
     "@opendb-dsh/agent-presets-pg": "workspace:*",

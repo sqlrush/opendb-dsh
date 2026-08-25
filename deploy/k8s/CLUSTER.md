@@ -556,3 +556,106 @@ PG 服务同时启动全撞上，`registry.listNodes` 随之失败、**指标采
 修法：建表也放进 advisory 事务锁内，且该步把 23505 视为可重试（重试时表已在即成功）。
 这次也验证了新防线：失败被 `[migrations] FAILED` 显式打出来（不再被 `.catch(() => {})` 静默吞掉），
 第一时间就看见了。
+
+### 第二轮（同日，user 三问）：为什么提问连痕迹都没有、Host 能不能兜底、原生排队哪去了
+
+**Q2 提问为什么消失**：Host `ProxyAgent.send()` 只做「写队列行 + 开 tail」，**Host 从不落持久事件**（单写者：Runtime
+分配 seq，Host 只镜像）；`user/message` 是 Runtime 认领后才写的。中毒 pod 在写之前就抛错 → 日志里什么都没有；
+客户端 `prompt()` 只发 RPC、不画乐观气泡（气泡完全靠回流的持久事件）→ "提交成功、无人处理、零可见状态"。
+
+**Q3 原生排队为什么没了**：原生链路 `agent.followup()` → `Inbox.splice()` 落 `agent/inbox/spliced` 持久事件 →
+apiproxy 监听到后读 `agent.inbox.nextTurn/nextStep` 广播 `session/queue` 帧 → 客户端 queue dock；编辑/移除/插队走
+`session.updateQueue` 直接操作 `agent.inbox`（rc.6 只有这三个动作，没有拖拽排序）。我们的 `ProxyAgent.inbox` 是从未使用
+的占位，`followup/steer` 全绕过它直写 PG → 没有 splice 事件 → 帧永远不来、`updateQueue` 找不到条目。
+**Host 也不能改用真 Inbox**：它会 append 会话日志，Runtime 运行中 Host 再写 seq 就冲突（核对了 20 个 `session/event`
+监听方——persistence/projection/title/telemetry/invariant——合成事件也不可行）。
+
+**修法（user 拍板：重投上限 3 次；排队展示复用原生 dock）**：
+- 表 `015_queue_redelivery.sql`：`dsh_thread_queue` 加 `message_id/attempts/failed_at/reported_at/last_error`，`kind` 允许 `steer`。
+- Runtime `runtime-worker`：运行失败 → `requeueFailed`：attempts+1，未到上限则 **admitted 置空让任何 pod 重领**
+  （失败 pod 冷却 5s 让位），到上限记 `failed_at`（死信）；连续 3 次失败 → 健康 503 熔断 → livenessProbe 重启。
+  1s 轮询顺带消费 `steer` 行 → `agent.steer()`（真正的中途插队）。队列行透传 Host 铸的完整消息，Runtime 用**同一
+  id** 落 `user/message`。
+- Host `agent-loop-dispatch`：`ProxyAgent.inbox` 换成 `QueueInbox`（PG 队列投影，只暴露 apiproxy 用到的
+  `nextTurn/nextStep/remove/replace`；`toSpliced` 恒等——apiproxy 会拿镜像进来的 Runtime splice 下标套我们的投影）。
+  tail 每 tick：Host 自己回收心跳过期线程（Runtime 全挂时没人跑 markStale）、`settleDurable` 去重（重投的行若消息已在
+  日志里，绝不跑第二遍）、投影刷新、死信以 `agent/error` 报给用户（原生红条）+ `reported_at`。
+- 客户端 `ui-harness/queue-sync.ts`：每秒拉 `/opendb queue/list`，合成 `session/queue` 帧喂 `ctx.sessions.handleMuxEnvelope`
+  → 原生 dock 原样展示"排队中"，提交即可见，直到 Runtime 写下持久气泡。RPC 直接读 PG（HTTP 与 WS 可能落在不同 Host 副本）。
+- 验证：`scripts/e2e-queue.mjs`（并发提交可见 / remove / steer 插队 / 无残留）、`scripts/e2e-queue-outage.mjs`
+  （Runtime 缩 0 仍可见 / 模拟死信红条 / 恢复后处理）。
+
+**上线自己踩的坑**：ssh 非交互 PATH 没有 docker，`build-image.sh` 在 pnpm 全量编译后 `docker: command not found`
+退出 127，而我的包装脚本没看退出码直接 `rollout restart`——滚动的是旧镜像，迁移台账仍 14。教训写进脚本：
+`bash build-image.sh || exit 1`，滚动后必查台账数。
+
+**e2e 逼出的第三个潜在 bug：跨副本 resume 会往运行中的日志里写东西**。e2e 脚本不带 cookie，HTTP 与 WS 落在不同
+Host 副本；WS 那台在 Runtime 跑 turn 1 的当口 `agents.resume` 了这个会话，dsh 的 persistence coordinator 把"未闭合的
+turn"当成撕裂：在内存里补 `step/end` + `turn/end(interrupted)`，Session 构造器再补 `session/end-seed`，然后经我们的
+backend `commitRepair` / `appendBatch` 落库（seq 20-22）。Runtime 随后写自己的 20-22 撞 `ON CONFLICT DO NOTHING`
+——**先到者赢，输家静默丢失**（这次丢的是三个 reasoning 增量；换成 tool/call 就是真损坏）。浏览器因 Host Service 有
+traefik 粘性 cookie（`opendb-host`）基本不会触发，但 cookie 失效 / Host pod 重启后同样会。
+修法：`session-persistence-pg` 加 `guardRunningThreads`（bundle-host 开启）。第一版只是"跳过 `commitRepair`"，结果
+e2e 直接把 prompt RPC 挂死 300s——coordinator 的 `commitPrepared` 提交修复后返回 undefined，让调用方**重新 prepare**，
+重读还是开着的 turn → 再修 → 无限循环（日志里同一会话连打四条 skipped repair）。最终形态：会话线程 `running` 或有待认领
+提问时，Host 的 `loadStored` / `readStoredRevision` 只读到**最后一个 `session/end-seed`（含）**——Runtime 每次认领都会
+resume 并在它跑的那轮前写这个标记，所以该前缀天然闭合：没有 open turn 可修、Session 构造器也不会再补标记、下一个 seq 正好
+是运行中那轮的第一条事件，`readFrom` 镜像不截断，零幻影事件。`appendBatch` 在 Runtime 占用期间仍跳过（顺带发现 Host 的
+write-behind 一直在把镜像进来的事件回写 PG——`ON CONFLICT DO NOTHING` 挡着才没出事，现在也不再回写）。
+两支 e2e 也改成带粘性 cookie，行为与浏览器一致；`NO_STICKY=1` 则故意跨副本，专门验证这条写保护。
+
+**验收结果（2026-08-25 18:30-18:45）**：
+- `scripts/e2e-queue.mjs`（粘性）PASS：A 运行中 +1.8s 排队投影同时出现 B、C；`updateQueue remove C` 接受且 C 从未落日志；
+  `steer B` 接受，B 在 A 的**同一轮**内被处理（seqA 9 < seqB 348 < turn/end 4728，全程唯一一个 turn/start）；
+  日志无 interrupted 闭合；收尾投影空、会话空闲。跨副本（`NO_STICKY=1`）：三台 Host 在 Runtime 运行中 resume 同一会话，
+  PG 里 turn/end 计数 0（以前会被补出 `interrupted`）；`updateQueue` 落到没有该会话代理的副本会回 queue-item-not-found
+  ——这是 apiproxy 原生语义（它不 resume），浏览器有粘性 cookie 不会碰到。
+- `scripts/e2e-queue-outage.mjs` PASS：Runtime 缩 0 后提问 D 8/8 次轮询持续可见；模拟死信 → 红条「消息处理失败（Runtime
+  已尝试 3 次）：simulated poison」且从投影撤下；恢复后 E 4s 内被新 pod 认领处理；D 从未运行。
+  **Runtime 副本归 KEDA 管**（ScaledObject min=2，`kubectl scale` 会被立刻改回）：停机场景用
+  `kubectl annotate scaledobject/opendb-dsh-runtime-default autoscaling.keda.sh/paused-replicas=0`，去掉注解即恢复。
+- 浏览器级（mac 无头 Chrome + puppeteer，`/tmp/puppw/queue-browser.mjs`）PASS：连发三条后底部出现原生折叠条
+  「2 条排队消息」→ 点开两行，行内原生「编辑排队消息 / 删除排队消息 / 插话发送」→ 真实鼠标点删除 → C 消失、dock 剩 B、
+  A 继续流式输出，console 零错误（截图 queue-1..4.png 亲眼核对）。
+- e2e 的长提问只用指标类工具：健康体检工具在节点绑定异常时会让模型 `ask_user_question`，e2e 无人应答整轮就挂在那
+  （曾把一台 Runtime 的一个并发槽占了 15 分钟，`dsh_questions` 置空答案 + 插一条 interrupt 行才解开）。
+- 另：mac 上 `k8s-cp.orb.local` 只解析到 IPv6，kubectl 偶发 "no route to host" 几十秒——脚本里的 kubectl 一律重试。
+
+### 第三轮（同日 19:44，user 报障）：新会话草稿置灰「选择一个工作区开始」
+
+**现象**：点「新会话」后输入框虚线禁用，提示「选择一个工作区开始」，无法交互。PG 里 19:43:48 / 19:44:02 两条空白会话
+都建成功了——服务端没拒绝。
+
+**根因（探针复现，非猜测）**：浏览器与 Host 有三条连接（HTTP、`events.mux`、`events.host`），靠 traefik 粘性 cookie 绑在
+同一副本；当天 Host 滚动 5 轮，旧连接断线重连时旧 cookie 指向的 pod 已不在，traefik 给每条重连**各自随机分配**副本并
+重发 cookie → 三条连接分家。dsh-host-apiproxy 的两条推送流只转发**本副本**的 ctx 事件：HTTP 在 A 建会话，
+`host/session-added` 只在 A 的流上发，页面的流在 B → 草稿等不到「会话已建好、属于 og-lab」（chip 解析靠
+`workspace.sessionIds.includes(sessionId)`）→ 原生把输入框置灰（`inert = sessionId===undefined || hero && chipTitle===undefined`）。
+探针 `/tmp/puppw/cross-pod-probe.mjs`：拿三台副本各自的 cookie，用 A 建会话，A 的 host 流收到 session-added、B 的流**空**。
+雪上加霜：原生此时会露出工作区选择行让用户手动点一下，那行被我们按 user 要求藏了 → 没有自救入口。
+
+**处置（user 定：全部做）**：
+1. `ui-harness` CSS：`body:has(textarea:disabled) [class*="heroWorkspaceRow"]{display:flex}`——只在输入框禁用时露出原生选择行
+   （正常态照旧隐藏）。无头 Chrome 验证：隐藏→禁用时露出（截图 hero-row-menu.png 可见 og-lab ▾ 标准模式 ▾）→恢复后再隐藏。
+2. chart：Host `replicas: 1`、KEDA `autoscale.min: 1`——预览阶段单用户，多副本只带来分家问题；需要时调回 3。
+3. 新插件 `packages/host-fanout`（bundle-host + profiles/host 三处注册）：PG NOTIFY 通道 `opendb_host_fanout`；本副本的
+   `session/created` / `agent/status→running` 广播「会话被触碰」，其余副本 `agents.resume` 成本地活会话（announce 触发本副本
+   `session/created` → apiproxy 给本副本的 mux/host 流补订阅与 session-added；之后 ProxyAgent tail 从 PG 镜像、按线程状态上报
+   running/idle）；`agent/error` 也广播重抛（死信红条各副本都看到）。扇入 resume 前先等 seed 落库（write-behind 晚几十毫秒，
+   过早 resume 会让空 seed 的 `session/end-seed` 抢占 seq 0 顶掉系统提示——这才是真损坏）；扇入触发的 announce 不回播（防环）。
+   6 个单测覆盖去重/防环/等 seed/重抛。验收：3 副本下探针 B 流收到 A 建的 session-added ✅；随后 helm 收到 1 副本。
+
+### 第四轮（同日 21:06，user 报障「选择完成后直接出不来了」）：滚动更新会切断运行中的轮次
+
+**事实**：user 21:05:52 回复「2」，Runtime gftz4 立刻认领、跑了 44s 工具调用；21:06:36 那台 pod 正被我发布 host-fanout 的
+滚动更新终止——dsh 收到 SIGTERM 关机时**直接取消运行中的轮次**（`turn/end interrupted`），最终回复没生成，Host 侧一切"正常"
+（release idle、tail stop）。`terminationGracePeriodSeconds: 330` 完全用不上：不是 k8s 杀的，是 dsh 自己取消的。
+**修法第一版**（只看 `turn/end` 原因）e2e 直接翻车：`kubectl delete pod` 后事件在 14:50:28 就停了，没有任何 turn/end，
+线程最后还被标 idle——dsh 关机时插件销毁顺序不可控：session-persistence 的连接池先被关，轮次还在内存里跑、输出全丢，
+我们的 drain 等它"自然结束"再 release idle。结论：**不能指望 dsh 替我们收尾**。
+**最终形态**：`runtime-worker` 自己接 SIGTERM/SIGINT → 立刻取消本 pod 所有运行中的轮次（`running` 表）→ run() 看到
+"不是用户中断的 interrupted / 关机中没跑到 completed" → `requeueFailed(..., { rotateMessageId: true })` 换一个消息 id 重投
+（原 id 已落日志，Host 的 settleDurable 会把它当"已处理"吞掉，同一 id 也不能在日志里出现两次），线程标 interrupted，
+全程用 worker 自己的连接池；flush 失败不算运行失败。新 pod 重跑一遍，日志上第一轮标 interrupted、第二轮完整，计入 3 次上限。
+验收 `scripts/e2e-queue-shutdown.mjs`：长提问运行中 delete 正在跑它的 pod → interrupted → 新 id 重投 → 另一台跑到 completed。
+**纪律**：Runtime 滚动前先看 `dsh_threads.status='running'`（滚动脚本已内置等待归零）；user 正在对话时不要滚 Runtime。
