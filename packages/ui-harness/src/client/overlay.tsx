@@ -34,8 +34,38 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
    * 默认任务面板：运行历史 + 报告 + 操作（任务插件未注册专属面板时使用）。
    * runId：从「历史」跳来时高亮那一行——没有专属大盘的类型，至少能定位到那次。
    */
+  /**
+   * 该任务类型的面板插件包这次是否没加载上（2026-08-26 user 报障：滚动窗口里加载的页面，两个任务面板都退化成历史列表）。
+   * 看 performance 资源条目：包的请求不存在 / 非 200 / 0 字节 = 没加载上 → 自动刷新一次（sessionStorage 限 5 分钟一次，防循环）。
+   */
+  function pluginBundleFailed(type: string): { failed: boolean; status?: number } {
+    try {
+      const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+      const hit = entries.filter((e) => e.name.includes(`/plugins/@opendb-dsh/task-${type}/client.js`));
+      if (hit.length === 0) return { failed: true };
+      const last = hit[hit.length - 1] as PerformanceResourceTiming & { responseStatus?: number };
+      const status = last.responseStatus;
+      if (typeof status === 'number' && status !== 200) return { failed: true, status };
+      if (last.transferSize === 0 && last.decodedBodySize === 0) return { failed: true };
+      return { failed: false, status };
+    } catch { return { failed: false }; }
+  }
+  function autoReloadOnce(reason: string): boolean {
+    try {
+      const key = 'opendb.autoReload.at';
+      const last = Number(sessionStorage.getItem(key) ?? 0);
+      if (Date.now() - last < 5 * 60_000) return false;
+      sessionStorage.setItem(key, String(Date.now()));
+      console.warn(`[opendb-harness] ${reason}，自动刷新页面`);
+      setTimeout(() => location.reload(), 1500);
+      return true;
+    } catch { return false; }
+  }
+
   function DefaultTaskPanel({ task, runId }: { task: any; runId?: string }) {
     const [runs, setRuns] = useState<any[]>([]);
+    const [bundle] = useState(() => pluginBundleFailed(String(task.type)));
+    const [reloading] = useState(() => bundle.failed && autoReloadOnce(`任务类型「${String(task.type)}」的面板插件包未加载（HTTP ${bundle.status ?? '无请求'}）`));
     const refresh = async () => { try { setRuns((await call('runs/list', { taskId: task.id })).runs); } catch { /* retry */ } };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, [task.id]);
     return (
@@ -44,6 +74,13 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
           <b>{task.name}</b><span style={S.dim}>{task.type} · {task.cron ?? '手动'}</span>
           <span style={{ marginLeft: 'auto', ...S.dim, fontSize: 12 }}>{task.enabled ? (task.cron ? '定时运行中' : '手动触发') : '已停用'}</span>
         </div>
+        {bundle.failed ? (
+          <div style={{ margin: '10px 0 0', padding: '9px 12px', borderRadius: 8, fontSize: 13, background: '#fdecec', color: '#b53434', border: '1px solid rgba(214,69,69,.25)' }}>
+            <b>面板插件包没加载上</b>（{bundle.status !== undefined ? `HTTP ${bundle.status}` : '页面加载时没有拿到'}——多半是页面在服务滚动更新的窗口里打开的）。
+            {reloading ? ' 正在自动刷新…' : ' '}
+            <button type="button" onClick={() => location.reload()} style={{ ...S.btn, marginLeft: 8, color: '#b53434' }}>立即刷新</button>
+          </div>
+        ) : null}
         {/*
           兜底视图的醒目标识（user 2026-08-24：「报告又没有报告了，内容和历史列表基本一致」——
           说的就是掉到这里。以前只有一行灰色小字提"当前为默认视图"，看不出是异常态）。

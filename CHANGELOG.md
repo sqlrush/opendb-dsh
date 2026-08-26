@@ -7,6 +7,10 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+- Host 滚动更新窗口里加载的页面拿不到任务面板插件包，任务页退化成默认历史列表：就绪探针改探插件包 URL（TCP 端口开了不算就绪）、
+  `maxUnavailable 0`；兜底视图检测到插件包未加载会自动刷新一次并给出「立即刷新」。
+
 ## [0.1.0] - 2026-08-26
 
 首个正式编号版本：DeepSeek Harness（dsh rc.6）之上的只读数据库集群分析平台，跑在 k3s（Host + Runtime 池 + PG/Redis/MinIO/Qdrant）。

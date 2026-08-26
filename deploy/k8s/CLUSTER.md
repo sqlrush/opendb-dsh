@@ -660,6 +660,23 @@ write-behind 一直在把镜像进来的事件回写 PG——`ON CONFLICT DO NOT
 验收 `scripts/e2e-queue-shutdown.mjs`：长提问运行中 delete 正在跑它的 pod → interrupted → 新 id 重投 → 另一台跑到 completed。
 **纪律**：Runtime 滚动前先看 `dsh_threads.status='running'`（滚动脚本已内置等待归零）；user 正在对话时不要滚 Runtime。
 
+## 任务面板退化成历史列表（2026-08-26 v0.1.0 发布后，user 报障：健康报告与平台阈值配置都"没了"）
+
+**现象**：任务页只剩默认视图（运行历史列表 + "当前是默认视图"提示），两个任务类型同时如此。
+**排查**：Host 单副本已运行 1.5h 无重启；插件包 URL 全部 200；无头 Chrome 新开页面渲染正常；Host 日志无错。
+→ 不是服务端坏了，是 user 的页面在 **Host 滚动窗口**里加载的：任务面板插件包（task-health / task-thresholds 的 client.js）
+那一刻拿不到，客户端插件没注册，任务页只能落到默认视图；页面不刷新就一直如此。
+**窗口从哪来**：Host 的 readinessProbe 只探 TCP 3080——端口一开 k8s 就判 Ready、流量就切过去，而 dsh 插件系统还在启动，
+插件包请求 5xx/超时。`maxUnavailable` 25% 对单副本取整为 0 本来是对的，但"就绪"判早了等于没保护。
+**修法**：
+1. 就绪探针改 `httpGet /plugins/@opendb-dsh/ui-harness/client.js`（Host 头 `localhost:3080`，加进 extraTrustedHosts 过 fence）：
+   只有插件系统真正能服务了才 Ready；策略显式 `maxSurge 1 / maxUnavailable 0`。
+2. ui-harness 兜底视图：用 `performance.getEntriesByType('resource')` 看该类型插件包的请求（不存在 / 非 200 / 0 字节 = 没加载上），
+   命中则红条提示 + **自动刷新一次**（sessionStorage 限 5 分钟一次防循环）+「立即刷新」按钮。
+3. 滚动脚本在 rollout 期间每秒探插件包 URL 统计非 200 次数，作为窗口是否归零的验收。
+**验收**：新探针生效后再滚一次 Host，rollout 全程每秒探 `task-health/client.js`：**120/120 全 200，窗口归零**；
+无头 Chrome 新开任务页：13 维卡片正常、无默认视图提示、console 零错误。
+
 ## 健康报告改造：十二维直读采集器、发现带图、一键深挖（2026-08-26，user 三点）
 
 **问题**：十二维矩阵只从「发现」反推，健康维度一个数字都没有；异常维度只给 `值 · 规则码`，不解释数字含义/阈值/为何判级；

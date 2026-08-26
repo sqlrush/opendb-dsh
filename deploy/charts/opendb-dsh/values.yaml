@@ -40,7 +40,8 @@ host:
   autoscale: { min: 1, max: 6, targetConnections: 50 }   # P3 HPA-by-WS（KEDA metrics-api）
   port: 3080
   # k8s-cp.orb.local = OrbStack 注册的系统 resolver 域名，对 mac 睡眠/换网免疫（IP 直连路由会被热点切换挤掉）
-  extraTrustedHosts: ["192.168.139.164", "192.168.139.164:30080", "k8s-cp.orb.local", "localhost:18080", "127.0.0.1:18080"]
+  # localhost:3080 = 就绪探针用的 Host 头（探插件包 URL 要过 fence）
+  extraTrustedHosts: ["192.168.139.164", "192.168.139.164:30080", "k8s-cp.orb.local", "localhost:18080", "127.0.0.1:18080", "localhost:3080"]
   hostPathPort: 3080
   resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
 

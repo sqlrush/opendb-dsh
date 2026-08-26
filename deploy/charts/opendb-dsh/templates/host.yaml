@@ -8,7 +8,8 @@ spec:
   replicas: {{ .Values.host.replicas }}
   {{- end }}{{/* autoscale 时副本数交给 KEDA/HPA，helm 不回写 */}}
   # P3 多副本：agents-dir 改 emptyDir+initContainer 重建（RWO PVC 与多副本不兼容），恢复滚动更新
-  strategy: { type: RollingUpdate }
+  # 新 pod 就绪（插件包可服务）之前旧 pod 不下线：单副本也零窗口
+  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } }
   selector: { matchLabels: { app: {{ .Release.Name }}-host } }
   template:
     metadata: { labels: { app: {{ .Release.Name }}-host } }
@@ -44,7 +45,16 @@ spec:
             - { name: OPENDB_DEBUG_LOG, value: {{ .Values.debug.dispatchTraceLog | quote }} }
             {{- end }}
           ports: [{ containerPort: {{ .Values.host.port }} }]
-          readinessProbe: { tcpSocket: { port: {{ .Values.host.port }} }, initialDelaySeconds: 5, periodSeconds: 5 }
+          # 2026-08-26 事故：只探 TCP 端口 → 端口一开流量就切过去，插件包还没就绪 → 那一窗口里加载的页面拿不到任务面板插件，
+          # 任务页退化成默认历史列表。改为探一个插件包 URL：只有 dsh 插件系统真正起来了才 200。Host 头用受信任主机名过 fence。
+          readinessProbe:
+            httpGet:
+              path: /plugins/@opendb-dsh/ui-harness/client.js
+              port: {{ .Values.host.port }}
+              httpHeaders: [{ name: Host, value: "localhost:{{ .Values.host.port }}" }]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
           resources: {{- toYaml .Values.host.resources | nindent 12 }}
           volumeMounts:
             # agents 工作区目录必须跨重启存活：dsh workspace 启动校验 header.cwd 目录，
