@@ -58,6 +58,9 @@
 - **在 mac 上跑构建/测试的 ssh 命令**：非交互 PATH 缺 `/opt/homebrew/bin`（kubectl/pnpm）与 `/usr/local/bin`（docker），
   且起始目录是 $HOME——命令必须显式 `export PATH` + `cd /Users/sqlrush/dsh-k8s`，并检查 `build-image.sh` 退出码，
   否则会像 2026-08-25 那样拿旧镜像滚动一整轮。此机（Linux VM）没有 node/pnpm/kubectl。
+- **滚动一律用 `deploy/k8s/rollout.sh`（2026-08-26 起，禁止手打 kubectl rollout）**：它会构建 → 等运行中的用户轮次归零 →
+  滚动 → 自动验收（迁移台账 / 模块缺失 / 插件包 200 / 滚动窗口非 200 次数 / 无头 Chrome 任务页不是默认视图且 console 零错误），
+  任一项失败即非零退出。「报告变成历史列表」同一症状出过三次（注册竞态 ×2、滚动窗口 ×1），验收脚本就是为它立的。
 - **新建插件包三处缺一不可**：`packages/<pkg>` 本体、`bundle-host/bundle-runtime` 的 cordis.patch.yml 插入行、
   **`profiles/host|runtime/package.json` 的 workspace 依赖**。dsh 从 `/var/lib/dsh/profiles/<profile>/` 解析插件，
   漏第三处 = 镜像能建、pod 启动 `ERR_MODULE_NOT_FOUND` 崩循环（2026-08-24 thresholds 三包实证；

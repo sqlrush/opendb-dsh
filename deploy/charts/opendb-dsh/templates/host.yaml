@@ -47,6 +47,9 @@ spec:
           ports: [{ containerPort: {{ .Values.host.port }} }]
           # 2026-08-26 事故：只探 TCP 端口 → 端口一开流量就切过去，插件包还没就绪 → 那一窗口里加载的页面拿不到任务面板插件，
           # 任务页退化成默认历史列表。改为探一个插件包 URL：只有 dsh 插件系统真正起来了才 200。Host 头用受信任主机名过 fence。
+          # 旧 pod 收到终止信号后先停 8 秒再退出：kubelet 摘 endpoint 与 traefik 更新路由有 ~1s 错位，
+          # 立刻退出会让切换瞬间的请求打到已死的进程（2026-08-26 rollout.sh 实测 240 次探测里 1 次非 200）
+          lifecycle: { preStop: { exec: { command: ["sh", "-c", "sleep 8"] } } }
           readinessProbe:
             httpGet:
               path: /plugins/@opendb-dsh/ui-harness/client.js

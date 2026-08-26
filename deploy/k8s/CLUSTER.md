@@ -674,8 +674,16 @@ write-behind 一直在把镜像进来的事件回写 PG——`ON CONFLICT DO NOT
 2. ui-harness 兜底视图：用 `performance.getEntriesByType('resource')` 看该类型插件包的请求（不存在 / 非 200 / 0 字节 = 没加载上），
    命中则红条提示 + **自动刷新一次**（sessionStorage 限 5 分钟一次防循环）+「立即刷新」按钮。
 3. 滚动脚本在 rollout 期间每秒探插件包 URL 统计非 200 次数，作为窗口是否归零的验收。
-**验收**：新探针生效后再滚一次 Host，rollout 全程每秒探 `task-health/client.js`：**120/120 全 200，窗口归零**；
+**验收**：新探针生效后再滚一次 Host，rollout 全程每秒探 `task-health/client.js`：**120/120 全 200**；
 无头 Chrome 新开任务页：13 维卡片正常、无默认视图提示、console 零错误。
+**user 追问"确实根治了吗"之后再加的两层**：
+4. 兜底视图区分「插件包没加载」（自动刷新）与「包已加载但没注册面板 = 初始化抛异常」（红条要求看 console，刷新无用）——
+   后者是之前**唯一没挡住**的静默退化路径。
+5. `deploy/k8s/rollout.sh`：以后滚动一律用它，内置验收：迁移台账 / 模块缺失 / 插件包 200 / **滚动期间每秒探插件包统计非 200** /
+   无头 Chrome 跑 `scripts/browser/task-panel-check.mjs`（任务页必须是专属大盘且 console 零错误）。
+   首次使用就抓到残余：240 次探测 **1 次非 200**——切换瞬间请求打到已收到终止信号、立即退出的旧 pod（endpoint 摘除与 traefik
+   更新有 ~1s 错位）。修：Host 容器 `preStop: sleep 8`。复测 **240/240 全 200**，浏览器验收 PASS。
+   另：mac 自带 bash 3.2 在 `${var:+…}` 里放多字节字符会把变量名啃坏（"codes�: unbound variable"），脚本里只用 ASCII。
 
 ## 健康报告改造：十二维直读采集器、发现带图、一键深挖（2026-08-26，user 三点）
 

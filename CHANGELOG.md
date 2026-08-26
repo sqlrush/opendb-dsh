@@ -9,7 +9,9 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ### Fixed
 - Host 滚动更新窗口里加载的页面拿不到任务面板插件包，任务页退化成默认历史列表：就绪探针改探插件包 URL（TCP 端口开了不算就绪）、
-  `maxUnavailable 0`；兜底视图检测到插件包未加载会自动刷新一次并给出「立即刷新」。
+  `maxUnavailable 0`；兜底视图检测到插件包未加载会自动刷新一次并给出「立即刷新」；插件包已加载却没注册面板（初始化异常）
+  时给出明确红条而不是静默退化。
+- 新增 `deploy/k8s/rollout.sh`：构建 → 等用户轮次归零 → 滚动 → 自动验收（含无头 Chrome 任务页检查 `scripts/browser/task-panel-check.mjs`）。
 
 ## [0.1.0] - 2026-08-26
 

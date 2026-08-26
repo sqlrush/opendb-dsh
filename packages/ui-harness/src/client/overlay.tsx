@@ -38,17 +38,18 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
    * 该任务类型的面板插件包这次是否没加载上（2026-08-26 user 报障：滚动窗口里加载的页面，两个任务面板都退化成历史列表）。
    * 看 performance 资源条目：包的请求不存在 / 非 200 / 0 字节 = 没加载上 → 自动刷新一次（sessionStorage 限 5 分钟一次，防循环）。
    */
-  function pluginBundleFailed(type: string): { failed: boolean; status?: number } {
+  function pluginBundleFailed(type: string): { failed: boolean; loaded: boolean; status?: number } {
     try {
       const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
       const hit = entries.filter((e) => e.name.includes(`/plugins/@opendb-dsh/task-${type}/client.js`));
-      if (hit.length === 0) return { failed: true };
+      if (hit.length === 0) return { failed: true, loaded: false };
       const last = hit[hit.length - 1] as PerformanceResourceTiming & { responseStatus?: number };
       const status = last.responseStatus;
-      if (typeof status === 'number' && status !== 200) return { failed: true, status };
-      if (last.transferSize === 0 && last.decodedBodySize === 0) return { failed: true };
-      return { failed: false, status };
-    } catch { return { failed: false }; }
+      if (typeof status === 'number' && status !== 200) return { failed: true, loaded: false, status };
+      if (last.transferSize === 0 && last.decodedBodySize === 0) return { failed: true, loaded: false };
+      // 包拿到了却还是落到默认视图 = 插件初始化时抛了异常（面板没注册）。刷新解决不了，要看 console 里的报错
+      return { failed: false, loaded: true, status };
+    } catch { return { failed: false, loaded: false }; }
   }
   function autoReloadOnce(reason: string): boolean {
     try {
@@ -79,6 +80,11 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
             <b>面板插件包没加载上</b>（{bundle.status !== undefined ? `HTTP ${bundle.status}` : '页面加载时没有拿到'}——多半是页面在服务滚动更新的窗口里打开的）。
             {reloading ? ' 正在自动刷新…' : ' '}
             <button type="button" onClick={() => location.reload()} style={{ ...S.btn, marginLeft: 8, color: '#b53434' }}>立即刷新</button>
+          </div>
+        ) : bundle.loaded ? (
+          <div style={{ margin: '10px 0 0', padding: '9px 12px', borderRadius: 8, fontSize: 13, background: '#fdecec', color: '#b53434', border: '1px solid rgba(214,69,69,.25)' }}>
+            <b>面板插件包已加载，但没有注册出「{task.type}」的面板</b>——插件初始化时抛了异常（这是代码 bug，刷新解决不了）。
+            请打开浏览器 console，把 <code>task-{task.type}</code> 相关的报错发给开发者。
           </div>
         ) : null}
         {/*
