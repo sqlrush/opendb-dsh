@@ -6,7 +6,7 @@
  *   <Gauge> 阈值水位（0-1 占比 + notice/warn/critical 刻度，标出实测落档）
  *   <Line>  折线（时间序列，可叠阈值虚线，悬停读数）
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type Level = 'ok' | 'notice' | 'warn' | 'critical';
 export const SEV: Record<Level, string> = { ok: '#3fa552', notice: '#c9862d', warn: '#e07a1f', critical: '#d64545' };
@@ -117,6 +117,95 @@ export function Gauge({ value, tiers, cmp = '>=', level, unit = 'ratio', max }: 
   );
 }
 
+// ───────────────────────────────────────────── Rail（stat 面板式阈值轨道：刻度与实测都在轨道上，文字统一在下方一行）
+export function Rail({ value, tiers, cmp = '>=', level, unit = 'ratio', max }: {
+  value: number; tiers: Partial<Record<Exclude<Level, 'ok'>, number>>; cmp?: '>=' | '<'; level: Level; unit?: Unit; max?: number;
+}) {
+  const marks = (Object.entries(tiers) as [Exclude<Level, 'ok'>, number][]).filter(([, v]) => typeof v === 'number').sort((a, b) => a[1] - b[1]);
+  const top = max ?? (unit === 'ratio' ? 1 : Math.max(value, ...marks.map(([, v]) => v), 1e-9) * 1.15);
+  const pct = (v: number) => Math.max(0, Math.min(100, (v / top) * 100));
+  const CN: Record<Level, string> = { ok: '正常', notice: '关注', warn: '告警', critical: '严重' };
+  return (
+    <div>
+      <div style={{ position: 'relative', height: 4, borderRadius: 2, background: '#e9ecf1', margin: '10px 0 6px' }}>
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct(value)}%`, background: SEV[level], borderRadius: 2 }} />
+        {marks.map(([l, v]) => <div key={l} title={`${CN[l]} ${cmp}${fmtValue(v, unit)}`} style={{ position: 'absolute', left: `${pct(v)}%`, top: -3, width: 2, height: 10, background: SEV[l], borderRadius: 1 }} />)}
+        <div style={{ position: 'absolute', left: `${pct(value)}%`, top: -4, width: 12, height: 12, marginLeft: -6, borderRadius: 6, background: '#fff', border: `2px solid ${SEV[level]}`, boxSizing: 'border-box' }} />
+      </div>
+      <div style={{ display: 'flex', gap: 10, fontSize: 12, color: DIM, fontVariantNumeric: 'tabular-nums', flexWrap: 'wrap' }}>
+        <span>阈值</span>
+        {marks.length === 0 ? <span>无</span> : marks.map(([l, v]) => <span key={l}><i style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 4, background: SEV[l], marginRight: 4, verticalAlign: 'middle' }} />{CN[l]} {cmp}{fmtValue(v, unit)}</span>)}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────── StackedBar（构成：单条 100% 堆叠 + 图例）
+export function StackedBar({ items, unit, height = 8 }: { items: Item[]; unit: Unit; height?: number }) {
+  const total = items.reduce((s, i) => s + Math.max(0, i.value), 0);
+  if (total <= 0) return <div style={{ fontSize: 12, color: DIM }}>无数据</div>;
+  const parts = items.map((it, i) => ({ ...it, frac: Math.max(0, it.value) / total, color: it.level !== undefined ? SEV[it.level] : PALETTE[i % PALETTE.length] }));
+  return (
+    <div>
+      <div style={{ display: 'flex', height, borderRadius: height / 2, overflow: 'hidden', background: '#e9ecf1' }}>
+        {parts.map((p, i) => p.frac > 0 ? <div key={i} title={`${p.name} · ${fmtValue(p.value, unit)} · ${(p.frac * 100).toFixed(1)}%`} style={{ width: `${p.frac * 100}%`, background: p.color }} /> : null)}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 6, fontSize: 12, color: '#61666b', fontVariantNumeric: 'tabular-nums' }}>
+        {parts.map((p, i) => (
+          <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}>
+            <i style={{ width: 8, height: 8, borderRadius: 2, background: p.color, flex: 'none' }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }} title={p.name}>{p.name}</span>
+            <b style={{ fontWeight: 500, color: INK }}>{(p.frac * 100).toFixed(p.frac >= 0.1 ? 0 : 1)}%</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────── RankList（Top-N：名称 · 细条 · 数值）
+export function RankList({ items, unit, max: maxN = 3, ticks }: { items: Item[]; unit: Unit; max?: number; ticks?: { value: number; level: Level }[] }) {
+  const rows = [...items].sort((a, b) => b.value - a.value).slice(0, maxN);
+  const top = Math.max(...rows.map((r) => r.value), ...(ticks ?? []).map((t) => t.value), 1e-9);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 64px', rowGap: 7, columnGap: 10, fontSize: 12.5, fontVariantNumeric: 'tabular-nums' }}>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: 'contents' }}>
+          <div style={{ minWidth: 0 }}>
+            <div title={r.name} style={{ color: '#61666b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: /[一-龥]/.test(r.name) ? undefined : MONO, fontSize: 12 }}>{r.name}</div>
+            <div style={{ position: 'relative', height: 4, borderRadius: 2, background: '#e9ecf1', marginTop: 3 }}>
+              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.min(100, (r.value / top) * 100)}%`, background: r.level !== undefined ? SEV[r.level] : PALETTE[0], borderRadius: 2 }} />
+              {(ticks ?? []).map((t, k) => <div key={k} style={{ position: 'absolute', left: `${Math.min(100, (t.value / top) * 100)}%`, top: -2, width: 2, height: 8, background: SEV[t.level] }} />)}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', color: INK, fontWeight: 500, alignSelf: 'end', fontSize: 12.5 }}>{fmtValue(r.value, unit)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────── Sparkline（迷你趋势：无坐标轴，末点强调）
+export function Sparkline({ points, width = 120, height = 32, color = PALETTE[0], thresholds = [], unit = 'count' }: {
+  points: [number, number][]; width?: number; height?: number; color?: string; thresholds?: { value: number; level?: Level }[]; unit?: Unit;
+}) {
+  if (points.length < 2) return <span style={{ fontSize: 11.5, color: DIM }}>—</span>;
+  const xs = points.map((p) => p[0]); const ys = [...points.map((p) => p[1]), ...thresholds.map((t) => t.value)];
+  const x0 = Math.min(...xs); const x1 = Math.max(...xs); let lo = Math.min(...ys); let hi = Math.max(...ys); if (hi === lo) hi = lo + 1;
+  const x = (t: number) => 2 + ((t - x0) / Math.max(1, x1 - x0)) * (width - 4);
+  const y = (v: number) => 2 + (1 - (v - lo) / (hi - lo)) * (height - 4);
+  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join(' ');
+  const last = points[points.length - 1];
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block' }}>
+      <title>{`最近 ${fmtValue(last[1], unit)}`}</title>
+      {thresholds.map((t, i) => <line key={i} x1={2} x2={width - 2} y1={y(t.value)} y2={y(t.value)} stroke={SEV[t.level ?? 'warn']} strokeDasharray="3 3" strokeWidth={1} />)}
+      <path d={d} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
+      <circle cx={x(last[0])} cy={y(last[1])} r={2.5} fill={color} />
+    </svg>
+  );
+}
+
 // ───────────────────────────────────────────── Line（时间序列）
 export interface Series { name: string; points: [number, number][]; color?: string }
 function niceTicks(min: number, max: number, count = 4): number[] {
@@ -128,15 +217,30 @@ function niceTicks(min: number, max: number, count = 4): number[] {
 }
 const fmtTime = (ms: number, spanMs: number) => { const d = new Date(ms); const hh = String(d.getHours()).padStart(2, '0'); const mm = String(d.getMinutes()).padStart(2, '0'); return spanMs > 36e5 * 26 ? `${d.getMonth() + 1}-${d.getDate()} ${hh}:${mm}` : `${hh}:${mm}`; };
 
+/** 容器实际宽度（ResizeObserver）：viewBox 跟着真实宽度走，缩到 340px 的卡片里坐标文字仍是 10.5px 而不是被等比缩成 5px */
+function useWidth(ref: { current: HTMLDivElement | null }, fallback: number): number {
+  const [w, setW] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current; if (el === null) return;
+    const apply = () => { const cw = el.getBoundingClientRect().width; if (cw > 40) setW(Math.round(cw)); };
+    apply();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(apply); ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}
+
 export function Line({ series, unit, thresholds = [], height = 170, width = 720, yMin }: {
   series: Series[]; unit: Unit; thresholds?: { label: string; value: number; level?: Level }[]; height?: number; width?: number; yMin?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const measured = useWidth(ref, width);
   const [hover, setHover] = useState<{ x: number; t: number; vals: { name: string; v: number; color: string }[] } | null>(null);
   const all = series.flatMap((s) => s.points);
   if (all.length === 0) return <div style={{ fontSize: 12.5, color: DIM }}>窗口内无数据</div>;
   const pad = { l: 48, r: 12, t: 12, b: 24 };
-  const W = width; const H = height; const iw = W - pad.l - pad.r; const ih = H - pad.t - pad.b;
+  const W = measured; const H = height; const iw = W - pad.l - pad.r; const ih = H - pad.t - pad.b;
   const t0 = Math.min(...all.map((p) => p[0])); const t1 = Math.max(...all.map((p) => p[0]));
   const vs = [...all.map((p) => p[1]), ...thresholds.map((t) => t.value)];
   let lo = yMin ?? Math.min(...vs); let hi = Math.max(...vs);
