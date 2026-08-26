@@ -4,6 +4,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { validateReadOnlySql, type QueryResult } from '@opendb-dsh/db';
 import { resolvePlatformAgent } from './agent.ts';
 import { renderTable, clampText } from './render.ts';
+import { buildHint, cteNames, referencedRelations, HINT_CODES, OG_SCHEMA_HINT } from './schema-hint.ts';
 
 export { resolvePlatformAgent } from './agent.ts';
 export { renderTable, clampText, cell } from './render.ts';
@@ -67,7 +68,7 @@ function defineDbNodesTool(deps: ToolDeps) {
 function defineDbQueryTool(deps: ToolDeps) {
   return defineTool({
     name: 'db_query',
-    description: '在当前 agent 绑定的数据库节点上执行单条只读 SQL（SELECT/WITH/SHOW/EXPLAIN）。写操作会被平台三层防护拒绝。',
+    description: `在当前 agent 绑定的数据库节点上执行单条只读 SQL（SELECT/WITH/SHOW/EXPLAIN）。写操作会被平台三层防护拒绝。${OG_SCHEMA_HINT}`,
     parameters: {
       sql: { type: 'string', required: true, description: '单条只读 SQL 语句。' },
       node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
@@ -78,8 +79,28 @@ function defineDbQueryTool(deps: ToolDeps) {
       const { node } = await pickNode(deps.registry, exec, args.node);
       const gate = validateReadOnlySql(String(args.sql ?? ''));
       if (gate.ok === false) throw new ToolInputError(`SQL 被只读门拒绝：${gate.reason}`);
-      const r = await deps.db.query(node, gate.sql, { maxRows: Math.min(Number(args.max_rows ?? deps.maxRows), deps.maxRows) });
-      return { content: formatResult(node, gate.sql, r, deps.maxContentBytes) };
+      try {
+        const r = await deps.db.query(node, gate.sql, { maxRows: Math.min(Number(args.max_rows ?? deps.maxRows), deps.maxRows) });
+        return { content: formatResult(node, gate.sql, r, deps.maxContentBytes) };
+      } catch (cause) {
+        // 列/表/函数不存在：把 SQL 引用的关系的真实列名查出来附在错误里，模型一次改对（2026-08-26 event_name 事故）
+        const err = cause as { code?: string; message?: string };
+        if (!HINT_CODES.has(String(err?.code ?? ''))) throw cause;
+        const cache = new Map<string, readonly string[] | undefined>();
+        const lookup = async (rel: string): Promise<readonly string[] | undefined> => {
+          const [schema, table] = rel.includes('.') ? rel.split('.', 2) : ['', rel];
+          try {
+            const q = schema !== ''
+              ? await deps.db.query(node, `SELECT column_name FROM information_schema.columns WHERE table_schema = '${schema.replace(/'/g, "''")}' AND table_name = '${table.replace(/'/g, "''")}' ORDER BY ordinal_position`, { maxRows: 200 })
+              : await deps.db.query(node, `SELECT column_name FROM information_schema.columns WHERE table_name = '${table.replace(/'/g, "''")}' AND table_schema NOT IN ('pg_catalog','information_schema') ORDER BY ordinal_position`, { maxRows: 200 });
+            return q.rows.length > 0 ? q.rows.map((row: any) => String(row.column_name)) : undefined;
+          } catch { return undefined; }
+        };
+        // buildHint 是同步的：先把所有引用关系的列查好再拼
+        for (const rel of referencedRelations(gate.sql, cteNames(gate.sql))) cache.set(rel, await lookup(rel));
+        const hint = buildHint(gate.sql, err, (rel) => cache.get(rel));
+        throw new Error(`${String(err?.message ?? cause)}${hint}`);
+      }
     },
   } as any);
 }

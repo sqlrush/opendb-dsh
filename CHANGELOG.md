@@ -12,6 +12,8 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   `maxUnavailable 0`；兜底视图检测到插件包未加载会自动刷新一次并给出「立即刷新」；插件包已加载却没注册面板（初始化异常）
   时给出明确红条而不是静默退化。
 - 新增 `deploy/k8s/rollout.sh`：构建 → 等用户轮次归零 → 滚动 → 自动验收（含无头 Chrome 任务页检查 `scripts/browser/task-panel-check.mjs`）。
+- `db_query` 报「列/表/函数不存在」时附上所引用视图的真实列名与最接近的列名建议（模型常把 openGauss `dbe_perf.wait_events` 的
+  `event` 写成 `event_name`），工具描述加 openGauss 常错列名速查。
 
 ## [0.1.0] - 2026-08-26
 

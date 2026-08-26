@@ -685,6 +685,22 @@ write-behind 一直在把镜像进来的事件回写 PG——`ON CONFLICT DO NOT
    更新有 ~1s 错位）。修：Host 容器 `preStop: sleep 8`。复测 **240/240 全 200**，浏览器验收 PASS。
    另：mac 自带 bash 3.2 在 `${var:+…}` 里放多字节字符会把变量名啃坏（"codes�: unbound variable"），脚本里只用 ASCII。
 
+## `column "event_name" does not exist` 经常报（2026-08-26 user）
+
+**来源**：不是我们的采集器（代码里没有这个列名），是「深挖」会话里模型自己写的 `db_query`：
+`SELECT event_name, … FROM dbe_perf.wait_events`——模型按 PostgreSQL/其它库的印象猜 openGauss `dbe_perf` 视图的列名
+（`wait_events` 的列叫 `event`，也没有 `avg_wait_time_ms`），报错后再自纠一轮。两次都发生在深挖会话（提示词鼓励用工具取证）。
+**修法（tool-db）**：
+1. `db_query` 报 42703 列不存在 / 42P01 表不存在 / 42883 函数不存在 时，抽出 SQL 引用的每个关系（FROM/JOIN，跳过 CTE），
+   在同一节点查 `information_schema.columns`，把**真实列名**附在错误里，并给出最接近的列名建议
+   （`event_name → event`、`avg_wait_time_ms → avg_wait_time`、`total_elapsed → total_elapse_time`：去后缀 / 子串 / 编辑距离 / 词元重合）。
+2. 工具描述加一行 openGauss 常错列名速查（wait_events / statement / os_runtime / session_stat_activity），每轮都随工具清单发给模型。
+og5 实测的 dbe_perf 列名（做速查表的依据）：wait_events(nodename,type,event,wait,failed_wait,total_wait_time,avg_wait_time,max_wait_time,
+min_wait_time,last_updated)、statement(unique_sql_id,query,n_calls,min/max/total_elapse_time,n_returned_rows,db_time,cpu_time,execution_time,
+parse_time,plan_time,…sort/hash 计数)、os_runtime(id,name,value,comments,cumulative)、instance_time(stat_id,stat_name,value)、
+session_stat_activity(≈pg_stat_activity + unique_sql_id,trace_id)、summary_stat_database(≈pg_stat_database)、statement_history(慢 SQL 明细)。
+取列名的方法：Runtime pod 内用 `/app/node_modules/.pnpm/pg@*/node_modules/pg` 直连（凭据取 env，绝不打印）。
+
 ## 健康报告改造：十二维直读采集器、发现带图、一键深挖（2026-08-26，user 三点）
 
 **问题**：十二维矩阵只从「发现」反推，健康维度一个数字都没有；异常维度只给 `值 · 规则码`，不解释数字含义/阈值/为何判级；
