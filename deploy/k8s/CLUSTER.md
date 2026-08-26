@@ -659,3 +659,35 @@ write-behind 一直在把镜像进来的事件回写 PG——`ON CONFLICT DO NOT
 全程用 worker 自己的连接池；flush 失败不算运行失败。新 pod 重跑一遍，日志上第一轮标 interrupted、第二轮完整，计入 3 次上限。
 验收 `scripts/e2e-queue-shutdown.mjs`：长提问运行中 delete 正在跑它的 pod → interrupted → 新 id 重投 → 另一台跑到 completed。
 **纪律**：Runtime 滚动前先看 `dsh_threads.status='running'`（滚动脚本已内置等待归零）；user 正在对话时不要滚 Runtime。
+
+## 健康报告改造：十二维直读采集器、发现带图、一键深挖（2026-08-26，user 三点）
+
+**问题**：十二维矩阵只从「发现」反推，健康维度一个数字都没有；异常维度只给 `值 · 规则码`，不解释数字含义/阈值/为何判级；
+报告数字全靠模型用 task_report 抄；「会话深挖」只是把一句话复制到剪贴板。
+
+**做法（user 拍板：采集结果落库、面板直读，不让模型抄数字）**：
+- `task-health/src/measures.ts`：`enrichDim(dimResult, T)` 把各维已算出来放在 evidence 里的数字整理成 `measures`
+  （值 / 单位 / 含义 / 生效阈值阶梯 / 落档 / why）与 `charts`（bar / pie / gauge）。**不碰采集器 SQL、规则、阈值、判定**；
+  阈值含义来自 `THRESHOLD_META`（改为导出），阶梯用运行时 T（平台阈值覆盖后的值）。connections 采集器只多了一句
+  state 分布查询（展示用，失败不影响判定）。
+- 迁移 016 `opendb_health_collects`：`tool-health-collect` 采完把完整确定性结果（每维 measures/charts/findings、生效阈值全表）
+  按会话落库（bundle-runtime 给它 `connectionString`），模型侧 content 只多一行「已存档 #id」。
+- `ui-opendb`：`runs/list` 按 run.session_id 附带该次运行窗口内最新一次采集（`collect`）；新增 `health/trend`（节点名 +
+  语义指标 → 最近 N 分钟序列 + 阈值线，复用 tool-chart 的目录与算法）。
+- 新包 `chart-kit`（客户端 SVG 原语：Bars / Pie / Gauge / Line），task-health 面板与后续会话渲染共用。
+- 面板：每维卡片 = 关键值（带单位）→ 含义 → 阈值阶梯（notice/warn/critical，标实测落档）→ why → 本维分布图；
+  发现卡带同维图 + 「深挖」；趋势区 = 指标库最近 60 分钟曲线（叠阈值虚线）+ 历次检查关键指标折线；
+  模型报告只保留「根因串联 / 处置优先级」两段。旧 run（无 collect）退回原来的按发现展示。
+- 深挖：`digInSession()` → `ctx.sessions.create({workspaceId})` → 桥 `openSession(id)`（ui-harness 挂到 `__opendbHarness__`，
+  切到聊天区）→ `ctx.connection.rpc.call('/api','session.prompt',…)` 自动发送「背景（实例/维度/指标/阈值/证据/同维指标）+ 任务」。
+- 维度可插拔：`COLLECTORS` 数组一项 = 一维；新维度只需在 `enrichDim` 登记其 measures/charts。候选新维（回卷/统计陈旧/临时文件/
+  参数基线/复制槽/死锁/容量/账号/内存/热点表）待 user 点名。
+
+**验收（mac 无头 Chrome `/tmp/puppw/health-panel-e2e.mjs` + 分屏截图 hp-full-*.png / hp-trend.png 亲眼核对）**：
+点「立即运行」64s 后 `opendb_health_collects#1` 落库（13 维 / 28 项指标 / 11 张图）；面板徽章「数字直读采集器存档 #1 ·
+阈值来源 platform-overrides」；13 处「落在「x」档 / 未触及任何一档」解释、阈值阶梯文字、121 个 SVG 元素、趋势区 5 条指标库曲线
+（连接/缓存命中/CPU/每核负载/TPS，叠阈值虚线）+ 3 条历次检查折线；22 个深挖按钮，点「深挖 CACHE_LOW」→ 新会话
+「数据库缓存命中率偏低深挖」自动发送背景提示词并开始取证；console 零错误。截图核对时修的两处：水位条相邻两档刻度文字重叠
+（改为交替上下两行 + 靠边对齐）、慢 SQL「最慢均耗时」取了按总耗时排的第一条（改为按均耗时取最大）。
+注意 `og5过载监控` 是 `*/5 * * * *` 的健康任务（user 建的），每 5 分钟跑一次采集 + 一轮模型报告——token 持续消耗，
+测试用途请记得停。

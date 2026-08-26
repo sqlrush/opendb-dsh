@@ -401,6 +401,15 @@ importers:
         specifier: workspace:*
         version: link:../tool-wdr-collect
 
+  packages/chart-kit:
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   packages/collector:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -951,6 +960,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/chart-kit':
+        specifier: workspace:*
+        version: link:../chart-kit
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
@@ -1284,12 +1296,18 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
       '@opendb-dsh/task-health':
         specifier: workspace:*
         version: link:../task-health
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../tool-db
+      pg:
+        specifier: ^8.13.0
+        version: 8.23.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -1585,6 +1603,9 @@ importers:
       '@opendb-dsh/registry':
         specifier: workspace:*
         version: link:../registry
+      '@opendb-dsh/tool-chart':
+        specifier: workspace:*
+        version: link:../tool-chart
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1

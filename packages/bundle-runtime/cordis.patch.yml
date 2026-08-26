@@ -100,6 +100,9 @@
       name: '@opendb-dsh/tool-chart'
     - id: tool-health-collect
       name: '@opendb-dsh/tool-health-collect'
+      config:
+        # 2026-08-26：采集结果存档 opendb_health_collects，任务面板直读确定性数字
+        connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-sqlreview-collect
       name: '@opendb-dsh/tool-sqlreview-collect'
     - id: tool-wdr-collect

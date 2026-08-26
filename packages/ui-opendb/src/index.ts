@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { openRows, projectQueue, queueFrameItems } from '@opendb-dsh/agent-loop-dispatch';
+import { resolveMetric, compute, toAsc, downsample, stats } from '@opendb-dsh/tool-chart';
 
 export const name = 'ui-opendb';
 export const inject = ['connection', 'webServer', 'opendbRegistry', 'opendbTasks', 'opendbMetrics', 'opendbDictionary', 'opendbThresholds'];
@@ -276,9 +277,48 @@ export function apply(ctx: Context): void {
           const enriched = [];
           for (const r of list) {
             const report = await tasks.getReport(r.id);
-            enriched.push({ ...r, report: report ? { severity: report.severity, summary: report.summary, data: report.data } : undefined });
+            // 2026-08-26：健康任务面板直读采集存档（确定性数字），按 run 的会话取该次运行窗口内最新一次采集
+            let collect: unknown;
+            const sid = (r as { sessionId?: string }).sessionId;
+            if (typeof sid === 'string' && sid !== '') {
+              const c = await tasks.pool.query(
+                `SELECT id, collected_at, payload FROM opendb_health_collects
+                  WHERE session_id = $1 AND collected_at >= $2::timestamptz - interval '1 minute'
+                  ORDER BY collected_at DESC LIMIT 1`,
+                [sid, (r as { firedAt?: string }).firedAt ?? new Date(0).toISOString()],
+              );
+              if (c.rows[0] !== undefined) collect = { id: Number(c.rows[0].id), collectedAt: c.rows[0].collected_at, ...(c.rows[0].payload as object) };
+            }
+            enriched.push({ ...r, report: report ? { severity: report.severity, summary: report.summary, data: report.data } : undefined, collect });
           }
           return { ok: true, value: { runs: enriched } };
+        }
+        // ── 健康报告趋势曲线（2026-08-26）：按节点名取语义指标最近 N 分钟序列，叠平台阈值线；与会话里 metrics_chart 同一套目录/算法 ──
+        case 'health/trend': {
+          if (typeof payload?.node !== 'string' || payload.node === '') return bad('node required');
+          const keys: string[] = Array.isArray(payload?.metrics) ? payload.metrics.map(String).slice(0, 8) : ['connections', 'cache_hit', 'cpu', 'load_per_core', 'tps'];
+          const minutes = Math.max(5, Math.min(Number(payload?.minutes ?? 60), 24 * 60));
+          const nodes = await registry.listNodes();
+          const node = nodes.find((n: any) => n.name === payload.node);
+          if (node === undefined) return bad(`unknown node ${payload.node}`);
+          let healthT: Record<string, number> = {};
+          try { healthT = await thresholds.resolve('health'); } catch { /* 无阈值线也能画 */ }
+          const charts = [];
+          for (const key of keys) {
+            let def;
+            try { def = resolveMetric(key); } catch { continue; }
+            const fetched: Record<string, [number, number][]> = {};
+            for (const raw of def.raw) {
+              try { fetched[raw] = toAsc(await anyCtx.opendbMetrics.recent(node.id, raw, minutes, 1500)); } catch { fetched[raw] = []; }
+            }
+            const full = compute(def, fetched);
+            if (full.length === 0) continue;
+            const st = stats(full);
+            const lines: { label: string; value: number }[] = [];
+            if (def.threshold !== undefined) for (const level of ['notice', 'warn', 'critical']) { const v = healthT[`${def.threshold.group}.${level}`]; if (typeof v === 'number') lines.push({ label: level, value: v }); }
+            charts.push({ key: def.key, label: def.label, unit: def.unit, desc: def.desc, points: downsample(full, 240), stats: { min: st.min, max: st.max, avg: st.avg, last: st.last }, thresholds: lines });
+          }
+          return { ok: true, value: { node: payload.node, minutes, charts } };
         }
         // ── 平台阈值（task-thresholds 大盘用，只读；修改走会话里的 threshold_set 确认流）──
         case 'thresholds/list': {

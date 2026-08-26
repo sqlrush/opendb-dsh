@@ -11,6 +11,7 @@ import { Component, type ReactNode } from 'react';
 import { makeSidebar } from './sidebar.tsx';
 import { makeOverlay } from './overlay.tsx';
 import { startQueueSync } from './queue-sync.ts';
+import { setState } from './state.ts';
 
 export { registerTaskPanel } from './state.ts';
 
@@ -134,6 +135,13 @@ export function apply(ctx: any): void {
     { name: 'shell.overlay', id: 'harness-main', order: 40, inject: () => ({}) },
     SafeMain,
   ));
+
+  // 任务面板「在会话里深挖」要跳到聊天区并打开新会话：把切视图的能力挂到桥上（task-health 客户端调用）
+  try {
+    const w = window as any;
+    w.__opendbHarness__ = w.__opendbHarness__ ?? {};
+    w.__opendbHarness__.openSession = (id: string) => { setState({ view: 'chat' }); ctx.sessions.open(id); };
+  } catch { /* 桥不可用时面板退回 ctx.sessions.open */ }
 
   // 排队投影 → 原生 queue dock（见 queue-sync.ts）；同步器自身永不抛，这里再兜一层不让它影响启动
   try {

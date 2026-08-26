@@ -61,6 +61,10 @@
 把 `?` 占位符归一化为 NULL）；凡涉及改 SOP 步骤、增删规则、调阈值、改判定语义，先问 user。
 （教训：2026-08-23 曾把四份 SOP 改写为"确定性工具优先"以提速，user 要求回滚。）
 
+**确定性数字直读（2026-08-26 健康报告改造）**：任务面板展示的数字一律来自采集器存档（`opendb_health_collects`，
+`runs/list` 附带 `collect`），模型报告只贡献叙述（根因/优先级）；新维度 = `COLLECTORS` 加一项 + `measures.ts` 的
+`enrichDim` 登记其关键指标/图表数据。图表统一用 `@opendb-dsh/chart-kit`（Bars/Pie/Gauge/Line），不引第三方图表库。
+
 所有功能开发必须落为插件（dsh 核心=万物皆插件）。任务类型=双半边插件（server 注册 TaskType +
 client registerTaskPanel）。领域 UI 独立 client 插件；ui-harness/ui-opendb 只做底座。
 插件地图与每节点交付清单见 docs/ROADMAP.md §7。

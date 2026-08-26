@@ -3,11 +3,20 @@
  * 汇总 ≠ N 份单机报告钉在一起——集群层的增量价值在横向分析（设计稿裁决点⑧）。
  */
 import { COLLECTORS, THRESHOLDS, worstOf, LEVEL_ORDER, type DetFinding, type DetLevel, type DimResult, type QueryFn, type Thresholds } from './collectors.ts';
+import { enrichDim, type DimChart, type Measure } from './measures.ts';
+
+export interface NodeDim {
+  dim: string; title: string; ok: boolean; worst: DetLevel; note?: string;
+  /** 关键指标（值 / 含义 / 阈值档位 / 落档）——面板直读，不经模型转述 */
+  measures: Measure[];
+  /** 可绘图数据（柱 / 饼 / 水位） */
+  charts: DimChart[];
+}
 
 export interface NodeHealth {
   node: string;
   worst: DetLevel;
-  dims: { dim: string; title: string; ok: boolean; worst: DetLevel; note?: string }[];
+  dims: NodeDim[];
   findings: DetFinding[];
   collectionNotes: string[];
   settings: Record<string, string>;
@@ -44,7 +53,7 @@ export async function collectNode(name: string, q: QueryFn, dims?: string[], T: 
   return {
     node: name,
     worst: worstOf(findings.map((f) => f.level)),
-    dims: results.map((r) => ({ dim: r.dim, title: r.title, ok: r.ok, worst: worstOf(r.findings.map((f) => f.level)), note: r.note })),
+    dims: results.map((r) => ({ dim: r.dim, title: r.title, ok: r.ok, worst: worstOf(r.findings.map((f) => f.level)), note: r.note, ...enrichDim(r, T) })),
     findings,
     collectionNotes: notes,
     settings: (overviewEv?.settings as Record<string, string>) ?? {},

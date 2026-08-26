@@ -68,8 +68,8 @@ export type Thresholds = {
   [K in keyof typeof THRESHOLDS]: (typeof THRESHOLDS)[K] extends number ? number : { [L in keyof (typeof THRESHOLDS)[K]]: number };
 };
 
-/** 阈值元数据（展示与校验用；判定方向须与各 dim 里的比较写法一致） */
-const THRESHOLD_META = {
+/** 阈值元数据（展示与校验用；判定方向须与各 dim 里的比较写法一致）。measures.ts 用它复述判级依据。 */
+export const THRESHOLD_META = {
   connRatio: { label: '连接占用', rule: 'CONN_HIGH', cmp: '>=' as const, unit: 'ratio' as const, desc: '当前连接数 / max_connections' },
   cacheHit: { label: '缓存命中率', rule: 'CACHE_LOW', cmp: '<' as const, unit: 'ratio' as const, desc: 'blks_hit/(hit+read)，低于阈值告警' },
   xactSec: { label: '长事务时长', rule: 'XACT_LONG', cmp: '>=' as const, unit: 's' as const, desc: '事务自 xact_start 起已持续秒数' },
@@ -256,13 +256,19 @@ async function dimConnections(q: QueryFn, T: Thresholds = THRESHOLDS): Promise<D
   const used = num((await q('SELECT count(*)::int AS n FROM pg_stat_activity', 1)).rows[0]?.n);
   const max = num((await q("SELECT setting::int AS n FROM pg_settings WHERE name = 'max_connections'", 1)).rows[0]?.n);
   const ratio = max > 0 ? used / max : 0;
+  // 状态分布只作展示（饼图），不参与判定——user 2026-08-26 要求发现能画图
+  let states: Record<string, number> = {};
+  try {
+    const rows = (await q("SELECT coalesce(state, '') AS state, count(*)::int AS n FROM pg_stat_activity GROUP BY 1 ORDER BY 2 DESC", 8)).rows;
+    states = Object.fromEntries(rows.map((r) => [str(r.state) || '(backend)', num(r.n)]));
+  } catch { /* 展示项，失败不影响判定 */ }
   const findings: DetFinding[] = [];
   if (ratio >= T.connRatio.critical) {
     findings.push(finding({ dim, code: 'CONN_HIGH', level: 'critical', metric: 'conn_used_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${T.connRatio.critical}`, detail: `连接占用 ${(ratio * 100).toFixed(0)}%（${used}/${max}），逼近上限`, evidence: `used=${used} max=${max}` }));
   } else if (ratio >= T.connRatio.warn) {
     findings.push(finding({ dim, code: 'CONN_HIGH', level: 'warn', metric: 'conn_used_ratio', value: Math.round(ratio * 100) / 100, threshold: `>=${T.connRatio.warn}`, detail: `连接占用 ${(ratio * 100).toFixed(0)}%（${used}/${max}）`, evidence: `used=${used} max=${max}` }));
   }
-  return { dim, title, ok: true, findings, evidence: { used, max, ratio: Math.round(ratio * 100) / 100 } };
+  return { dim, title, ok: true, findings, evidence: { used, max, ratio: Math.round(ratio * 100) / 100, states } };
 }
 
 // ── 9 Checkpoint / WAL ──────────────────────────────────────────────────────

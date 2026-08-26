@@ -7,7 +7,9 @@
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { defineTool } from '@deepseek-ai/dsh-tools';
+import type pg from 'pg';
 import { resolvePlatformAgent, clampText } from '@opendb-dsh/tool-db';
+import { createPool } from '@opendb-dsh/session-persistence-pg';
 import { collectNode, summarize, withThresholds, type HealthCollectResult } from '@opendb-dsh/task-health';
 
 export const name = 'tool-health-collect';
@@ -15,11 +17,34 @@ export const inject = ['opendbDb', 'opendbRegistry', 'opendbThresholds'];
 export const Config = z.object({
   maxContentBytes: z.number().step(1).min(4096).default(28000),
   maxNodes: z.number().step(1).min(1).default(16).description('单次采集允许的最大实例数（防 token 爆炸）'),
+  /** 存档用 PG（opendb_health_collects）；不配则不存档，面板退回只读模型报告 */
+  connectionString: z.string().default(''),
 });
 
 const LEVEL_CN: Record<string, string> = { ok: '正常', notice: '关注', warn: '告警', critical: '严重' };
 
-interface Deps { db: any; registry: any; thresholds: any; maxContentBytes: number; maxNodes: number }
+interface Deps { db: any; registry: any; thresholds: any; maxContentBytes: number; maxNodes: number; pool?: pg.Pool }
+
+/**
+ * 采集存档（2026-08-26 user：十二维要有数、有解释、有阈值，发现要能画图）：完整确定性结果按会话落库，
+ * 任务面板按 run.session_id 直读——展示的每个数字都来自采集器，模型只写根因串联与处置建议。
+ */
+async function archive(pool: pg.Pool, sessionId: string | undefined, summary: HealthCollectResult, thresholds: unknown): Promise<number | undefined> {
+  const payload = {
+    scope: summary.scope, worst: summary.worst, counts: summary.counts, collectedAt: summary.collectedAt,
+    nodes: summary.nodes.map((n) => ({
+      node: n.node, worst: n.worst, dims: n.dims, findings: n.findings, collectionNotes: n.collectionNotes, settings: n.settings,
+    })),
+    clusterFindings: summary.clusterFindings,
+    thresholds,
+  };
+  const r = await pool.query<{ id: string }>(
+    `INSERT INTO opendb_health_collects (session_id, scope, worst, node_count, collected_at, payload)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [sessionId ?? null, summary.scope, summary.worst, summary.nodes.length, summary.collectedAt, JSON.stringify(payload)],
+  );
+  return r.rows[0] !== undefined ? Number(r.rows[0].id) : undefined;
+}
 
 function defineHealthCollectTool(deps: Deps) {
   return defineTool({
@@ -98,13 +123,27 @@ function defineHealthCollectTool(deps: Deps) {
         // 本次判定所用阈值：只列与代码默认值不同的键（空 = 全部默认）；完整清单用 threshold_list
         thresholds: { overrides, source: Object.keys(overrides).length > 0 ? 'platform-overrides' : 'code-defaults' },
       };
-      return { content: clampText(`${header}\n${JSON.stringify(payload, null, 1)}`, deps.maxContentBytes) };
+      // 存档：完整确定性结果（含每维 measures/charts 与生效阈值全表）按会话落库，任务面板直读
+      let archiveLine = '';
+      if (deps.pool !== undefined) {
+        try {
+          const sessionId = typeof exec?.agent?.session?.id === 'string' ? exec.agent.session.id : undefined;
+          const id = await archive(deps.pool, sessionId, summary, { effective: { ...flatDefaults, ...flat }, overrides, source: payload.thresholds.source });
+          if (id !== undefined) archiveLine = `\n-- 采集已存档 opendb_health_collects#${id}（任务面板直读；report 里不必复述每维数字）`;
+        } catch (cause) {
+          archiveLine = `\n-- 采集存档失败：${String((cause as Error).message ?? cause).slice(0, 120)}`;
+        }
+      }
+      return { content: clampText(`${header}${archiveLine}\n${JSON.stringify(payload, null, 1)}`, deps.maxContentBytes) };
     },
   } as any);
 }
 
-export function apply(ctx: Context, config: { maxContentBytes?: number; maxNodes?: number } = {}): void {
+export function apply(ctx: Context, config: { maxContentBytes?: number; maxNodes?: number; connectionString?: string } = {}): void {
   const anyCtx = ctx as any;
+  const conn = config.connectionString ?? '';
+  const pool = conn !== '' ? createPool(conn) : undefined;
+  if (pool !== undefined) ctx.effect(() => () => pool.end(), 'tool-health-collect.pool');
   anyCtx.inject(['tools'], (c: any) => {
     const deps: Deps = {
       db: anyCtx.opendbDb,
@@ -112,6 +151,7 @@ export function apply(ctx: Context, config: { maxContentBytes?: number; maxNodes
       thresholds: anyCtx.opendbThresholds,
       maxContentBytes: config.maxContentBytes ?? 28000,
       maxNodes: config.maxNodes ?? 16,
+      pool,
     };
     c.effect(() => c.tools.register(defineHealthCollectTool(deps)), 'tool-health-collect.health_collect');
   });

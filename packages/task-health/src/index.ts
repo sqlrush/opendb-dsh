@@ -13,7 +13,9 @@ import { HEALTH_THRESHOLD_SPECS } from './collectors.ts';
 
 // 采集半边（collectNode/summarize/analyzeCluster + 12 维采集器）供 tool-health-collect 复用
 export { collectNode, summarize, analyzeCluster } from './collect.ts';
-export type { HealthCollectResult, NodeHealth, ClusterFinding } from './collect.ts';
+export type { HealthCollectResult, NodeHealth, NodeDim, ClusterFinding } from './collect.ts';
+export { enrichDim } from './measures.ts';
+export type { Measure, DimChart, DimEnrichment, MeasureUnit } from './measures.ts';
 export { COLLECTORS, THRESHOLDS, HEALTH_THRESHOLD_SPECS, withThresholds, worstOf, LEVEL_ORDER } from './collectors.ts';
 export type { Thresholds } from './collectors.ts';
 export type { DetFinding, DetLevel, DimResult, QueryFn } from './collectors.ts';
