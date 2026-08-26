@@ -4,6 +4,16 @@
 数据库集群自动化管理平台。设计文档 `docs/2026-08-16-opendb-dsh-platform-design.md`（交互纲领见 §15）、
 路线图 `docs/ROADMAP.md`、集群手册与事故复盘 `deploy/k8s/CLUSTER.md`。
 
+## 版本管理（user 2026-08-26 定，从 v0.1.0 起）
+
+- 产品版本唯一来源 = 根 `package.json` 的 `version`；chart `version/appVersion`、欢迎页角标「opendb-harness vX.Y.Z」、
+  镜像标签 `opendb-dsh:vX.Y.Z` 都由它派生。子包版本不管（内部 workspace 包）。
+- 语义化版本，0.x 阶段：**minor = 一批功能**，**patch = 修复/打磨**。每次发布 `CHANGELOG.md` 必须先有 `## [X.Y.Z]` 段
+  （Keep a Changelog 格式：Added / Changed / Fixed），日常提交把要点写进 `## [Unreleased]`。
+- 发布只走 `scripts/release.sh X.Y.Z`（在 mac 上跑）：校验干净的 main → 改版本号 → `chore(release): vX.Y.Z` → tag → push →
+  镜像加打 `vX.Y.Z` 标签 → 用 CHANGELOG 段落建 GitHub Release。禁止手工打 tag。
+- 日常滚动仍用 `dev` 镜像；要把集群固定到某个版本：`helm upgrade … --set image.tag=vX.Y.Z`。
+
 ## 代码编辑纪律
 
 - **禁止用 sed/perl 批量替换含特殊字符的代码**（样式模板串、正则、含 `$`/`#`/引号嵌套的行）。

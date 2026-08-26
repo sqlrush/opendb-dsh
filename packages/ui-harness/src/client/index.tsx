@@ -13,6 +13,10 @@ import { makeOverlay } from './overlay.tsx';
 import { startQueueSync } from './queue-sync.ts';
 import { setState } from './state.ts';
 
+/** 构建期由 build-client.mjs 从根 package.json 注入（esbuild define）；类型检查时只需声明 */
+declare const __OPENDB_VERSION__: string;
+const VERSION: string = typeof __OPENDB_VERSION__ === 'string' ? __OPENDB_VERSION__ : '0.0.0';
+
 export { registerTaskPanel } from './state.ts';
 
 export const inject = ['connection', 'slots', 'workspaces', 'sessions'];
@@ -82,7 +86,7 @@ function takeOverBranding(): void {
       // 徽章：父元素 font-size:0 会让行盒按 0 算、由 ::before 撑高，比原生高出几 px；
       // 显式给回 line-height 并让伪元素以 inline-block 参与，量回原生的 21px 高度。
       `[class*="previewBadge"]{font-size:0 !important;line-height:18px !important}`,
-      `[class*="previewBadge"]::before{content:"opendb-harness 预览版";display:inline-block;` +
+      `[class*="previewBadge"]::before{content:"opendb-harness v${VERSION} 预览版";display:inline-block;` +
         `font-size:12px;line-height:18px;font-weight:500;vertical-align:top}`,
       // 首页 hero 行的「工作区选择器 + Agent 预设选择器」整行隐藏（user 2026-08-24）：
       // ① 工作区——对外已不暴露智能体概念（侧栏那层同期撤掉），且只有一个工作区，选择无意义；
