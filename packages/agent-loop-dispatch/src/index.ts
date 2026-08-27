@@ -28,7 +28,9 @@ export default class DispatchAgentLoop extends Service {
     runtimeClass: z.string().default('default'),
     tailMs: z.number().default(400),
     // 与 runtime-worker.staleMs 对齐：Host 自己也回收心跳过期的 running 线程（Runtime 全挂时没人跑 markStale）
-    staleMs: z.number().default(30000),
+    // 2026-08-27：30s 太急——OrbStack 节点抖动/PG 短暂不可达 10–30s 就把还活着的轮次重投给第二个 pod（同一轮跑两遍）。
+    // 现在 Runtime 心跳自带所有权栅栏（被回收的 pod 会自行取消），90s 换更少的误回收；真死的 pod 90s 内也会被接管。
+    staleMs: z.number().default(90000),
   });
 
   private readonly pool: pg.Pool;

@@ -76,7 +76,7 @@ export default class RuntimeWorker extends Service {
     podName: z.string().default(process.env.HOSTNAME ?? `runtime-${process.pid}`),
     pollMs: z.number().default(2000),
     heartbeatMs: z.number().default(5000),
-    staleMs: z.number().default(30000),
+    staleMs: z.number().default(90000),   // 与 agent-loop-dispatch.staleMs 对齐（2026-08-27 从 30s 放宽，见那边注释）
     healthPort: z.number().default(9090),
     // 每 pod 并发 turn 上限：不设限会把整个队列瞬间吸干，队列深度归零 → KEDA 扩缩信号失真（W6 实测）
     maxConcurrent: z.number().default(2),
@@ -199,7 +199,27 @@ export default class RuntimeWorker extends Service {
   private async run(claimed: Claimed): Promise<void> {
     const anyCtx = this.ctx as any;
     const { sessionId, payload } = claimed;
-    const hb = setInterval(() => void heartbeat(this.pool, sessionId, this.config.podName), this.config.heartbeatMs);
+    // 心跳 = 所有权栅栏（2026-08-27：Host 把心跳陈旧的轮次重投给第二个 pod，第一个 pod 其实还活着，同一轮跑了两遍）。
+    // 心跳返回 false（线程已不归本 pod）→ 立刻取消本地轮次，之后不 release / 不重投 / 不算失败；
+    // 心跳连续失败超过 staleMs（PG 不可达，Host 那边多半已回收）→ 同样自认失去所有权。
+    // 心跳的异常必须接住：以前 `void heartbeat()` 一个 ECONNREFUSED 就成了未处理 rejection，dsh 当作 fatal 把整个进程退了。
+    let fenced = false;
+    let hbFailedSince = 0;
+    const fence = (why: string) => {
+      if (fenced) return;
+      fenced = true;
+      process.stderr.write(`[runtime-worker] ${sessionId}: ownership lost (${why}) → cancelling local turn, result discarded\n`);
+      const a = this.running.get(sessionId);
+      if (a !== undefined) { try { a.cancel({ kind: 'user' }); } catch { /* already stopped */ } }
+    };
+    const hb = setInterval(() => {
+      heartbeat(this.pool, sessionId, this.config.podName)
+        .then((owned) => { hbFailedSince = 0; if (!owned) fence('heartbeat fenced: thread no longer owned by this pod'); })
+        .catch((err) => {
+          if (hbFailedSince === 0) hbFailedSince = Date.now();
+          if (Date.now() - hbFailedSince > this.config.staleMs) fence(`heartbeat unreachable for ${Math.round((Date.now() - hbFailedSince) / 1000)}s: ${String((err as Error).message ?? err).slice(0, 80)}`);
+        });
+    }, this.config.heartbeatMs);
     let handle: AgentHandleLike | undefined;
     try {
       const fallback = anyCtx.get('agentDefaultModel')?.currentSelection?.() ?? {};
@@ -235,10 +255,15 @@ export default class RuntimeWorker extends Service {
       // 不是用户自己中断的 interrupted、或关机中没跑到 completed = 被基础设施切断：换一个消息 id 重投
       //（原 id 已落日志，会被 Host 去重吞掉），新 pod 重跑一遍，日志上第一轮标 interrupted。
       const reason = lastTurnEndReason(agent.session.events);
+      if (fenced) {
+        // 这一轮已经归别的 pod 了：本地结果作废，不 release（会把别人的 running 改掉）、不重投（会跑第三遍）
+        process.stderr.write(`[runtime-worker] ${sessionId}: fenced turn ended (${reason ?? 'no turn/end'}); nothing released or re-offered\n`);
+        return;
+      }
       if (!userInterrupted && (reason === 'interrupted' || (this.stopping && reason !== 'completed'))) {
-        const outcome = await requeueFailed(this.pool, claimed.queueId, `turn interrupted by runtime shutdown on ${this.config.podName}`, this.config.maxAttempts, { rotateMessageId: true })
+        const outcome = await requeueFailed(this.pool, claimed.queueId, `turn interrupted by runtime shutdown on ${this.config.podName}`, this.config.maxAttempts, { rotateMessageId: true, ownerPod: this.config.podName })
           .catch((e) => { process.stderr.write(`[runtime-worker] resend after shutdown failed for queue ${claimed.queueId}: ${String(e)}\n`); return undefined; });
-        process.stderr.write(`[runtime-worker] ${sessionId}: turn cut by shutdown → ${outcome?.failed ? 'dead-lettered' : `re-offered with a fresh message id (attempt ${outcome?.attempts ?? '?'})`}\n`);
+        process.stderr.write(`[runtime-worker] ${sessionId}: turn cut by shutdown → ${outcome === undefined ? 'row no longer owned by this pod, not re-offered' : outcome.failed ? 'dead-lettered' : `re-offered with a fresh message id (attempt ${outcome.attempts})`}\n`);
         await release(this.pool, sessionId, this.config.podName, 'interrupted');
         return;
       }
@@ -248,11 +273,12 @@ export default class RuntimeWorker extends Service {
     } catch (err) {
       const detail = describeError(err);
       process.stderr.write(`[runtime-worker] run failed for ${sessionId}: ${detail}\n`);
+      if (fenced) { process.stderr.write(`[runtime-worker] ${sessionId}: failure after fence ignored (another pod owns the turn)\n`); return; }
       // 2026-08-25 中毒 pod 事故：以前失败只 release，队列行留在 admitted 成死信，用户消息凭空消失。
       // 现在：计次 + 让出（冷却）+ 未到上限则任何 pod 可重领；到上限记 failed_at，Host 把失败报给用户。
       this.consecutiveFailures += 1;
       this.penaltyUntil = Date.now() + this.config.failurePenaltyMs;
-      const outcome = await requeueFailed(this.pool, claimed.queueId, detail, this.config.maxAttempts)
+      const outcome = await requeueFailed(this.pool, claimed.queueId, detail, this.config.maxAttempts, { ownerPod: this.config.podName })
         .catch((e) => { process.stderr.write(`[runtime-worker] requeue failed for queue ${claimed.queueId}: ${String(e)}\n`); return undefined; });
       if (outcome !== undefined) {
         process.stderr.write(outcome.failed

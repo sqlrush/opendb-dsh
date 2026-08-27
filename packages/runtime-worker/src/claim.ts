@@ -56,11 +56,18 @@ export async function claimNext(pool: pg.Pool, runtimeClass: string, podName: st
   }
 }
 
-export async function heartbeat(pool: pg.Pool, sessionId: string, podName: string): Promise<void> {
-  await pool.query(
+/**
+ * Heartbeat doubles as the ownership fence (2026-08-27 incident: Host re-offered a stale-looking turn to a
+ * second pod while the first was still running it → the same turn executed on two pods at once).
+ * Returns false when this pod no longer owns the thread (Host reaped it / another pod claimed it):
+ * the caller must cancel its local turn and must not release, requeue or report anything for it.
+ */
+export async function heartbeat(pool: pg.Pool, sessionId: string, podName: string): Promise<boolean> {
+  const r = await pool.query(
     `UPDATE dsh_threads SET heartbeat_at = now() WHERE session_id = $1 AND status = 'running' AND running_pod = $2`,
     [sessionId, podName],
   );
+  return (r.rowCount ?? 0) > 0;
 }
 
 export async function release(pool: pg.Pool, sessionId: string, podName: string, status: 'idle' | 'interrupted'): Promise<void> {
@@ -81,10 +88,12 @@ export interface RequeueOutcome { attempts: number; failed: boolean }
  */
 export async function requeueFailed(
   pool: pg.Pool, queueId: string, error: string, maxAttempts: number,
-  options: { rotateMessageId?: boolean } = {},
-): Promise<RequeueOutcome> {
+  options: { rotateMessageId?: boolean; ownerPod?: string } = {},
+): Promise<RequeueOutcome | undefined> {
   // 被 pod 终止切断的轮次：user/message 已经落日志了，原 id 再投会被 Host 的 settleDurable 当作「已处理」吞掉，
   // 也不能让同一 id 在日志里出现两次——换一个新 id 重投，日志上就是"系统重发了一遍"（第一轮标 interrupted）。
+  // ownerPod：只有这一行仍由本 pod 领着（admitted_by = 本 pod）才重投——被 Host 回收/别的 pod 已重领的行不归本 pod 管
+  //（2026-08-27：崩溃 pod 的关机钩子把别人已经完成的轮次又投了一遍）。
   const rotate = options.rotateMessageId === true;
   const r = await pool.query<{ session_id: string; attempts: number; failed: boolean }>(
     `UPDATE dsh_thread_queue
@@ -97,16 +106,16 @@ export async function requeueFailed(
             payload     = CASE WHEN $4 AND attempts + 1 < $3 AND payload ? 'message'
                                THEN jsonb_set(payload, '{message,id}', to_jsonb(gen_random_uuid()::text), false)
                                ELSE payload END
-      WHERE id = $1
+      WHERE id = $1 AND ($5::text IS NULL OR admitted_by = $5)
       RETURNING session_id, attempts, (failed_at IS NOT NULL) AS failed`,
-    [queueId, error, maxAttempts, rotate],
+    [queueId, error, maxAttempts, rotate, options.ownerPod ?? null],
   );
+  if (r.rows[0] === undefined) return undefined;
   if (rotate && r.rows[0] !== undefined && !r.rows[0].failed) {
     // 两处 gen_random_uuid() 各自取值：把列同步成 payload 里的那个
     await pool.query(`UPDATE dsh_thread_queue SET message_id = payload->'message'->>'id' WHERE id = $1 AND payload ? 'message'`, [queueId]);
   }
   const row = r.rows[0];
-  if (row === undefined) return { attempts: 0, failed: false };
   if (!row.failed) {
     await pool.query(`SELECT pg_notify('opendb_thread_wake', $1)`, [row.session_id]).catch(() => { /* poll 保底 */ });
   }

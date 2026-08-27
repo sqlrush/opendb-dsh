@@ -852,3 +852,26 @@ min-content 把卡片列撑宽、右栏优化方案/cost 条被裁——卡内 g
   扫描完整时顺带算各维度榜位），找到的就有指标/占比/榜位/耗时构成/等待事件，找不到的标「指定 SQL · 没找到运行记录」只做计划与规范。
   编号统一 S1..Sn（跟踪模式按对话顺序），不再有 Q。跟踪模式占比条固定用 总耗时/DB Time/CPU/IO/逻辑读/调用次数 六根。
 - user 的 `og5慢SQL Top3跟踪`（原 dimensions=["elapsed"] + 3 条 sqls，S/Q 重复）已经平台 RPC 改成 dimensions=[]，下次运行即三条跟踪对象。
+
+## 同一轮被两台 Runtime 同时执行 + PG 抖动打崩 Runtime（2026-08-27 21:57–22:02 CST，复盘 5）
+
+**现象**：`og5慢SQL Top3跟踪` 手动运行 run-4d1a3ed6 在 vb7jc 上跑到第 6 次 EXPLAIN 后（13:02 UTC）长时间无输出（DeepSeek 一次
+调用挂了约 55 分钟）；13:57 Host 判定心跳陈旧把提问重投，bcjvk 领走开始**重跑同一轮**；14:00:53 vb7jc 那次居然醒了并交了
+报告（run=succeeded）；14:00:15 起 k8s-w2 上的 bcjvk 连不上 PG（ECONNREFUSED 10.43.144.222:5432，四个节点同时段全部
+NotReady→Ready，OrbStack 整机抖动），14:00:55 `void heartbeat()` 的 rejection 无人接 → dsh 视为 fatal → 进程退出（Exit 1）→
+关机钩子把 1150（已由 vb7jc 完成）和 1152（过载监控）**又各重投一遍** → bcjvk 进入 crash 循环直到 PG 可达；
+队列 1150 随后被再次领走跑了第三遍（重复报告 + token）。
+
+**三处根因与修法**
+1. **无所有权栅栏**：Host 回收/重派后原 pod 毫不知情继续跑。修：`heartbeat()` 返回是否仍持有（UPDATE … WHERE running_pod=本 pod
+   的 rowCount），返回 false 立即 `agent.cancel` 且此后不 release / 不重投 / 不计失败（"fenced"）；`requeueFailed` 增加 `ownerPod`
+   守卫（`admitted_by = 本 pod` 才重投），关机/失败两条重投路径都带上。
+2. **心跳异常未捕获**：`void heartbeat()` → unhandled rejection → dsh fatal → 整个 Runtime 崩。修：接住并计时，连续失败超过
+   staleMs 自认失去所有权（同样走 fence）。
+3. **30s 陈旧线太急**：节点/PG 抖 10–30s 就误回收还活着的轮次。修：Host `agent-loop-dispatch.staleMs` 与 `runtime-worker.staleMs`
+   都放到 90s（有了栅栏，误回收只浪费一次重跑，不再重复执行）。
+
+**验证**：`runtime-worker` claim.test（PG 后端）新增栅栏用例；e2e `scripts/e2e-queue-fence.mjs`（真轮次跑到一半把线程改归 ghost
+→ 原 pod ≤ 1 次心跳内取消、日志 ownership lost、线程/队列行不被改回、无第三遍 user/message）。
+仍未解释的一项：**DeepSeek 单次调用挂 55 分钟**——LLM 调用应有超时/重试，这是 dsh 核心（dsh-llm）的行为，需要单独立项看
+`agentOptions` 有没有 request timeout 可配（不改 dsh 核心，只配置）。

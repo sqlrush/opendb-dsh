@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPool, runMigrations } from '@opendb-dsh/session-persistence-pg';
-import { claimNext, markStale, pendingSteers, release, requeueFailed } from '../src/claim.ts';
+import { claimNext, heartbeat, markStale, pendingSteers, release, requeueFailed } from '../src/claim.ts';
 
 const PG_URL = process.env.PG_URL;
 let pool: any;
@@ -155,4 +155,31 @@ test('pendingSteers hands steer rows to the running pod in queue order; idle thr
   const late = await claimNext(pool, 'default', 'podNext');
   assert.ok(late);
   assert.equal(late.kind, 'steer');
+});
+
+test('heartbeat is the ownership fence: false once the thread is reassigned; requeueFailed with ownerPod is a no-op for a row this pod no longer owns', { skip: !PG_URL }, async () => {
+  await pool.query('TRUNCATE dsh_questions, dsh_thread_queue, dsh_threads, dsh_session_events, dsh_sessions');
+  await seed('t7');
+  const c = await claimNext(pool, 'default', 'podA');
+  assert.ok(c);
+  assert.equal(await heartbeat(pool, 't7', 'podA'), true, 'owner beats');
+  // Host 回收 + podB 接管（markStale 语义：running_pod 换人、队列行 admitted_by 换人）
+  await pool.query("UPDATE dsh_threads SET running_pod = 'podB' WHERE session_id = 't7'");
+  await pool.query("UPDATE dsh_thread_queue SET admitted_by = 'podB' WHERE id = $1", [c.queueId]);
+  assert.equal(await heartbeat(pool, 't7', 'podA'), false, 'fenced');
+  assert.equal(await heartbeat(pool, 't7', 'podB'), true);
+  // podA 的关机重投/失败重投都不能碰这行
+  const skipped = await requeueFailed(pool, c.queueId, 'podA cut', 3, { rotateMessageId: true, ownerPod: 'podA' });
+  assert.equal(skipped, undefined);
+  const row = (await pool.query('SELECT attempts, admitted_by, admitted_at IS NOT NULL AS admitted FROM dsh_thread_queue WHERE id = $1', [c.queueId])).rows[0];
+  assert.equal(row.attempts, 0);
+  assert.equal(row.admitted_by, 'podB');
+  assert.equal(row.admitted, true);
+  // 真正的持有者重投才生效
+  const done = await requeueFailed(pool, c.queueId, 'podB cut', 3, { rotateMessageId: true, ownerPod: 'podB' });
+  assert.equal(done?.attempts, 1);
+  assert.equal(done?.failed, false);
+  // release 同样只认持有者
+  await release(pool, 't7', 'podA', 'idle');
+  assert.equal((await pool.query("SELECT status FROM dsh_threads WHERE session_id = 't7'")).rows[0].status, 'running');
 });
