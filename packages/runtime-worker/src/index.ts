@@ -48,6 +48,8 @@ export interface RuntimeWorkerConfig {
   maxAttempts: number;
   /** 一次运行失败后本 pod 停止认领的冷却，让别的 pod 先重领同一条 */
   failurePenaltyMs: number;
+  /** 轮次活动看门狗：会话日志多久没有新事件（模型不出 token、工具不返回）就判定上游卡死，切断并重投 */
+  turnIdleMs: number;
   /** 连续失败达到此数即健康 503（熔断）→ livenessProbe 重启本 pod */
   breakerFailures: number;
 }
@@ -83,6 +85,9 @@ export default class RuntimeWorker extends Service {
     maxAttempts: z.number().default(3),
     failurePenaltyMs: z.number().default(5000),
     breakerFailures: z.number().default(3),
+    // 2026-08-27：一次 DeepSeek 流式调用挂了 55 分钟没有任何输出（dsh 的 streamIdleTimeoutMs=5min 没触发，推测上游 keep-alive
+    // 一直在喂空包）。平台层兜底：会话日志 10 分钟没有任何新事件就切断本轮并换 id 重投（计一次 attempt，3 次死信报错）。
+    turnIdleMs: z.number().default(600000),
   });
 
   private stopping = false;
@@ -212,6 +217,11 @@ export default class RuntimeWorker extends Service {
       const a = this.running.get(sessionId);
       if (a !== undefined) { try { a.cancel({ kind: 'user' }); } catch { /* already stopped */ } }
     };
+    // 活动看门狗：日志事件数长时间不变 = 上游卡死（模型不出 token / 工具不返回）→ 切断本轮，走重投
+    let idleCut = false;
+    let lastEventCount = -1;
+    let lastEventAt = Date.now();
+    let agentRef: any;   // resume 完成后指向 handle.agent（this.running 里的类型只暴露 cancel）
     const hb = setInterval(() => {
       heartbeat(this.pool, sessionId, this.config.podName)
         .then((owned) => { hbFailedSince = 0; if (!owned) fence('heartbeat fenced: thread no longer owned by this pod'); })
@@ -219,6 +229,13 @@ export default class RuntimeWorker extends Service {
           if (hbFailedSince === 0) hbFailedSince = Date.now();
           if (Date.now() - hbFailedSince > this.config.staleMs) fence(`heartbeat unreachable for ${Math.round((Date.now() - hbFailedSince) / 1000)}s: ${String((err as Error).message ?? err).slice(0, 80)}`);
         });
+      const n: number = agentRef?.session?.events?.length ?? -1;
+      if (n !== lastEventCount) { lastEventCount = n; lastEventAt = Date.now(); }
+      else if (!idleCut && !fenced && agentRef !== undefined && Date.now() - lastEventAt > this.config.turnIdleMs) {
+        idleCut = true;
+        process.stderr.write(`[runtime-worker] ${sessionId}: no session events for ${Math.round((Date.now() - lastEventAt) / 1000)}s (upstream hung?) → cutting the turn, will re-offer\n`);
+        try { agentRef.cancel({ kind: 'user' }); } catch { /* already stopped */ }
+      }
     }, this.config.heartbeatMs);
     let handle: AgentHandleLike | undefined;
     try {
@@ -227,6 +244,7 @@ export default class RuntimeWorker extends Service {
       handle = (await anyCtx.agents.resume({ resumeSessionId: sessionId, agentOptions })) as AgentHandleLike;
       process.stderr.write(`[runtime-worker] claimed ${sessionId} (queue ${claimed.queueId}) on ${this.config.podName}\n`);
       const agent = handle.agent;
+      agentRef = agent;
       this.running.set(sessionId, agent);
       if (this.stopping) agent.cancel({ kind: 'user' });   // SIGTERM 抢在 resume 完成之前：立刻切断，走重投
       let userInterrupted = false;
@@ -260,10 +278,11 @@ export default class RuntimeWorker extends Service {
         process.stderr.write(`[runtime-worker] ${sessionId}: fenced turn ended (${reason ?? 'no turn/end'}); nothing released or re-offered\n`);
         return;
       }
-      if (!userInterrupted && (reason === 'interrupted' || (this.stopping && reason !== 'completed'))) {
-        const outcome = await requeueFailed(this.pool, claimed.queueId, `turn interrupted by runtime shutdown on ${this.config.podName}`, this.config.maxAttempts, { rotateMessageId: true, ownerPod: this.config.podName })
-          .catch((e) => { process.stderr.write(`[runtime-worker] resend after shutdown failed for queue ${claimed.queueId}: ${String(e)}\n`); return undefined; });
-        process.stderr.write(`[runtime-worker] ${sessionId}: turn cut by shutdown → ${outcome === undefined ? 'row no longer owned by this pod, not re-offered' : outcome.failed ? 'dead-lettered' : `re-offered with a fresh message id (attempt ${outcome.attempts})`}\n`);
+      if (!userInterrupted && (idleCut || reason === 'interrupted' || (this.stopping && reason !== 'completed'))) {
+        const why = idleCut ? `turn idle for ${Math.round(this.config.turnIdleMs / 1000)}s on ${this.config.podName} (no session events; upstream hung?)` : `turn interrupted by runtime shutdown on ${this.config.podName}`;
+        const outcome = await requeueFailed(this.pool, claimed.queueId, why, this.config.maxAttempts, { rotateMessageId: true, ownerPod: this.config.podName })
+          .catch((e) => { process.stderr.write(`[runtime-worker] resend after cut failed for queue ${claimed.queueId}: ${String(e)}\n`); return undefined; });
+        process.stderr.write(`[runtime-worker] ${sessionId}: ${idleCut ? 'turn cut by idle watchdog' : 'turn cut by shutdown'} → ${outcome === undefined ? 'row no longer owned by this pod, not re-offered' : outcome.failed ? 'dead-lettered' : `re-offered with a fresh message id (attempt ${outcome.attempts})`}\n`);
         await release(this.pool, sessionId, this.config.podName, 'interrupted');
         return;
       }

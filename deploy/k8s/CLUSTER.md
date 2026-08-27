@@ -875,3 +875,7 @@ NotReady→Ready，OrbStack 整机抖动），14:00:55 `void heartbeat()` 的 re
 → 原 pod ≤ 1 次心跳内取消、日志 ownership lost、线程/队列行不被改回、无第三遍 user/message）。
 仍未解释的一项：**DeepSeek 单次调用挂 55 分钟**——LLM 调用应有超时/重试，这是 dsh 核心（dsh-llm）的行为，需要单独立项看
 `agentOptions` 有没有 request timeout 可配（不改 dsh 核心，只配置）。
+**55 分钟挂死的解释与兜底**：会话日志里只有 1 条 `llm/retry`（TRANSPORT，467ms 后重试），不是重试循环；dsh-llm-deepseek 自带
+`streamIdleTimeoutMs`（默认 5 分钟）也没触发，推测上游流一直在喂 keep-alive 空包、就是不出 token。dsh 没有"整次请求总时长"的开关
+（只有 `streamIdleTimeoutMs` 与 `retryPolicy`），不改核心的兜底放在平台层：runtime-worker 增加**轮次活动看门狗** `turnIdleMs`
+（默认 10 分钟）——会话日志事件数 10 分钟不变即判上游卡死，取消本轮并换 id 重投（计 attempt，3 次死信报错）。
