@@ -33,6 +33,9 @@
 4. 热更后必须跟一次镜像构建固化，否则 pod 重启回退。
 5. 前端曾因 innerHTML 改 React 管理的 DOM 整页白屏：**绝不直接改官方组件的 DOM**，
    只用纯 CSS 覆盖或自有槽位组件；自研组件一律包 ErrorBoundary。
+6. **client 插件要用 `ctx.sessions / connection / workspaces`（如「在会话里深挖」）必须把它们列进 `export const inject`**，
+   否则 apply 时不在 ctx 上、点击静默失败（2026-08-27 Top SQL 面板行为测试抓到）。深挖类交互统一用 task-health 的
+   `Link`/`DigLink`（12.5px 蓝文字链 · `${label} →` / 开会话中… / 失败，重试），行为测试用 `scripts/browser/dig-click-check.mjs`。
 
 ## 部署与环境要点
 

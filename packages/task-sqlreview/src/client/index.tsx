@@ -8,7 +8,9 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 
-export const inject = ['slots'];
+// 深挖要用 sessions / connection / workspaces：必须列进 inject，否则 apply 时它们还不在 ctx 上，
+// 点「在会话里深挖」只会静默失败（2026-08-27 行为测试抓到；与 task-health 同一份清单）
+export const inject = ['slots', 'connection', 'workspaces', 'sessions'];
 
 const T = {
   ink: '#0f1115', sub: '#61666b', dim: '#81858c', blue: '#4176e6',
@@ -79,12 +81,11 @@ function Chip({ level, children }: { level: string; children: any }) {
 function Tag({ children }: { children: any }) {
   return <span style={{ fontSize: 12, borderRadius: 4, padding: '0 7px', border: `1px solid ${T.line}`, color: T.sub, background: '#fff', whiteSpace: 'nowrap' }}>{children}</span>;
 }
-function Btn({ onClick, children, primary, busy, fail, title }: { onClick: () => void; children: any; primary?: boolean; busy?: boolean; fail?: boolean; title?: string }) {
+/** 与监控（健康检查）面板同一个链接样式：12.5px 蓝色文字链，无边框（user 2026-08-27：深挖交互与监控任务保持一致） */
+function Link({ onClick, children, busy, fail, title }: { onClick: () => void; children: any; busy?: boolean; fail?: boolean; title?: string }) {
   return (
     <button type="button" onClick={onClick} disabled={busy} title={title}
-      style={primary
-        ? { font: 'inherit', fontSize: 14, fontWeight: 500, color: '#fff', background: fail ? T.sev.critical.c : T.blue, border: 'none', borderRadius: 10, padding: '6px 14px', cursor: busy ? 'wait' : 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center', opacity: busy ? 0.7 : 1 }
-        : { font: 'inherit', fontSize: 14, color: fail ? T.sev.critical.c : T.sub, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+      style={{ font: 'inherit', fontSize: 12.5, color: fail ? T.sev.critical.c : T.blue, background: 'none', border: 'none', padding: 0, cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
       {children}
     </button>
   );
@@ -119,17 +120,18 @@ function digPrompt(node: string, when: string, it: any, rules: any[], narrative:
     '任务：请围绕这条 SQL 深挖——先用工具（db_query EXPLAIN / db_overview / metrics_chart / sqlreview_collect 等）取证，再给出：1) 瓶颈根因与依据；2) 可行的优化方案（改写请用 EXPLAIN 实证 cost 对比；索引类注明需人工执行）；3) 预期收益与风险。本平台只读，不执行任何变更。不要向我反问，直接给结论。',
   ].filter((s) => s !== '').join('\n');
 }
-function DigButton({ prompt }: { prompt: string }) {
+/** 同 task-health 的 DigLink：文案与三态（`${label} →` / 开会话中… / 失败，重试）一字不差 */
+function DigLink({ prompt, label }: { prompt: string; label: string }) {
   const [state, setState] = useState<'idle' | 'busy' | 'fail'>('idle');
   return (
-    <Btn primary busy={state === 'busy'} fail={state === 'fail'} title="直接新建会话并把本条 SQL 的背景发出去" onClick={() => { setState('busy'); digInSession(prompt).then(() => setState('idle')).catch(() => setState('fail')); }}>
-      💬 {state === 'busy' ? '开会话中…' : state === 'fail' ? '失败，点击重试' : '在新会话中深挖 →'}
-    </Btn>
+    <Link busy={state === 'busy'} fail={state === 'fail'} title="直接新建会话并把本条 SQL、指标、计划与违规作为背景发出" onClick={() => { setState('busy'); digInSession(prompt).then(() => setState('idle')).catch(() => setState('fail')); }}>
+      {state === 'busy' ? '开会话中…' : state === 'fail' ? '失败，重试' : `${label} →`}
+    </Link>
   );
 }
-function CopyBtn({ text, label }: { text: string; label: string }) {
+function CopyLink({ text, label }: { text: string; label: string }) {
   const [done, setDone] = useState(false);
-  return <Btn onClick={() => { try { void navigator.clipboard.writeText(text); } catch { /* noop */ } setDone(true); setTimeout(() => setDone(false), 1500); }}>{done ? '已复制' : label}</Btn>;
+  return <Link onClick={() => { try { void navigator.clipboard.writeText(text); } catch { /* noop */ } setDone(true); setTimeout(() => setDone(false), 1500); }}>{done ? '已复制' : label}</Link>;
 }
 
 // ───────────────────────────────────────────── ① 负载总量
@@ -376,12 +378,12 @@ function SqlCard({ it, rules, narrative, node, when }: { it: any; rules: any[]; 
           </div>
         </div>
         {String(narrative?.detail ?? '') !== '' ? <div style={{ fontSize: 15, color: T.sub }}>{String(narrative.detail)}</div> : null}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 20px', background: T.fill, borderTop: `1px solid ${T.line}`, flexWrap: 'wrap' }}>
-        <DigButton prompt={digPrompt(node, when, it, rules, narrative)} />
-        <CopyBtn text={String(it.text)} label="复制 SQL" />
-        {String(narrative?.optimizedSql ?? '') !== '' ? <CopyBtn text={String(narrative.optimizedSql)} label="复制优化后 SQL" /> : null}
-        <span style={{ marginLeft: 'auto', fontSize: 12.5, color: T.dim }}>点击即新建会话并把本条 SQL、指标、计划与违规作为背景发出</span>
+        {/* 右下角一排文字链，与监控面板的维度卡/发现行同款：复制 · 在会话里深挖 → */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, flexWrap: 'wrap', paddingTop: 2 }}>
+          <CopyLink text={String(it.text)} label="复制 SQL" />
+          {String(narrative?.optimizedSql ?? '') !== '' ? <CopyLink text={String(narrative.optimizedSql)} label="复制优化后 SQL" /> : null}
+          <DigLink prompt={digPrompt(node, when, it, rules, narrative)} label="在会话里深挖" />
+        </div>
       </div>
     </div>
   );
@@ -402,7 +404,7 @@ function OtherRules({ rules }: { rules: any[] }) {
       <div style={{ ...card, padding: '12px 20px' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 14 }}>
           {[...byRule.entries()].map(([rule, v]) => <span key={rule} style={{ fontSize: 11.5, borderRadius: 4, padding: '0 6px', fontWeight: 600, background: sev(v.level).soft, color: sev(v.level).c }}>{rule} ×{v.n}</span>)}
-          <Btn onClick={() => setOpen(!open)}><span style={{ color: T.blue, marginLeft: 6 }}>{open ? '收起 ▴' : `展开 ${rules.length} 条 ▾`}</span></Btn>
+          <Link onClick={() => setOpen(!open)}>{open ? '收起 ▴' : `展开 ${rules.length} 条 ▾`}</Link>
         </div>
         {open ? <div style={{ marginTop: 10 }}><RuleRows rules={rules} /></div> : null}
       </div>

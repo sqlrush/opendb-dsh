@@ -824,3 +824,11 @@ min-content 把卡片列撑宽、右栏优化方案/cost 条被裁——卡内 g
 `lookup host.orb.internal: Try again`（VM 内 DNS 同步抖动）；mac 没睡（caffeinate 常驻）。是 OrbStack 节点抖动叠在滚动窗口上，
 不是就绪探针/preStop 失效（同日前两次滚动均 0/240）。自愈后插件包 200、浏览器验收 PASS。rollout.sh 从此在非 200 时顺手打印
 同时段节点 NotReady 事件，省得再查一轮。
+
+**深挖交互与监控任务对齐（2026-08-27，user：在会话深挖的功能和 UI 交互与监控任务保持一致）**：Top SQL 卡片底部的大按钮/灰底栏
+撤掉，改成与 task-health 完全同款的右下角文字链（`Link`/`DigLink`：12.5px `#4176E6` 无边框；文案三态 `在会话里深挖 →` /
+开会话中… / 失败，重试），前面并排「复制 SQL」「复制优化后 SQL」同款链接。行为测试 `scripts/browser/dig-click-check.mjs`
+（真实鼠标点击 → 断言链接样式、新建 1 个会话、视图切到会话、首条用户消息以「【Top SQL 深挖】」开头、console 零错误）
+第一次就抓到一个真 bug：client 插件 `inject` 只列了 `slots`，`ctx.sessions` 在 apply 时不存在，点击静默失败——补成
+`['slots','connection','workspaces','sessions']`（与 task-health 同）后 PASS。教训进 CLAUDE.md 第 6 条。
+固化滚动：#2 窗口 1×502（19:38:15，单次，preStop 覆盖不到的瞬时切换）、#3 0/240 ROLLOUT OK。
