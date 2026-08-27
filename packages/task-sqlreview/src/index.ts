@@ -10,7 +10,7 @@ import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import type { TaskType, TaskRecord, TaskBuildContext } from '@opendb-dsh/tasks';
 import { SQLREVIEW_THRESHOLD_SPECS } from './rules.ts';
-import { DIMENSIONS, DIM_KEYS, DEFAULT_DIMENSIONS, normalizeDimensions } from './topsql.ts';
+import { DIMENSIONS, DIM_KEYS, DEFAULT_DIMENSIONS, normalizeDimensions, resolveMode } from './topsql.ts';
 
 export { runCatalogRules, textRules, worstRuleLevel, LEVEL_ORDER, SQLREVIEW_THRESHOLDS, SQLREVIEW_THRESHOLD_SPECS, withSqlreviewThresholds } from './rules.ts';
 export type { SqlreviewThresholds } from './rules.ts';
@@ -20,8 +20,9 @@ export type { SqlItem, PlanFinding } from './sqlscan.ts';
 export {
   DIMENSIONS, DIM_KEYS, DEFAULT_DIMENSIONS, normalizeDimensions, buildTopSql, fetchWorkload, attributeRules, insightsOf,
   classify, referencedTables, dimValue, sharesOf, STATEMENT_FILTER, fingerprint, parseWaitDetails, profileFromRows, fetchExecProfile,
+  resolveMode, matchStatements, TRACK_SHARE_DIMS,
 } from './topsql.ts';
-export type { DimKey, DimSpec, DimUnit, SqlMetrics, Workload, SqlKind, TopSqlItem, Board, Insight, TopSqlResult, ExecProfile, WaitEvent } from './topsql.ts';
+export type { DimKey, DimSpec, DimUnit, SqlMetrics, Workload, SqlKind, TopSqlItem, Board, Insight, TopSqlResult, ExecProfile, WaitEvent, ReportMode } from './topsql.ts';
 
 export const name = 'task-sqlreview';
 export const inject = ['opendbTasks', 'opendbThresholds'];
@@ -38,9 +39,9 @@ export const SQLREVIEW_TASK_TYPE: TaskType<SqlReviewConfig> = {
   defaultCron: '0 18 * * *',
   configSchema: z.object({
     node: z.string().default('').description('目标节点名；空 = 该 agent 唯一绑定节点'),
-    dimensions: z.array(z.string()).default([...DEFAULT_DIMENSIONS]).description(`榜单维度，每个维度各出一榜（用户说"按执行次数和耗时"→ ["calls","elapsed"]）：${DIM_HELP}`),
-    topN: z.number().step(1).min(1).max(20).default(5).description('每个维度榜单条数（Top-N）'),
-    sqls: z.array(z.string()).default([]).description('只放榜单之外、用户自己贴的 SQL 文本；榜单里会出现的语句不要再传（同一条会按指纹合并）'),
+    dimensions: z.array(z.string()).default([...DEFAULT_DIMENSIONS]).description(`榜单模式：每个维度各出一榜（用户说"按执行次数和耗时"→ ["calls","elapsed"]）：${DIM_HELP}。跟踪模式（用户要跟踪对话里那几条具体 SQL）传 []，不出榜`),
+    topN: z.number().step(1).min(1).max(20).default(5).description('每个维度榜单条数（Top-N）；跟踪模式忽略'),
+    sqls: z.array(z.string()).default([]).description('跟踪模式：用户在对话里讨论/贴出并要求跟踪的 SQL 原文（配合 dimensions=[]，报表只含这几条）。榜单模式留空——榜单里会出现的语句不要复制进来'),
     focus: z.string().default('').description('本任务额外关注点（只影响模型解读，不改采集）'),
   }),
   /**
@@ -70,20 +71,24 @@ export const SQLREVIEW_TASK_TYPE: TaskType<SqlReviewConfig> = {
   async buildPrompt(task: TaskRecord<SqlReviewConfig>, _run, ctx: TaskBuildContext): Promise<string> {
     const bound = await ctx.nodesOf(task.agentId);
     const nodeName = task.config.node !== '' ? task.config.node : (bound.length === 1 ? bound[0].name : '');
-    const dims = normalizeDimensions(task.config.dimensions);
+    const mode = resolveMode(task.config);
+    const dims = mode === 'track' ? [] : normalizeDimensions(task.config.dimensions);
     const dimLabels = dims.map((d) => DIMENSIONS[d].label).join('、');
     const sqls = Array.isArray(task.config.sqls) ? task.config.sqls : [];
     const args = [
       nodeName !== '' ? `node 传 "${nodeName}"` : '',
       `dimensions 传 ${JSON.stringify(dims)}`,
-      `topN 传 ${task.config.topN}`,
-      sqls.length > 0 ? `sqls 逐字转传任务配置里的 ${sqls.length} 条指定 SQL：${JSON.stringify(sqls)}` : '',
+      mode === 'top' ? `topN 传 ${task.config.topN}` : '',
+      sqls.length > 0 ? `sqls 逐字转传任务配置里的 ${sqls.length} 条 SQL：${JSON.stringify(sqls)}` : '',
     ].filter((s) => s !== '').join('，');
+    const nodeText = nodeName !== '' ? `「${nodeName}」` : '（agent 绑定多节点：先用 db_nodes 确认目标，配置未指定时选第一个在线节点并在报告里说明）';
     return [
-      `请对节点 ${nodeName !== '' ? `「${nodeName}」` : '（agent 绑定多节点：先用 db_nodes 确认目标，配置未指定时选第一个在线节点并在报告里说明）'} 生成 Top SQL 报表：榜单维度 = ${dimLabels}（各 Top ${task.config.topN}）${sqls.length > 0 ? ` + ${sqls.length} 条指定 SQL` : ''}。`,
+      mode === 'track'
+        ? `请对节点 ${nodeText} 生成 Top SQL 报表（跟踪模式）：只跟踪会话里指定的 ${sqls.length} 条 SQL，不出榜单。`
+        : `请对节点 ${nodeText} 生成 Top SQL 报表：榜单维度 = ${dimLabels}（各 Top ${task.config.topN}）${sqls.length > 0 ? ` + ${sqls.length} 条指定 SQL` : ''}。`,
       ``,
       `## 步骤（锚定式，不是自由分析）`,
-      `1. 调用 sqlreview_collect（${args}）——它产出并已存档：负载总量、各维度榜单（含占全库比例）、去重后的 Top SQL 明细（指标/占比/榜位/类型判定/执行计划/脚本标注的优化点/归到该 SQL 名下的规范违规）、脚本生成的「一眼结论」。**任务面板直接读取存档，你不必复述这些数字。**`,
+      `1. 调用 sqlreview_collect（${args}）——它产出并已存档：负载总量、${mode === 'track' ? '每条跟踪 SQL 在 dbe_perf.statement 里的运行记录（指标/占全库比例/榜位/类型判定/单次耗时构成/等待事件/执行计划/脚本标注的优化点/归到该 SQL 名下的规范违规）' : '各维度榜单（含占全库比例）、去重后的 Top SQL 明细（指标/占比/榜位/类型判定/单次耗时构成/等待事件/执行计划/脚本标注的优化点/归到该 SQL 名下的规范违规）'}、脚本生成的「一眼结论」。**任务面板直接读取存档，你不必复述这些数字。**`,
       `2. 逐条优化（对工具返回的每一条 sqlItems，按 key 一一对应；只对有优化空间的做改写）：`,
       `   - 改写类（SQL 写法问题）：给出优化后 SQL，然后用 db_query 执行 \`EXPLAIN <优化后SQL>\`（不要 EXPLAIN ANALYZE）取新计划总 cost，与工具给的原 cost 对比算降幅——这才算 verify=explain-verified；`,
       `   - 索引类（缺索引）：给出 CREATE INDEX 建议文本，verify 只能填 estimated（本实例无 hypopg，无法虚拟索引实证），detail 写明「[需人工执行·预估]」；`,

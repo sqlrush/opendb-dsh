@@ -69,8 +69,22 @@ export interface TopSqlItem {
   shares: Partial<Record<DimKey, number>>;   // 占全库百分比（1 位小数）；avg 无占比
   ranks: Partial<Record<DimKey, number>>;    // 各榜榜位（1 起）
   tables: string[];            // 引用的表名（小写、不带 schema），规则归因用
-  specified?: boolean;         // 任务配置里也贴了这条（按指纹对上），不再另立 Q 项
+  specified?: boolean;         // 任务配置里也贴了这条（按指纹对上），不再另立一项
+  tracked?: boolean;           // 会话里指定跟踪的对象（跟踪模式）；有运行记录时指标/占比/榜位照算
 }
+
+/**
+ * 报表模式（user 2026-08-27）：要理解对话意思——用户要的是各维度 Top-N，还是跟踪他在对话里讨论的那几条 SQL；
+ * 对象明确后只跟踪对象。配置表达：sqls 非空且 dimensions 为空数组 = 跟踪模式；否则榜单模式（sqls 里的会按指纹并入榜单）。
+ */
+export type ReportMode = 'top' | 'track';
+export function resolveMode(config: { dimensions?: unknown; sqls?: unknown }): ReportMode {
+  const sqls = Array.isArray(config.sqls) ? config.sqls.filter((s) => typeof s === 'string' && s.trim() !== '') : [];
+  const dims = Array.isArray(config.dimensions) ? config.dimensions : undefined;
+  return sqls.length > 0 && dims !== undefined && dims.length === 0 ? 'track' : 'top';
+}
+/** 跟踪模式下占比条/结论用的维度（不出榜，但资源占比仍按这些算） */
+export const TRACK_SHARE_DIMS: DimKey[] = ['elapsed', 'dbtime', 'cpu', 'io', 'blocks', 'calls'];
 export interface Board { dim: DimKey; label: string; desc: string; unit: DimUnit; keys: string[]; values: number[]; shares: (number | null)[] }
 export interface Insight { level: 'warn' | 'notice' | 'ok'; key?: string; text: string }
 
@@ -275,6 +289,35 @@ FROM (SELECT * FROM dbe_perf.statement_history WHERE unique_query_id = ${uniqueS
   return profileFromRows(rows);
 }
 
+/**
+ * 会话里指定的 SQL → 在 dbe_perf.statement 里按指纹找运行记录（og 记的是 ? 占位文本，贴的是带参原文）。
+ * 一次扫前 scanLimit 条（按总耗时降序；og5 全库 3,088 条一次覆盖），JS 侧指纹比对；扫描完整时顺带算各维度榜位。
+ */
+export async function matchStatements(q: QueryFn, texts: readonly string[], workload: Workload, scanLimit = 5000): Promise<Map<string, TopSqlItem | undefined>> {
+  const out = new Map<string, TopSqlItem | undefined>();
+  if (texts.length === 0) return out;
+  const rows = (await q(`SELECT ${METRIC_COLS} FROM dbe_perf.statement ${STATEMENT_FILTER}
+ORDER BY total_elapse_time DESC LIMIT ${Math.max(1, Math.min(scanLimit, 20000))}`, scanLimit)).rows;
+  const complete = rows.length < scanLimit;
+  const byFp = new Map<string, Record<string, unknown>>();
+  for (const r of rows) { const fp = fingerprint(str(r.query)); if (!byFp.has(fp)) byFp.set(fp, r); }
+  const rankDims: DimKey[] = ['elapsed', 'calls', 'avg', 'cpu', 'io', 'blocks', 'dbtime'];
+  const sorted = complete ? new Map(rankDims.map((d) => [d, [...rows].map((r) => metricsOf(r)).map((m) => dimValue(d, m)).sort((a, b) => b - a)])) : undefined;
+  for (const text of texts) {
+    const r = byFp.get(fingerprint(text));
+    if (r === undefined) { out.set(text, undefined); continue; }
+    const rowText = str(r.query);
+    const metrics = metricsOf(r);
+    const ranks: Partial<Record<DimKey, number>> = {};
+    if (sorted !== undefined) for (const d of rankDims) { const v = dimValue(d, metrics); const i = sorted.get(d)!.findIndex((x) => x <= v); ranks[d] = (i < 0 ? sorted.get(d)!.length : i) + 1; }
+    out.set(text, {
+      key: shortKey(rowText), label: '', uniqueSqlId: str(r.unique_sql_id), text: rowText.slice(0, 1200), kind: classify(rowText, metrics),
+      metrics, shares: sharesOf(metrics, workload), ranks, tables: referencedTables(rowText), tracked: true,
+    });
+  }
+  return out;
+}
+
 /** 规则违规归因：文本类按 key；目录类按"违规所在表 ∈ SQL 引用的表"。返回每条 SQL 的违规下标与未归因下标 */
 export function attributeRules(items: readonly TopSqlItem[], findings: readonly RuleFinding[]): { byKey: Record<string, number[]>; unattributed: number[] } {
   const byKey: Record<string, number[]> = {};
@@ -300,12 +343,11 @@ const fmtCount = (n: number): string => (n >= 1e8 ? `${(n / 1e8).toFixed(2)} 亿
 export function insightsOf(result: TopSqlResult, dims: DimKey[], T: SqlreviewThresholds = SQLREVIEW_THRESHOLDS): Insight[] {
   const out: Insight[] = [];
   const { workload: w, items } = result;
-  const byKey = new Map(items.map((it) => [it.key, it]));
   for (const dim of dims) {
     const spec = DIMENSIONS[dim];
     if (!spec.shareable) continue;
-    const board = result.boards.find((b) => b.dim === dim);
-    const top = board !== undefined && board.keys.length > 0 ? byKey.get(board.keys[0]) : undefined;
+    // 该维度占比最高的一条（榜单模式 = 榜首；跟踪模式没有榜，就在跟踪对象里挑）
+    const top = [...items].filter((it) => (it.shares[dim] ?? 0) > 0).sort((a, b) => (b.shares[dim] ?? 0) - (a.shares[dim] ?? 0))[0];
     const share = top?.shares[dim] ?? 0;
     if (top !== undefined && share >= T.shareHighlightPct) {
       const m = top.metrics;
@@ -327,6 +369,7 @@ export function insightsOf(result: TopSqlResult, dims: DimKey[], T: SqlreviewThr
     const sum = items.reduce<number>((s, it) => s + (it.shares[d] ?? 0), 0);
     return `${DIMENSIONS[d].label} ${Math.min(100, Math.round(sum * 10) / 10)}%`;
   });
-  if (covered.length > 0) out.push({ level: 'ok', text: `上榜 ${items.length} 条合计占：${covered.join(' · ')}——优化面集中` });
+  const tracked = items.length > 0 && items.every((it) => it.tracked === true);
+  if (covered.length > 0) out.push({ level: 'ok', text: `${tracked ? '跟踪的' : '上榜'} ${items.length} 条合计占：${covered.join(' · ')}${tracked ? '' : '——优化面集中'}` });
   return out.slice(0, 5);
 }

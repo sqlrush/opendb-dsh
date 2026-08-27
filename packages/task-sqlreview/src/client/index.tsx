@@ -388,8 +388,8 @@ function SqlCard({ it, rules, narrative, node, when }: { it: any; rules: any[]; 
         <span style={{ font: `12.5px ${mono}`, color: T.dim }}>{String(it.key)}</span>
         {ranks.length > 0 ? <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', fontSize: 12.5, color: T.sub }}>{ranks.map(([d, n]) => <span key={d} style={{ background: T.fill, borderRadius: 4, padding: '0 7px' }}>{DIM_LABEL[d] ?? d} #{n}</span>)}</span> : null}
         <Tag>{isSpecified ? '指定 SQL' : String(it.kind)}</Tag>
-        {isSpecified ? <span style={{ fontSize: 12.5, color: T.dim }}>任务配置里贴入 · 不在榜单 · 无运行指标，只做计划与规范分析</span> : null}
-        {it.specified === true ? <Tag>亦为指定 SQL</Tag> : null}
+        {it.tracked === true ? <Tag>跟踪对象</Tag> : it.specified === true ? <Tag>亦为指定 SQL</Tag> : null}
+        {isSpecified ? <span style={{ fontSize: 12.5, color: T.dim }}>会话里贴入 · 在 dbe_perf.statement 没找到运行记录 · 只做计划与规范分析</span> : null}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 5, fontSize: 13.5, fontWeight: 600, color: badge.c, background: badge.bg, borderRadius: 6, padding: '2px 10px', whiteSpace: 'nowrap' }}>
           {badge.t}{verify === 'explain-verified' && Number(drop) > 0 ? ` · cost ↓${drop}%` : ''}
         </span>
@@ -546,9 +546,12 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
   const rulesOf = (it: any): any[] => dedupe(((it.ruleRefs ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean));
   const otherRules = dedupe(((collect.unattributedRules ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean));
   const dims: string[] = collect.dimensions ?? [];
+  const mode = String(collect.mode ?? 'top');
+  const shareDims: string[] = Array.isArray(collect.shareDims) ? collect.shareDims : dims;
   const when = String(collect.collectedAt ?? current.firedAt ?? '').replace('T', ' ').slice(0, 16);
   const node = String(collect.node ?? task.config?.node ?? '');
   const boards: any[] = collect.boards ?? [];
+  const withRecord = items.filter((it) => String(it.kind) !== '指定').length;
 
   return (
     <div style={{ fontFamily: font, color: T.ink, lineHeight: 1.75 }}>
@@ -560,15 +563,21 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
       {String(current.report?.summary ?? '') !== '' ? <div style={{ fontSize: 15, color: T.sub, marginBottom: 12 }}>{String(current.report.summary)}</div> : null}
       <Stats w={collect.workload ?? {}} />
 
-      <H2 hint={`每根横条 = 该资源的 100% · 彩色段 = 上榜 SQL · 灰色 = 其余 ${fmtCount(Math.max(0, Number(collect.workload?.nSql ?? 0) - items.length))} 条`}>Top SQL 资源占比</H2>
-      <ShareCard dims={dims} items={items} workload={collect.workload ?? {}} insights={collect.insights ?? []} />
+      <H2 hint={`每根横条 = 该资源的 100% · 彩色段 = ${mode === 'track' ? '跟踪对象' : '上榜 SQL'} · 灰色 = 其余 ${fmtCount(Math.max(0, Number(collect.workload?.nSql ?? 0) - withRecord))} 条`}>{mode === 'track' ? '跟踪 SQL 资源占比' : 'Top SQL 资源占比'}</H2>
+      <ShareCard dims={shareDims} items={items} workload={collect.workload ?? {}} insights={collect.insights ?? []} />
 
-      <H2 hint={`任务配置的维度各出一榜（${dims.map((d) => DIM_LABEL[d] ?? d).join(' · ')}）· 同一条 SQL 可同时上多榜 · 在会话里说一句即可加减维度`}>Top SQL 榜单</H2>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${boards.length >= 3 ? 320 : 360}px, 1fr))`, gap: 12 }}>
-        {boards.map((b) => <Board key={String(b.dim)} board={b} items={itemsByKey} rulesCount={(k) => rulesOf(itemsByKey.get(k) ?? {}).length} />)}
-      </div>
+      {boards.length > 0 ? (
+        <>
+          <H2 hint={`任务配置的维度各出一榜（${dims.map((d) => DIM_LABEL[d] ?? d).join(' · ')}）· 同一条 SQL 可同时上多榜 · 在会话里说一句即可加减维度`}>Top SQL 榜单</H2>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${boards.length >= 3 ? 320 : 360}px, 1fr))`, gap: 12 }}>
+            {boards.map((b) => <Board key={String(b.dim)} board={b} items={itemsByKey} rulesCount={(k) => rulesOf(itemsByKey.get(k) ?? {}).length} />)}
+          </div>
+        </>
+      ) : null}
 
-      <H2 hint={`上榜 SQL 去重后 ${items.length} 条 · 每条：指标 → 计划 → 违反规范 → 优化 → 解读 · 违规不在顶部汇总`}>逐条分析</H2>
+      <H2 hint={mode === 'track'
+        ? `会话里指定跟踪的 ${Number(collect.trackedCount ?? items.length)} 条（找到运行记录 ${withRecord} 条）· 不出榜 · 每条：指标 → 耗时构成/等待 → 计划 → 违反规范 → 优化 → 解读`
+        : `上榜 SQL 去重后 ${items.length} 条 · 每条：指标 → 耗时构成/等待 → 计划 → 违反规范 → 优化 → 解读 · 违规不在顶部汇总`}>逐条分析</H2>
       {items.map((it) => <SqlCard key={String(it.key)} it={it} rules={rulesOf(it)} narrative={narrativeByKey.get(String(it.key))} node={node} when={when} />)}
 
       <OtherRules rules={otherRules} />

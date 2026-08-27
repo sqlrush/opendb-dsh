@@ -844,3 +844,11 @@ min-content 把卡片列撑宽、右栏优化方案/cost 条被裁——卡内 g
   行列 db_time/cpu_time/data_io_time/lock_wait_time/lwlock_wait_time/net_*_info/parse+plan+rewrite → 单次耗时构成（其他 = 差值）。
   OLTP 短语句（UPDATE accounts 等）不在 statement_history（低于慢 SQL 阈值未采样）→ 卡片如实写"未进入采样"。
   og5 `track_stmt_stat_level = L2,L2`，statement_history 8.9 万行 / 52 个 unique_query_id。
+
+**跟踪模式（2026-08-27 晚，user：S/Q 不要重复，展示对话里的 SQL；要理解对话意思——各维度 Top-N 还是跟踪那几条，对象明确就只跟踪对象）**
+- 配置语义：`sqls` 非空且 `dimensions=[]` = **跟踪模式**（不出榜，报表只含这几条）；否则榜单模式。`resolveMode()` 统一判定，
+  buildPrompt / 采集器 / 面板三处同一口径；`task_create` 描述要求模型先判断对话意图，不要两者混填。
+- 跟踪的 SQL 到 `dbe_perf.statement` 按指纹找运行记录（`matchStatements`：一次按总耗时扫前 5,000 条，JS 侧指纹比对；
+  扫描完整时顺带算各维度榜位），找到的就有指标/占比/榜位/耗时构成/等待事件，找不到的标「指定 SQL · 没找到运行记录」只做计划与规范。
+  编号统一 S1..Sn（跟踪模式按对话顺序），不再有 Q。跟踪模式占比条固定用 总耗时/DB Time/CPU/IO/逻辑读/调用次数 六根。
+- user 的 `og5慢SQL Top3跟踪`（原 dimensions=["elapsed"] + 3 条 sqls，S/Q 重复）已经平台 RPC 改成 dimensions=[]，下次运行即三条跟踪对象。
