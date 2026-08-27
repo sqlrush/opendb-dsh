@@ -45,7 +45,11 @@ echo "  台账: $(pq "SELECT count(*) FROM opendb_schema_migrations") 条迁移 
 # 等探针循环跑完（最长 4 分钟）再读窗口统计
 wait $PROBE 2>/dev/null; read -r total bad codes < /tmp/rollout-window.txt
 codes="${codes:-}"   # mac 自带 bash 3.2：多字节字符紧挨着变量展开会被啃坏，这里只用 ASCII
-echo "  滚动窗口：$total 次探测，非 200 = $bad${codes:+ ($codes)}"; [ "$bad" = "0" ] || note "滚动期间插件包有 $bad 次非 200——就绪探针/preStop 失效？"
+echo "  滚动窗口：$total 次探测，非 200 = $bad${codes:+ ($codes)}"
+if [ "$bad" != "0" ]; then
+  note "滚动期间插件包有 $bad 次非 200——就绪探针/preStop 失效？先看下面有没有同时段的节点 NotReady（2026-08-27 一次 28×503 就是 k8s-w1 抖了 10 秒）"
+  kubectl get events -A --sort-by=.lastTimestamp 2>/dev/null | grep -E "NodeNotReady|NodeReady|ErrImagePull" | tail -4 | sed 's/^/    /'
+fi
 if curl -s -m 3 127.0.0.1:9333/json/version >/dev/null; then
   echo "  浏览器验收（无头 Chrome）："; node scripts/browser/task-panel-check.mjs 2>&1 | grep -v WATCHDOG | sed 's/^/    /' || fail=1
 else
