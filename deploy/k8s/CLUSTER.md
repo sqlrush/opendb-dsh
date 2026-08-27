@@ -776,3 +776,39 @@ session_stat_activity(≈pg_stat_activity + unique_sql_id,trace_id)、summary_st
 **复验**（`/tmp/og5-as-ro.sh`，以 opendb_ro 连 og5）：4 个 WLM 视图可读、`SHOW transaction_read_only` = on。
 生产接入清单更新：平台账号 = SYSADMIN（或至少 MONADMIN+AUDITADMIN+业务 schema USAGE/SELECT）+ 角色级只读默认；
 平台侧零过滤。
+
+## Top SQL 报表（慢 SQL 报表重构 R5，2026-08-27，user 定稿设计后开发）
+
+**起因（user 四点）**：① UI 难看 ② 违反规范不要在顶部汇总，放到各条慢 SQL 的分析里，顶部应突出各 SQL 的资源占比
+③ 会话里要"按执行时长和执行次数分别 Top5"，报告只出了慢 SQL ④ 深挖要直接开新会话而不是复制提示词。
+先出设计稿 `docs/prototypes/sqlreview-r5.html`（数字取自 og5 实测）在浏览器里过，user 认可框架后开发。
+
+**顺手查到的根因/问题**：模型当时把"双榜"建成了每 10 分钟的 **prompt 定时对话任务**（sqlreview 配置只有按均耗时 topN，
+表达不了"按执行次数"）；该任务被归档后**仍按 cron 跑**（3 小时 10 份无人可见的报告）——归档表是旁路表，调度器不看它。
+已停用该任务并修调度：`fireDue` 排除 `opendb_archived_tasks`。`og5过载监控` 仍是 `*/5`（user 建的，未动，已提醒）。
+
+**做法（数据链三层打通）**
+- 配置：`dimensions: string[]`（elapsed/calls/avg/cpu/io/blocks/dbtime/spill/rows，接受中文别名 `normalizeDimensions`）+ `topN`；
+  `task_create` 描述写明"按执行次数和耗时分别 Top5 → sqlreview + dimensions=[calls,elapsed]，不要退化成 prompt 任务"。
+- 采集（`task-sqlreview/src/topsql.ts` 纯函数 + `tool-sqlreview-collect`）：一次 workload 汇总 + 每维度一次 Top-N，
+  按 unique_sql_id 去重、S1.. 按首次上榜编号、每条带全量指标 / 占全库比例 / 各榜榜位 / 类型判定（事务控制·监控类·OLTP 高频·
+  分析型·疑似锁等待）；逐条 EXPLAIN（事务控制语句跳过，上限 24 条）；12 条规则违规按"违规所在表 ∈ SQL 引用的表"归到各条
+  SQL 名下（`RuleFinding.table` 新增字段，只用于归因不参与判定）；「一眼结论」由脚本按占比生成，阈值 `shareHighlightPct=30`、
+  `commitDbTimePct=15` 登记进平台阈值配置。整包存档 **`opendb_task_collects`**（migration 017，按 task_type 通用），
+  `runs/list` 附带；给模型的是精简视图（文本/计划/标注/归因违规/少量指标），它只做逐条解读。
+- 报告 schema 只装叙述：`sqlItems[{key, optimizedSql, newCost, costDropPct, verify, detail}] + priorities + rootCause`；
+  旧报告（无存档）面板走兼容视图并提示重跑。
+- 面板：负载总量卡 → 资源占比堆叠条（只画配置的可分摊维度；avg 无占比）+ 一眼结论 → 每维度一张榜 → 逐条分析卡
+  （指标条 · 原 SQL · 计划按 planFindings.line 标注 · 本条违规 · 优化方案/cost 对比 · 解读 · **在新会话中深挖** 一键建会话发送）
+  → 未归因违规折叠 → 根因/优先级 → 检查历史。
+
+**og5 实测数字（设计稿与单测的依据）**：3,088 条唯一 SQL / 4,798 万次调用 / 总耗时 57,668 s；一条 `gs_session_memory_detail`
+监控轮询占总耗时 45.9%、CPU 66.2%；一条 region/store 聚合占 IO 77.5%；COMMIT 占 DB Time 24.6%；OLTP 四件套各占调用 23.6%。
+注意 og-lite 的 `hash_spill_count` 数值不可信（26 亿），下盘维度用 `sort_spill_size + hash_spill_size`（字节）。
+
+**验证**：单测 task-sqlreview 14/14（维度归一化 / 分类 / 表引用 / 多榜去重与占比 / 规则归因 / 一眼结论与阈值覆盖）、
+tasks 6/6；rollout.sh 全绿（17 条迁移）。e2e `scripts/e2e-topsql.mjs` **PASS 14/14**：会话说「按执行次数和总耗时分别列出 Top 5」
+→ 模型建 sqlreview 任务 `dimensions:["calls","elapsed"]` topN 5 无 cron（不再是 prompt 任务）→ 运行 5m16s 出报告 → 存档 boards=calls/elapsed、
+去重 9 条、每条带占比/榜位/ruleRefs、一眼结论 4 条（S6 监控 SQL 占总耗时 46.2% / COMMIT 占 DB Time 24.5% / 3 条 OLTP 短语句 /
+上榜合计 96.4%·88.9%）→ 报告 9/9 key 对齐采集 → 无头 Chrome 面板含「资源占比 / 两张榜 / 逐条分析 / 在新会话中深挖」、console 零错误
+（截图亲眼核对：状态带、负载卡、两根占比条、图例、一眼结论、两张榜排版与设计稿一致）。

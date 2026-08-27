@@ -8,6 +8,9 @@ setTimeout(() => { console.log('WATCHDOG'); process.exit(2); }, 120000);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const b = await puppeteer.connect({ browserURL: CDP, defaultViewport: { width: 1500, height: 1000 } });
 const p = await b.newPage();
+const errs = [];
+p.on('pageerror', (e) => errs.push('pageerror:' + String(e).slice(0, 300)));
+p.on('console', (m) => { if (m.type() === 'error') errs.push('console:' + m.text().slice(0, 300)); });
 await p.goto(`${BASE}/?v=${Date.now()}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
 await sleep(9000);
 await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find((x) => /继续|同意|知道了/.test((x.textContent || '').trim())); if (el) el.click(); });
@@ -22,6 +25,14 @@ const clicked = await p.evaluate((name) => {
 await sleep(5000);
 const h = await p.evaluate(() => document.documentElement.scrollHeight);
 console.log('clicked', clicked, 'pageHeight', h);
+// EXPECT="关键词1,关键词2"：断言页面文本含全部关键词（面板级验收用）
+const expect = (process.env.EXPECT ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+if (expect.length > 0) {
+  const text = await p.evaluate(() => document.body.textContent || '');
+  const missing = expect.filter((k) => !text.includes(k));
+  console.log(missing.length === 0 ? 'EXPECT_OK' : `EXPECT_MISSING ${missing.join(' | ')}`);
+}
+console.log('errors', errs.length ? errs : '无');
 await p.screenshot({ path: OUT, fullPage: true });
 await p.close();
 await b.disconnect();

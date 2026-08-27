@@ -36,7 +36,7 @@ function defineTaskCreateTool(deps: Deps) {
       type: { type: 'string', required: true, description: '任务类型 key（如 inspection=定期巡检、sql-audit=SQL审核、prompt=定时对话）。' },
       name: { type: 'string', required: true, description: '任务名称（简短、唯一）。' },
       cron: { type: 'string', description: '5 字段 cron（北京时间），如 "0 8 * * *"=每天8点；省略=仅手动触发。' },
-      config: { type: 'object', additionalProperties: true, description: '任务类型的配置对象。目标节点各类型统一支持 node（单个）或 nodes（数组）：health={node|nodes,dims,focus}、sqlreview={node,topN,sqls}、wdr={node,beginSnap,endSnap,topN}、ddl={node,hours}、rules={plugin}。**用户点名了具体节点就必须填**，不填 = 该智能体绑定的全部节点（可能是几百个）。' },
+      config: { type: 'object', additionalProperties: true, description: '任务类型的配置对象。目标节点各类型统一支持 node（单个）或 nodes（数组）：health={node|nodes,dims,focus}、sqlreview（Top SQL 报表）={node,dimensions,topN,sqls,focus}——dimensions 是榜单维度数组，用户说"按执行次数和耗时分别 Top5"就填 ["calls","elapsed"]、topN=5（可选 elapsed=总耗时/calls=执行次数/avg=平均耗时/cpu/io/blocks=逻辑读/dbtime/spill=下盘/rows=返回行数），**这类需求必须用 sqlreview 类型，不要退化成 prompt 定时对话**、wdr={node,beginSnap,endSnap,topN}、ddl={node,hours}、rules={plugin}。**用户点名了具体节点就必须填**，不填 = 该智能体绑定的全部节点（可能是几百个）。' },
       run_now: { type: 'boolean', description: '创建后立即运行一次（默认 true）。设为 false 则只等 cron。' },
     },
     output: TEXT_OUTPUT,

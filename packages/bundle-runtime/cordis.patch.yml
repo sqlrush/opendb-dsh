@@ -105,6 +105,9 @@
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-sqlreview-collect
       name: '@opendb-dsh/tool-sqlreview-collect'
+      config:
+        # 2026-08-27 R5：Top SQL 采集结果存档 opendb_task_collects，任务面板直读榜单/占比/违规
+        connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-wdr-collect
       name: '@opendb-dsh/tool-wdr-collect'
     - id: tool-ddl-collect

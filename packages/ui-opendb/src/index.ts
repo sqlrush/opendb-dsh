@@ -288,6 +288,16 @@ export function apply(ctx: Context): void {
                 [sid, (r as { firedAt?: string }).firedAt ?? new Date(0).toISOString()],
               );
               if (c.rows[0] !== undefined) collect = { id: Number(c.rows[0].id), collectedAt: c.rows[0].collected_at, ...(c.rows[0].payload as object) };
+              // 2026-08-27 R5：Top SQL 报表等按任务类型存档在 opendb_task_collects（同一取法）
+              if (collect === undefined) {
+                const t = await tasks.pool.query(
+                  `SELECT id, collected_at, payload FROM opendb_task_collects
+                    WHERE session_id = $1 AND collected_at >= $2::timestamptz - interval '1 minute'
+                    ORDER BY collected_at DESC LIMIT 1`,
+                  [sid, (r as { firedAt?: string }).firedAt ?? new Date(0).toISOString()],
+                );
+                if (t.rows[0] !== undefined) collect = { id: Number(t.rows[0].id), collectedAt: t.rows[0].collected_at, ...(t.rows[0].payload as object) };
+              }
             }
             enriched.push({ ...r, report: report ? { severity: report.severity, summary: report.summary, data: report.data } : undefined, collect });
           }

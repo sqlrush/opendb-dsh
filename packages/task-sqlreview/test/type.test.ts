@@ -2,23 +2,36 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SQLREVIEW_TASK_TYPE, textRules, worstRuleLevel, annotatePlan, topCost, shortKey } from '../src/index.ts';
 
-test('configSchema 默认值', () => {
+test('configSchema 默认值：三榜（总耗时/执行次数/平均耗时）、Top 5', () => {
   const cfg = SQLREVIEW_TASK_TYPE.configSchema({});
   assert.equal(cfg.node, '');
   assert.equal(cfg.topN, 5);
+  assert.deepEqual(cfg.dimensions, ['elapsed', 'calls', 'avg']);
   assert.deepEqual(cfg.sqls, []);
+  assert.equal(SQLREVIEW_TASK_TYPE.title, 'Top SQL 报表');
 });
 
-test('reportSchema 拒绝缺 det/ruleFindings/sqlItems', () => {
+test('reportSchema：只装叙述——缺 det/sqlItems 拒绝，数字类字段不再要求', () => {
   assert.throws(() => SQLREVIEW_TASK_TYPE.reportSchema({ scope: 'sql-set' }));
   const ok = SQLREVIEW_TASK_TYPE.reportSchema({
     scope: 'sql-set',
     det: { worst: 'warn', counts: { ok: 0, notice: 1, warn: 1, critical: 0 } },
-    ruleFindings: [{ rule: 'DQL002', level: 'warn', object: 'ab12', problem: '前置模糊' }],
-    sqlItems: [{ key: 'ab12', text: 'SELECT 1', verify: 'no-gain' }],
+    sqlItems: [{ key: 'ab12', verify: 'no-gain' }],
   }) as any;
   assert.equal(ok.sqlItems[0].optimizedSql, '');
-  assert.equal(ok.ruleFindings[0].advice, '');
+  assert.equal(ok.sqlItems[0].detail, '');
+  assert.deepEqual(ok.priorities, []);
+});
+
+test('buildPrompt 把配置的维度与 topN 写成工具参数（用户按会话定榜单）', async () => {
+  const ctx = { nodesOf: async () => [{ id: '1', name: 'og5', engine: 'opengauss', host: 'h', port: 1, dbname: 'postgres', status: 'online' }] } as any;
+  const cfg = SQLREVIEW_TASK_TYPE.configSchema({ dimensions: ['执行次数', 'elapsed'], topN: 10 });
+  const task = { id: 't', tenantId: 'default', agentId: 'a', type: 'sqlreview', name: 'x', config: cfg, enabled: true, requiresApproval: false, timeoutMs: 0 } as any;
+  const prompt = await SQLREVIEW_TASK_TYPE.buildPrompt(task, {} as any, ctx);
+  assert.match(prompt, /榜单维度 = 执行次数、总耗时（各 Top 10）/);
+  assert.match(prompt, /dimensions 传 \["calls","elapsed"\]/);
+  assert.match(prompt, /topN 传 10/);
+  assert.match(prompt, /不必复述这些数字/);
 });
 
 test('buildPrompt 写明锚定纪律与验证阶梯', async () => {
@@ -28,7 +41,7 @@ test('buildPrompt 写明锚定纪律与验证阶梯', async () => {
   assert.match(prompt, /sqlreview_collect/);
   assert.match(prompt, /explain-verified/);
   assert.match(prompt, /estimated/);
-  assert.match(prompt, /禁止 EXPLAIN ANALYZE|禁止.*ANALYZE/);
+  assert.match(prompt, /EXPLAIN ANALYZE/);
   assert.match(prompt, /逐字/);
 });
 

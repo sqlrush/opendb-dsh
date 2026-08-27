@@ -15,6 +15,8 @@ export interface RuleFinding {
   problem: string;
   advice: string;
   evidence: string;
+  /** 目录类规则所在的表名（不带 schema）——只用于把违规归到引用该表的 Top SQL 名下（2026-08-27 R5），不参与判定 */
+  table?: string;
 }
 
 export type QueryFn = (sql: string, maxRows?: number) => Promise<{ rows: Record<string, unknown>[] }>;
@@ -38,6 +40,9 @@ export const SQLREVIEW_THRESHOLDS = {
   indexMaxCols: 5,          // IDX002：索引列数超过此值
   varcharMaxLen: 4000,      // COL001：varchar 长度超过此值
   seqScanWarnRows: 100000,  // PLAN_SEQSCAN：全表扫估算行数超过此值升 warn
+  // R5 Top SQL 报表「一眼结论」的判据（2026-08-27 新增，非借鉴规则）
+  shareHighlightPct: 30,    // 单条 SQL 占某资源维度 ≥ 此百分比即高亮成结论
+  commitDbTimePct: 15,      // COMMIT 占 DB Time ≥ 此百分比即提示提交等待
 } as const;
 
 export type SqlreviewThresholds = { [K in keyof typeof SQLREVIEW_THRESHOLDS]: number };
@@ -48,6 +53,8 @@ const SQLREVIEW_THRESHOLD_META = {
   indexMaxCols: { label: '索引列数上限', rule: 'IDX002', cmp: '>' as const, unit: 'count' as const, desc: 'indnatts 超过此值' },
   varcharMaxLen: { label: 'varchar 长度上限', rule: 'COL001', cmp: '>' as const, unit: 'count' as const, desc: 'varchar(n) 的 n 超过此值' },
   seqScanWarnRows: { label: '全表扫升级行数', rule: 'PLAN_SEQSCAN', cmp: '>' as const, unit: 'count' as const, desc: 'EXPLAIN 估算 rows 超过此值时 notice → warn' },
+  shareHighlightPct: { label: '单条 SQL 资源占比高亮线', rule: 'TOPSQL_SHARE', cmp: '>=' as const, unit: 'ratio' as const, desc: '一条 SQL 占某资源维度（总耗时/CPU/IO/逻辑读…）的百分比达到此值即进入「一眼结论」' },
+  commitDbTimePct: { label: 'COMMIT 占 DB Time 提示线', rule: 'TOPSQL_COMMIT', cmp: '>=' as const, unit: 'ratio' as const, desc: 'COMMIT 语句累计 db_time 占全库百分比达到此值即提示提交等待（WAL 落盘）' },
 };
 
 export const SQLREVIEW_THRESHOLD_SPECS: ThresholdSpec[] = specsFrom('sqlreview', SQLREVIEW_THRESHOLDS, SQLREVIEW_THRESHOLD_META);
@@ -74,7 +81,7 @@ ORDER BY c.reltuples DESC LIMIT 8`, 8)).rows;
     const hitByDml = slowTexts.some((t) => new RegExp(`(update|delete\\s+from)\\s+(\\S+\\.)?${table}\\b`, 'i').test(t));
     return {
       rule: 'TBL001', level: hitByDml ? 'critical' as const : 'warn' as const,
-      object: `${str(r.s)}.${table}`,
+      object: `${str(r.s)}.${table}`, table,
       problem: `表无主键/唯一键（约 ${num(r.n)} 行）${hitByDml ? '——且被线上慢 SQL 的 UPDATE/DELETE 命中，回滚与复制均不可控' : ''}`,
       advice: '补自增主键或业务唯一键；上线前 DDL 评审拦截',
       evidence: `reltuples=${num(r.n)}${hitByDml ? ' · 慢SQL DML 命中' : ''}`,
@@ -90,7 +97,7 @@ WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog','information_schema','d
   AND c.reltuples > ${sqlNum(T.noIndexRows)} AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.oid)
 ORDER BY c.reltuples DESC LIMIT 5`, 5)).rows;
   return rows.map((r) => ({
-    rule: 'TBL002', level: 'warn' as const, object: `${str(r.s)}.${str(r.t)}`,
+    rule: 'TBL002', level: 'warn' as const, object: `${str(r.s)}.${str(r.t)}`, table: str(r.t),
     problem: `大表（约 ${num(r.n)} 行）无任何索引，所有查询全表扫`,
     advice: '按查询画像补关键索引', evidence: `reltuples=${num(r.n)}`,
   }));
@@ -102,7 +109,7 @@ export async function ruleIdx001(q: QueryFn): Promise<RuleFinding[]> {
 JOIN pg_class ci ON ci.oid = i.indexrelid JOIN pg_class ct ON ct.oid = i.indrelid
 WHERE NOT i.indisvalid LIMIT 6`, 6)).rows;
   return rows.map((r) => ({
-    rule: 'IDX001', level: 'warn' as const, object: str(r.idx),
+    rule: 'IDX001', level: 'warn' as const, object: str(r.idx), table: str(r.t),
     problem: `失效索引（indisvalid=false，表 ${str(r.t)}）——占空间且拖慢写入但不服务查询`,
     advice: '重建（REINDEX）或删除', evidence: 'pg_index.indisvalid=false',
   }));
@@ -115,7 +122,7 @@ JOIN pg_class ci ON ci.oid = i.indexrelid JOIN pg_class ct ON ct.oid = i.indreli
 JOIN pg_namespace ns ON ns.oid = ct.relnamespace
 WHERE i.indnatts > ${sqlNum(T.indexMaxCols)} AND ns.nspname NOT IN ('pg_catalog','information_schema','dbe_perf','dbe_pldeveloper','db4ai') LIMIT 6`, 6)).rows;
   return rows.map((r) => ({
-    rule: 'IDX002', level: 'notice' as const, object: str(r.idx),
+    rule: 'IDX002', level: 'notice' as const, object: str(r.idx), table: str(r.t),
     problem: `索引 ${num(r.n)} 列（>5），写放大且低区分度尾列多半无效`,
     advice: '按查询画像裁剪到 ≤4 列', evidence: `indnatts=${num(r.n)} 表=${str(r.t)}`,
   }));
@@ -140,9 +147,9 @@ ORDER BY ct.relname LIMIT 200`, 200)).rows;
         if (a === b || idxes[a].pk) continue;
         const ca = idxes[a].cols; const cb = idxes[b].cols;
         if (ca === cb && a < b && !idxes[b].pk) {
-          out.push({ rule: 'IDX003', level: 'warn', object: `${idxes[a].idx} / ${idxes[b].idx}`, problem: `表 ${t} 上完全重复索引（列序一致：${ca}）`, advice: '保留一个，删除另一个', evidence: `indkey=${ca}` });
+          out.push({ rule: 'IDX003', level: 'warn', object: `${idxes[a].idx} / ${idxes[b].idx}`, table: t, problem: `表 ${t} 上完全重复索引（列序一致：${ca}）`, advice: '保留一个，删除另一个', evidence: `indkey=${ca}` });
         } else if (cb.startsWith(`${ca} `)) {
-          out.push({ rule: 'IDX004', level: 'notice', object: idxes[a].idx, problem: `前缀冗余：(${ca}) 被 ${idxes[b].idx}(${cb}) 覆盖（表 ${t}）`, advice: `删除 ${idxes[a].idx}，先入观察清单`, evidence: `indkey ${ca} ⊂ ${cb}` });
+          out.push({ rule: 'IDX004', level: 'notice', object: idxes[a].idx, table: t, problem: `前缀冗余：(${ca}) 被 ${idxes[b].idx}(${cb}) 覆盖（表 ${t}）`, advice: `删除 ${idxes[a].idx}，先入观察清单`, evidence: `indkey ${ca} ⊂ ${cb}` });
         }
       }
     }
@@ -172,7 +179,7 @@ FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON
 WHERE a.atttypid IN ('varchar'::regtype) AND a.atttypmod - 4 > ${sqlNum(T.varcharMaxLen)} AND c.relkind = 'r' AND a.attnum > 0
   AND n.nspname NOT IN ('pg_catalog','information_schema','dbe_perf','dbe_pldeveloper','db4ai') LIMIT 5`, 5)).rows;
   return rows.map((r) => ({
-    rule: 'COL001', level: 'notice' as const, object: `${str(r.t)}.${str(r.col)}`,
+    rule: 'COL001', level: 'notice' as const, object: `${str(r.t)}.${str(r.col)}`, table: str(r.t),
     problem: `varchar(${num(r.len)}) 超长列——常为设计噪声，膨胀行宽`,
     advice: '评估改 text 或收窄长度', evidence: `atttypmod=${num(r.len)}`,
   }));

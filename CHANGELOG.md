@@ -7,6 +7,17 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+- **Top SQL 报表（慢 SQL 报表重构 R5）**：榜单维度按会话里的要求生成——任务配置 `dimensions`（总耗时 / 执行次数 / 平均耗时 /
+  CPU / IO / 逻辑读 / DB Time / 下盘 / 返回行数，默认前三）每个维度各出一榜，同一条 SQL 可上多榜；采集器产出负载总量、
+  各榜单占全库比例、去重 Top SQL 明细（指标·占比·榜位·类型判定·执行计划·归到该 SQL 名下的规范违规）与脚本生成的
+  「一眼结论」（阈值可在平台阈值配置里调），整包存档 `opendb_task_collects` 供面板直读；模型只做逐条优化解读。
+  面板按 `docs/prototypes/sqlreview-r5.html`：资源占比堆叠条 + 榜单 + 逐条分析卡（违规下沉到各条 SQL，不再在顶部汇总），
+  「在新会话中深挖」直接建会话发送。`task_create` 说明补充维度参数，避免再退化成 prompt 定时对话。
+
+### Fixed
+- 归档的任务不再按 cron 触发（一个归档的 `*/10` 定时对话任务曾在无人可见的情况下跑了 3 小时）。
+
 ### Changed
 - **数据库权限只由数据库控制**（user 2026-08-27 定）：平台插件不再过滤 SQL——`db_query` 的只读门（语句白名单 / 危险函数表 /
   单语句限制）与 db seam 启动包里的 `default_transaction_read_only=on` 一并拆除；平台账号能做什么，以它在各节点上的

@@ -187,7 +187,9 @@ export class TaskEngine {
 
   private async fireDue(now: Date): Promise<void> {
     const r = await this.d.pool.query(
-      `SELECT * FROM dsh_tasks WHERE tenant_id = $1 AND enabled AND cron IS NOT NULL`, [this.d.tenant]);
+      // 归档的任务不再按 cron 触发（2026-08-27：一个归档的 */10 任务在无人可见的情况下跑了 3 小时）
+      `SELECT * FROM dsh_tasks t WHERE t.tenant_id = $1 AND t.enabled AND t.cron IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM opendb_archived_tasks a WHERE a.task_id = t.id)`, [this.d.tenant]);
     for (const raw of r.rows) {
       const task = taskRow(raw);
       try {
