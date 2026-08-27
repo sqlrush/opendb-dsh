@@ -685,6 +685,17 @@ write-behind 一直在把镜像进来的事件回写 PG——`ON CONFLICT DO NOT
    更新有 ~1s 错位）。修：Host 容器 `preStop: sleep 8`。复测 **240/240 全 200**，浏览器验收 PASS。
    另：mac 自带 bash 3.2 在 `${var:+…}` 里放多字节字符会把变量名啃坏（"codes�: unbound variable"），脚本里只用 ASCII。
 
+## 「删除失败：这条消息可能已经开始发送」（2026-08-27 user：队列里的信息删不掉是否合理）
+
+**实况**：那条消息发出后 5ms 就被 Runtime 认领并开始执行（智能体空闲，没有真正排队），1m48s 后答完。提示是 dsh 原生的
+`queue-item-not-found` 文案，语义正确：已开始执行的消息无法撤回，要中止走停止键（interrupt）。
+**我们的问题**：排队投影把「已被领走、但 user/message 还没落日志」的行仍显示为排队中（本意是"提交后一直可见"），客户端又每秒轮询，
+于是有 ~1s 窗口能看到一条删不掉的"排队"消息。
+**修法**：`projectQueue` 只投影 `admitted_at IS NULL` 的行——Runtime 一领走就从排队区撤下；领走到落日志只有 ~100ms，看不到的
+空窗可忽略；重投/回收后重新 pending 的行会再次出现。单测同步改。
+**顺带看到的旧账（08-26 11:17 那轮）**：DeepSeek API 传输故障让模型请求挂了 30 分钟，期间 Runtime 心跳过期 → 行被回收成 pending
+→ 30 分钟后 Host 的 settleDurable 把它按"已持久化"结清；turn 以 error 结束。心跳为何停要另查（怀疑请求挂住时 PG 连接池被占满）。
+
 ## `column "event_name" does not exist` 经常报（2026-08-26 user）
 
 **来源**：不是我们的采集器（代码里没有这个列名），是「深挖」会话里模型自己写的 `db_query`：

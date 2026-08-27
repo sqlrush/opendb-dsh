@@ -19,13 +19,13 @@ function fakePool(hits = 1) {
   } as any;
 }
 
-test('projectQueue: pending rows show; admitted rows show only until their message is durable', () => {
-  const rows = [row('1', { admitted: true }), row('2', { admitted: true }), row('3'), row('4', { kind: 'steer' })];
-  const entries = projectQueue(rows, new Set(['m1']));
-  assert.deepEqual(entries.map((e) => e.queueId), ['2', '3', '4'], 'm1 is durable → dropped; m2 admitted but not yet durable → kept');
+test('projectQueue: only rows nobody picked up yet show; admitted or durable rows are gone (cannot be retracted)', () => {
+  const rows = [row('1', { admitted: true }), row('2', { admitted: true }), row('3'), row('4', { kind: 'steer' }), row('5')];
+  const entries = projectQueue(rows, new Set(['m1', 'm5']));
+  assert.deepEqual(entries.map((e) => e.queueId), ['3', '4'], 'm1/m2 admitted → gone; m5 durable → gone; m3/m4 pending → shown');
   const items = queueFrameItems(entries);
-  assert.deepEqual(items.map((i) => i.placement), ['queued', 'queued', 'steering']);
-  assert.equal(items[0].id, 'm2');
+  assert.deepEqual(items.map((i) => i.placement), ['queued', 'steering']);
+  assert.equal(items[0].id, 'm3');
 });
 
 test('projectQueue: pre-015 rows (no message) are shown while pending with a synthetic message, hidden once admitted', () => {

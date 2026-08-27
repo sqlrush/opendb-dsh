@@ -98,11 +98,16 @@ export class QueueInbox {
   }
 }
 
-/** What the dock should show for one session: every open row whose message is not yet in the durable log. */
+/**
+ * What the dock should show for one session: rows nobody has picked up yet.
+ * 2026-08-27 user：一条 5ms 就被领走的消息在排队区还挂着，点删除得到原生的「可能已经开始发送」。
+ * 已被 Runtime 领走的行一律不再投影（它已不可撤回，要中止走停止键）；领走 → user/message 落日志之间
+ * 只有 ~100ms，加上客户端 1s 轮询，看不到它的空窗可忽略。重投/回收后重新变成 pending 的行会再次出现。
+ */
 export function projectQueue(rows: readonly OpenRow[], durable: ReadonlySet<string>): QueueEntry[] {
   const isDurable = (r: OpenRow) => r.messageId !== null && durable.has(r.messageId);
   return rows
-    .filter((r) => !isDurable(r) && (!r.admitted || r.messageId !== null))
+    .filter((r) => !r.admitted && !isDurable(r))
     .map((r) => ({ queueId: r.queueId, kind: r.kind, message: messageOf(r) }));
 }
 
