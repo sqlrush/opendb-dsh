@@ -56,7 +56,8 @@ for (; Date.now() - t1 < 40_000; await sleep(1000)) {
   ended = psql(`SELECT coalesce(data->'reason'->>'kind', '') FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'turn/end' ORDER BY seq DESC LIMIT 1`);
   if (ended !== '') { elapsed = Math.round((Date.now() - t1) / 1000); break; }
 }
-check('① 原 pod 取消了本地轮次（turn/end interrupted）', ended === 'interrupted', `reason=${ended || '未结束'} · ${elapsed}s`);
+// dsh 对 cancel 的落日志 reason 视时机而定：模型流式中 = interrupted，工具执行中 = aborted，两者都算取消成功
+check('① 原 pod 取消了本地轮次（turn/end interrupted|aborted）', ended === 'interrupted' || ended === 'aborted', `reason=${ended || '未结束'} · ${elapsed}s`);
 const logHit = sh(`kubectl -n opendb-dsh logs pod/${pod} --since=3m 2>/dev/null | grep -c "ownership lost" || true`);
 check('① 日志出现 ownership lost', Number(logHit) >= 1, `${logHit} 行`);
 await sleep(4000);
