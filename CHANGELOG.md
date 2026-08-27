@@ -7,6 +7,12 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+- **数据库权限只由数据库控制**（user 2026-08-27 定）：平台插件不再过滤 SQL——`db_query` 的只读门（语句白名单 / 危险函数表 /
+  单语句限制）与 db seam 启动包里的 `default_transaction_read_only=on` 一并拆除；平台账号能做什么，以它在各节点上的
+  数据库授权为准，被拒时原样返回数据库错误。多语句文本按 psql 语义返回最后一条的结果。
+  og5 实验库同步把 `opendb_ro` 提为 SYSADMIN（WLM 实时视图 `global_statement_complex_runtime` 等 5 个函数只认 SYSADMIN）。
+
 ### Fixed
 - Host 滚动更新窗口里加载的页面拿不到任务面板插件包，任务页退化成默认历史列表：就绪探针改探插件包 URL（TCP 端口开了不算就绪）、
   `maxUnavailable 0`；兜底视图检测到插件包未加载会自动刷新一次并给出「立即刷新」；插件包已加载却没注册面板（初始化异常）

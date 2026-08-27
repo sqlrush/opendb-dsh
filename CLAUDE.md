@@ -87,3 +87,6 @@ client registerTaskPanel）。领域 UI 独立 client 插件；ui-harness/ui-ope
 一切交互尽量在会话完成（task_create/task_update 工具已就位）；主区任务页=无按钮结果大盘
 （插件经 registerTaskPanel 注册专属面板）；弹新页面是稀缺品（现仅「新建智能体」）；
 **只读定位（2026-08-21）：平台聚焦模型分析+只读展示，不做变更/操作类功能；审批签收链路已整体下线进暂缓池。**
+**数据库权限由数据库控制（user 2026-08-27 定）**：平台账号在节点上能做什么，只由该节点的数据库授权决定；
+平台插件**不做**SQL 过滤（原 db_query 只读门与 db seam 启动包只读已拆除，勿再加回）。og5 实验库 `opendb_ro` = SYSADMIN
++ 角色级 `default_transaction_read_only=on`（会话可 SET 关掉，这是 DB 侧的选择）。

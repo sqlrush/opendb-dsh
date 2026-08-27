@@ -4,7 +4,6 @@ import pg from 'pg';
 import type { DbNodeRecord } from '@opendb-dsh/registry';
 import { POSTGRESQL_DIALECT, type Dialect, type DialectQuery } from './dialect.ts';
 
-export { validateReadOnlySql, stripComments, type GuardResult } from './guard.ts';
 export { POSTGRESQL_DIALECT, BASELINE_METRICS, BASELINE_DICTIONARY, type Dialect, type DialectQuery } from './dialect.ts';
 
 export interface DbCredential { username?: string; password?: string }
@@ -35,11 +34,12 @@ export function parseCredentials(json: string): Map<string, DbCredential> {
 }
 
 /**
- * ctx.opendbDb — the `db` seam (design §8): per-node read-only pools to managed database
- * nodes plus an engine-dialect registry. Read-only is enforced at three layers: the SQL
- * gate in tool-db, `default_transaction_read_only=on` set here on every pooled connection,
- * and the node-side platform account (opendb_ro). Credentials come from env/Secret, never
- * from the registry tables (003_registry.sql decision).
+ * ctx.opendbDb — the `db` seam (design §8): per-node connection pools to managed database
+ * nodes plus an engine-dialect registry. What the platform may do on a node is decided by
+ * the node itself — the grants / role settings of the platform account (user 2026-08-27:
+ * 权限放在数据库里控制，平台插件不做控制). The former plugin-side controls (SQL gate in
+ * tool-db, startup-packet `default_transaction_read_only=on`) are gone on purpose.
+ * Credentials come from env/Secret, never from the registry tables (003_registry.sql decision).
  */
 export default class DbService extends Service {
   static Config = z.object({
@@ -92,14 +92,18 @@ export default class DbService extends Service {
     return nodes.find((n) => n.id === ref) ?? nodes.find((n) => n.name === ref);
   }
 
-  /** Run one (already-validated) read-only statement on a node. Rows beyond maxRows are dropped and flagged. */
+  /**
+   * Run a statement on a node. Rows beyond maxRows are dropped and flagged. Multi-statement
+   * text is passed through as-is (the node decides whether it may run); the result shown is
+   * the last statement's, the way psql does it.
+   */
   async query(node: DbNodeRecord, sql: string, options: QueryOptions = {}): Promise<QueryResult> {
     const maxRows = options.maxRows ?? this.cfg.maxRows;   // callers (tool-db) clamp model-facing requests themselves; collector needs larger scans
     const pool = this.poolFor(node);
     const started = Date.now();
-    const result = await pool.query(sql);
+    const result = lastResult(await pool.query(sql));
     const ms = Date.now() - started;
-    const all = result.rows as Record<string, unknown>[];
+    const all = (result.rows ?? []) as Record<string, unknown>[];
     const rows = all.length > maxRows ? all.slice(0, maxRows) : all;
     return {
       rows,
@@ -148,8 +152,6 @@ export default class DbService extends Service {
       connectionTimeoutMillis: this.cfg.connectTimeoutMs,
       idleTimeoutMillis: 60_000,
       statement_timeout: this.cfg.statementTimeoutMs,
-      // Defense layer 2: read-only arrives in the startup packet — no post-connect SET race.
-      options: '-c default_transaction_read_only=on',
       allowExitOnIdle: true,
     });
     pool.on('error', (cause) => {
@@ -165,3 +167,10 @@ export default class DbService extends Service {
   }
 }
 export { DbService };
+
+/** node-pg returns an array of results for multi-statement simple queries; surface the last one (psql semantics). */
+function lastResult(r: pg.QueryResult | pg.QueryResult[]): pg.QueryResult {
+  if (!Array.isArray(r)) return r;
+  if (r.length === 0) return { rows: [], fields: [], rowCount: 0, command: '', oid: 0 } as unknown as pg.QueryResult;
+  return r[r.length - 1];
+}

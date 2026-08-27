@@ -752,3 +752,27 @@ session_stat_activity(≈pg_stat_activity + unique_sql_id,trace_id)、summary_st
 （同级优先带阈值规则的）；模型把维度键当 item 时标题改用维度中文名；Line 改为随容器宽度自适应（ResizeObserver），
 缩到 340px 卡片里坐标文字不再被等比缩成 5px。chart-kit 新增 Rail / StackedBar / RankList / Sparkline。
 截图（r4-*.png）逐屏核对：13 张卡对齐一致、趋势区 8 张图文字清晰、console 零错误。
+
+## 数据库权限改由数据库控制：og5 opendb_ro 提 SYSADMIN + 拆插件侧只读门（2026-08-27，user 定）
+
+起因：慢 SQL 会话里模型想读 `dbe_perf.global_statement_complex_runtime`（正在运行的复杂语句），报 permission denied。
+
+**取证**：`has_function_privilege('opendb_ro', …)` 显示 pg_catalog / dbe_perf 全部函数都有 EXECUTE（唯一例外
+`copy_error_log_create`），所以不是 ACL——是 openGauss 这 5 个 WLM 实时函数内部硬校验只认 SYSADMIN（MONADMIN 不放行）：
+`pg_stat_get_wlm_realtime_session_info` / `_realtime_operator_info` / `_realtime_ec_operator_info` /
+`pg_stat_get_wlm_statistics` / `pg_stat_get_session_wlmstat`。受影响视图：`global_statement_complex_runtime`、
+`statement_complex_runtime`、`global_operator_runtime`、`statement_wlmstat_complex_runtime`。其余 40+ 诊断视图/函数原本就可读。
+
+**user 决定**：① `ALTER USER opendb_ro SYSADMIN`（auto 模式分类器拦提权命令，最终 user 明示后执行成功；
+角色级 `default_transaction_read_only=on` 保留）；② **权限放在数据库里控制，平台插件不做控制**——拆掉：
+`@opendb-dsh/db` 的 `guard.ts`（语句白名单 / 写关键词 / 危险函数表 / 单语句限制）、db seam 启动包
+`options: -c default_transaction_read_only=on`、`db_query` 的只读门调用；多语句文本按 psql 语义返回最后一条结果
+（node-pg 多语句返回数组，`lastResult` 收口）。工具描述改为「平台不做语句过滤，能执行什么由平台账号的数据库权限决定」。
+
+**如实说明的边界**：SYSADMIN ≈ 超级用户；角色级只读只是默认值，会话 `SET transaction_read_only = off` 即可写
+（这不是新洞：非 SYSADMIN 也能 SET，此前靠插件门拦 SET，现在按 user 决定不拦）。要硬只读只能不给 SYSADMIN 走授权路线。
+凭据仍只在 Secret `opendb-db-credentials`，不落库不进日志。
+
+**复验**（`/tmp/og5-as-ro.sh`，以 opendb_ro 连 og5）：4 个 WLM 视图可读、`SHOW transaction_read_only` = on。
+生产接入清单更新：平台账号 = SYSADMIN（或至少 MONADMIN+AUDITADMIN+业务 schema USAGE/SELECT）+ 角色级只读默认；
+平台侧零过滤。

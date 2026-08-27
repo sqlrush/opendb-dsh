@@ -1,7 +1,7 @@
 import z from '@deepseek-ai/schemastery';
 import type { Context } from '@deepseek-ai/cordis';
 import { defineTool } from '@deepseek-ai/dsh-tools';
-import { validateReadOnlySql, type QueryResult } from '@opendb-dsh/db';
+import type { QueryResult } from '@opendb-dsh/db';
 import { resolvePlatformAgent } from './agent.ts';
 import { renderTable, clampText } from './render.ts';
 import { buildHint, cteNames, referencedRelations, HINT_CODES, OG_SCHEMA_HINT } from './schema-hint.ts';
@@ -68,20 +68,20 @@ function defineDbNodesTool(deps: ToolDeps) {
 function defineDbQueryTool(deps: ToolDeps) {
   return defineTool({
     name: 'db_query',
-    description: `在当前 agent 绑定的数据库节点上执行单条只读 SQL（SELECT/WITH/SHOW/EXPLAIN）。写操作会被平台三层防护拒绝。${OG_SCHEMA_HINT}`,
+    description: `在当前 agent 绑定的数据库节点上以平台账号执行 SQL（诊断查询、EXPLAIN、SHOW 等）。平台不做语句过滤：能执行什么完全由该节点上平台账号的数据库权限决定，被拒时会原样返回数据库的错误。${OG_SCHEMA_HINT}`,
     parameters: {
-      sql: { type: 'string', required: true, description: '单条只读 SQL 语句。' },
+      sql: { type: 'string', required: true, description: 'SQL 语句（多条以分号分隔时只返回最后一条的结果）。' },
       node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
       max_rows: { type: 'integer', description: `返回行数上限（默认/上限 ${deps.maxRows}）。` },
     },
     output: TEXT_OUTPUT,
     async execute(args: any, exec: any) {
       const { node } = await pickNode(deps.registry, exec, args.node);
-      const gate = validateReadOnlySql(String(args.sql ?? ''));
-      if (gate.ok === false) throw new ToolInputError(`SQL 被只读门拒绝：${gate.reason}`);
+      const sql = String(args.sql ?? '').trim();
+      if (sql === '') throw new ToolInputError('SQL 为空');
       try {
-        const r = await deps.db.query(node, gate.sql, { maxRows: Math.min(Number(args.max_rows ?? deps.maxRows), deps.maxRows) });
-        return { content: formatResult(node, gate.sql, r, deps.maxContentBytes) };
+        const r = await deps.db.query(node, sql, { maxRows: Math.min(Number(args.max_rows ?? deps.maxRows), deps.maxRows) });
+        return { content: formatResult(node, sql, r, deps.maxContentBytes) };
       } catch (cause) {
         // 列/表/函数不存在：把 SQL 引用的关系的真实列名查出来附在错误里，模型一次改对（2026-08-26 event_name 事故）
         const err = cause as { code?: string; message?: string };
@@ -97,8 +97,8 @@ function defineDbQueryTool(deps: ToolDeps) {
           } catch { return undefined; }
         };
         // buildHint 是同步的：先把所有引用关系的列查好再拼
-        for (const rel of referencedRelations(gate.sql, cteNames(gate.sql))) cache.set(rel, await lookup(rel));
-        const hint = buildHint(gate.sql, err, (rel) => cache.get(rel));
+        for (const rel of referencedRelations(sql, cteNames(sql))) cache.set(rel, await lookup(rel));
+        const hint = buildHint(sql, err, (rel) => cache.get(rel));
         throw new Error(`${String(err?.message ?? cause)}${hint}`);
       }
     },
