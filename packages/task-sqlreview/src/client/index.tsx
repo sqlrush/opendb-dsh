@@ -293,6 +293,49 @@ function PlanBlock({ plan, findings, cost, note }: { plan: string[]; findings: a
     </div>
   );
 }
+// ───────────────────────────────────────────── 单次耗时构成 + 等待事件（user 2026-08-27：各资源耗时与等待事件不能没）
+const PART_COLOR: Record<string, string> = { CPU: '#4176e6', IO: '#e0963f', 锁等待: '#d9607a', 'LWLock 等待': '#8b6be0', 网络: '#4fa3d9', '解析/计划': '#b08a5a', 其他: '#c9ccd2' };
+const WAIT_TYPE: Record<string, string> = { IO_EVENT: 'IO', LWLOCK_EVENT: 'LWLock', LOCK_EVENT: '锁', STATUS: '状态' };
+function ProfileBlock({ p }: { p: any }) {
+  const parts: any[] = p.parts ?? [];
+  const total = parts.reduce((s, x) => s + Number(x.us), 0);
+  const waits: any[] = p.waits ?? [];
+  const top = Math.max(...waits.map((w) => Number(w.us)), 1e-9);
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 6 }}>单次耗时构成 <span style={{ fontWeight: 400 }}>· 最近 {Number(p.samples)} 次执行均值 · DB Time {fmtUs(Number(p.avgDbUs))}/次</span></div>
+        <div style={{ display: 'flex', height: 18, borderRadius: 4, overflow: 'hidden', background: T.rest }}>
+          {parts.map((x) => total > 0 && Number(x.us) / total > 0 ? <div key={String(x.name)} title={`${String(x.name)} ${fmtUs(Number(x.us))} · ${((Number(x.us) / total) * 100).toFixed(1)}%`} style={{ width: `${(Number(x.us) / total) * 100}%`, background: PART_COLOR[String(x.name)] ?? T.rest }} /> : null)}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', marginTop: 6, fontSize: 12.5, color: T.sub, ...tnum }}>
+          {parts.map((x) => (
+            <span key={String(x.name)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Sw color={PART_COLOR[String(x.name)] ?? T.rest} size={8} />{String(x.name)} <b style={{ color: T.ink, fontWeight: 500 }}>{fmtUs(Number(x.us))}</b><span style={{ color: T.dim }}>{total > 0 ? `${((Number(x.us) / total) * 100).toFixed(x.us / total >= 0.1 ? 0 : 1)}%` : ''}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 6 }}>等待事件 Top {waits.length} <span style={{ fontWeight: 400 }}>· 均每次 · 占本条全部等待时间</span></div>
+        {waits.length === 0 ? <div style={{ fontSize: 13, color: T.dim }}>采样窗口内没有记录到等待事件</div> : null}
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) 150px', rowGap: 5, columnGap: 10, fontSize: 12.5, alignItems: 'center', ...tnum }}>
+          {waits.map((w, i) => (
+            <div key={i} style={{ display: 'contents' }}>
+              <span style={{ fontSize: 11.5, borderRadius: 4, padding: '0 6px', background: T.fill2, color: T.sub, whiteSpace: 'nowrap' }}>{WAIT_TYPE[String(w.type)] ?? String(w.type)}</span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: mono, fontSize: 12, color: T.sub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(w.event)}>{String(w.event)}</div>
+                <div style={{ height: 4, borderRadius: 2, background: T.fill2, marginTop: 2 }}><div style={{ width: `${Math.min(100, (Number(w.us) / top) * 100)}%`, height: '100%', borderRadius: 2, background: String(w.type) === 'IO_EVENT' ? PART_COLOR.IO : String(w.type) === 'LWLOCK_EVENT' ? PART_COLOR['LWLock 等待'] : String(w.type) === 'LOCK_EVENT' ? PART_COLOR.锁等待 : '#9aa3ad' }} /></div>
+              </div>
+              <div style={{ textAlign: 'right', color: T.sub, whiteSpace: 'nowrap' }}><b style={{ color: T.ink, fontWeight: 600 }}>{fmtUs(Number(w.us))}</b> · {Number(w.pct)}%</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RuleRows({ rules }: { rules: any[] }) {
   if (rules.length === 0) return <div style={{ fontSize: 13.5, color: T.dim }}>0 条——本条涉及的对象没有规则命中</div>;
   return (
@@ -344,7 +387,9 @@ function SqlCard({ it, rules, narrative, node, when }: { it: any; rules: any[]; 
         <Sw color={colorOf(String(it.label))} /><span style={keyChip}>{String(it.label)}</span>
         <span style={{ font: `12.5px ${mono}`, color: T.dim }}>{String(it.key)}</span>
         {ranks.length > 0 ? <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', fontSize: 12.5, color: T.sub }}>{ranks.map(([d, n]) => <span key={d} style={{ background: T.fill, borderRadius: 4, padding: '0 7px' }}>{DIM_LABEL[d] ?? d} #{n}</span>)}</span> : null}
-        <Tag>{String(it.kind)}</Tag>
+        <Tag>{isSpecified ? '指定 SQL' : String(it.kind)}</Tag>
+        {isSpecified ? <span style={{ fontSize: 12.5, color: T.dim }}>任务配置里贴入 · 不在榜单 · 无运行指标，只做计划与规范分析</span> : null}
+        {it.specified === true ? <Tag>亦为指定 SQL</Tag> : null}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 5, fontSize: 13.5, fontWeight: 600, color: badge.c, background: badge.bg, borderRadius: 6, padding: '2px 10px', whiteSpace: 'nowrap' }}>
           {badge.t}{verify === 'explain-verified' && Number(drop) > 0 ? ` · cost ↓${drop}%` : ''}
         </span>
@@ -362,6 +407,8 @@ function SqlCard({ it, rules, narrative, node, when }: { it: any; rules: any[]; 
       ) : null}
       {/* 列宽钉死为 minmax(0,1fr)：计划块最长一行的 min-content 会把整列撑宽，把右侧的优化方案/cost 条挤出卡片（2026-08-27 实拍） */}
       <div style={{ padding: '14px 20px 16px', display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0,1fr)' }}>
+        {it.profile !== undefined ? <ProfileBlock p={it.profile} />
+          : String(it.profileNote ?? '') !== '' ? <div style={{ fontSize: 13, color: T.dim }}>单次耗时构成 / 等待事件：{String(it.profileNote)}</div> : null}
         <div style={{ minWidth: 0 }}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>{isSpecified ? '指定 SQL' : '原 SQL'}</div><div style={codeBlock}>{String(it.text)}</div></div>
         {(it.plan ?? []).length > 0 ? <PlanBlock plan={(it.plan ?? []).map(String)} findings={it.planFindings ?? []} cost={String(it.origCost ?? '')} note={it.note} />
           : String(it.note ?? '') !== '' ? <div style={{ fontSize: 13.5, color: T.dim }}>执行计划：{String(it.note)}</div> : null}

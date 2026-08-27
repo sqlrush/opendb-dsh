@@ -15,9 +15,9 @@ import { pickNode, clampText } from '@opendb-dsh/tool-db';
 import { createPool } from '@opendb-dsh/session-persistence-pg';
 import {
   runCatalogRules, textRules, worstRuleLevel, LEVEL_ORDER, explainOne, shortKey, withSqlreviewThresholds,
-  buildTopSql, normalizeDimensions, attributeRules, insightsOf, DIMENSIONS,
+  buildTopSql, normalizeDimensions, attributeRules, insightsOf, DIMENSIONS, fingerprint, fetchExecProfile,
 } from '@opendb-dsh/task-sqlreview';
-import type { RuleFinding, RuleLevel, TopSqlItem, DimKey, SqlMetrics } from '@opendb-dsh/task-sqlreview';
+import type { RuleFinding, RuleLevel, TopSqlItem, DimKey, SqlMetrics, ExecProfile } from '@opendb-dsh/task-sqlreview';
 
 export const name = 'tool-sqlreview-collect';
 export const inject = ['opendbDb', 'opendbRegistry', 'opendbThresholds'];
@@ -38,6 +38,9 @@ interface Deps { db: any; registry: any; thresholds: any; maxContentBytes: numbe
 interface CollectedItem extends TopSqlItem {
   explainOk: boolean; plan: string[]; origCost: string; planFindings: { code: string; line: number; level: string; detail: string }[]; note?: string;
   ruleRefs: number[];
+  /** 单次耗时构成 + 等待事件（statement_history 最近 N 次执行均值）；未进采样的语句为 undefined，profileNote 说明原因 */
+  profile?: ExecProfile;
+  profileNote?: string;
 }
 
 async function archive(pool: pg.Pool, sessionId: string | undefined, node: string, worst: string, payload: unknown): Promise<number | undefined> {
@@ -57,6 +60,10 @@ function modelView(items: CollectedItem[], ruleFindings: RuleFinding[]) {
     text: it.text,
     metrics: { calls: it.metrics.calls, avgMs: ms(it.metrics.avgUs), maxMs: ms(it.metrics.maxUs), totalMs: ms(it.metrics.elapsedUs), cpuMs: ms(it.metrics.cpuUs), ioMs: ms(it.metrics.ioUs), blocks: it.metrics.blocks, rowsRet: it.metrics.rowsRet, spillMB: Math.round(it.metrics.spillBytes / 1048576) },
     sharesPct: it.shares,
+    // 单次耗时构成与等待事件（模型解读"时间花在哪/主导等待事件"的依据；没有就说明为什么没有）
+    profile: it.profile !== undefined
+      ? { samples: it.profile.samples, avgDbMs: ms(it.profile.avgDbUs), partsMs: Object.fromEntries(it.profile.parts.map((p) => [p.name, ms(p.us)])), topWaits: it.profile.waits.slice(0, 4).map((w) => `${w.type} ${w.event} 均 ${ms(w.us)} ms/次（${w.pct}%）`) }
+      : it.profileNote,
     explainOk: it.explainOk, origCost: it.origCost, plan: it.plan.slice(0, 20), planNotes: it.planFindings.map((f) => f.detail), note: it.note,
     rules: it.ruleRefs.map((i) => ruleFindings[i]).filter(Boolean).map((f) => ({ rule: f.rule, level: f.level, object: f.object, problem: f.problem })),
   }));
@@ -70,7 +77,7 @@ function defineSqlreviewCollectTool(deps: Deps) {
       node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
       dimensions: { type: 'array', items: { type: 'string' }, description: '榜单维度数组（elapsed/calls/avg/cpu/io/blocks/dbtime/spill/rows，也接受中文如 "执行次数"）；省略 = ["elapsed","calls","avg"]。' },
       topN: { type: 'integer', description: '每个维度的榜单条数（默认 5，最多 20）。' },
-      sqls: { type: 'array', items: { type: 'string' }, description: '额外指定要分析的 SQL 文本（会话贴 SQL 场景）。' },
+      sqls: { type: 'array', items: { type: 'string' }, description: '只放榜单之外、用户自己贴的 SQL 文本；榜单里会出现的语句不要再传（同一条会按指纹合并进榜单项）。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { content: { type: 'string', required: true } } },
@@ -92,9 +99,14 @@ function defineSqlreviewCollectTool(deps: Deps) {
       } catch (cause) {
         notes.push(`Top SQL 榜单降级：dbe_perf.statement 不可读（${String((cause as Error).message ?? cause).slice(0, 120)}）`);
       }
-      const specified: TopSqlItem[] = extraSqls.map((text, i) => ({
-        key: shortKey(text), label: `Q${i + 1}`, uniqueSqlId: '', text: text.slice(0, 1200), kind: '指定', metrics: EMPTY_METRICS, shares: {}, ranks: {}, tables: [],
-      }));
+      // 贴的 SQL 与榜单按指纹合并：同一条语句只保留榜单项（带指标/榜位），标 specified；其余才另立 Q 项
+      const boardByFp = new Map(top.items.map((it) => [fingerprint(it.text), it]));
+      const specified: TopSqlItem[] = [];
+      for (const text of extraSqls) {
+        const hit = boardByFp.get(fingerprint(text));
+        if (hit !== undefined) { hit.specified = true; continue; }
+        specified.push({ key: shortKey(text), label: `Q${specified.length + 1}`, uniqueSqlId: '', text: text.slice(0, 1200), kind: '指定', metrics: EMPTY_METRICS, shares: {}, ranks: {}, tables: [] });
+      }
       const all: TopSqlItem[] = [...top.items, ...specified.filter((s) => !top.items.some((it) => it.key === s.key))];
 
       // 2) 逐条计划锚定（事务控制语句没有计划，不浪费一次 EXPLAIN）
@@ -106,6 +118,19 @@ function defineSqlreviewCollectTool(deps: Deps) {
         else if (explained >= deps.maxExplain) anchored = { explainOk: false, plan: [], planFindings: [], note: `超出逐条 EXPLAIN 上限（${deps.maxExplain}），未取计划` };
         else { explained += 1; anchored = await explainOne(q, it.text, T); }
         items.push({ ...it, explainOk: anchored.explainOk, plan: anchored.plan, origCost: anchored.planCost !== undefined ? String(anchored.planCost) : '', planFindings: anchored.planFindings, note: anchored.note, ruleRefs: [] });
+      }
+
+      // 2b) 单次耗时构成 + 等待事件：statement_history 最近 20 次执行均值（openGauss；只有进了慢 SQL 采样的语句才有行）
+      if (String(node.engine) === 'opengauss') {
+        for (const it of items) {
+          if (it.kind === '事务控制' || it.kind === '指定' || it.uniqueSqlId === '') { it.profileNote = it.kind === '指定' ? '指定 SQL 无运行样本' : '事务控制语句不采样'; continue; }
+          try {
+            it.profile = await fetchExecProfile(q, it.uniqueSqlId, 20);
+            if (it.profile === undefined) it.profileNote = '未进入 statement_history 采样（单次低于慢 SQL 阈值 / 未被抽样），无单次耗时构成与等待事件';
+          } catch (cause) {
+            it.profileNote = `耗时构成不可得：${String((cause as Error).message ?? cause).slice(0, 100)}`;
+          }
+        }
       }
 
       // 3) 规则引擎：目录类（联动 Top SQL 文本）+ 文本类；再按引用的表归因到各条 SQL

@@ -832,3 +832,15 @@ min-content 把卡片列撑宽、右栏优化方案/cost 条被裁——卡内 g
 第一次就抓到一个真 bug：client 插件 `inject` 只列了 `slots`，`ctx.sessions` 在 apply 时不存在，点击静默失败——补成
 `['slots','connection','workspaces','sessions']`（与 task-health 同）后 PASS。教训进 CLAUDE.md 第 6 条。
 固化滚动：#2 窗口 1×502（19:38:15，单次，preStop 覆盖不到的瞬时切换）、#3 0/240 ROLLOUT OK。
+
+**S/Q 之分与"各资源耗时、等待事件"补回（2026-08-27 晚，user 两问）**
+- S1..Sn = 榜单项（dbe_perf.statement 累计指标、占比、榜位）；Q1..Qn = 任务配置 `sqls` 里贴的**指定 SQL**（无运行指标，只做
+  EXPLAIN + 规范）。`og5慢SQL Top3跟踪` 那份里 Q1/Q2 就是 S2/S3 带具体参数的版本（模型把榜单语句又塞进了 sqls）——现在按指纹
+  （`fingerprint`：字面量 → ?、小写、压空白）合并进榜单项并标「亦为指定 SQL」；`sqls` 描述改为"只放榜单之外用户贴的 SQL"。
+- 旧 prompt 任务报告里的"主导等待事件（DataFileRead / HashAgg build hash / BufFileWrite / WALFlushWait）"来自
+  `dbe_perf.statement_history.details`。R5 补回为确定性采集：每条榜单 SQL 取 statement_history 最近 20 次执行
+  （`WHERE unique_query_id = X ORDER BY start_time DESC LIMIT 20`，og5 实测 ≈ 30 ms；**不要 GROUP BY 全表**，IN(...) 分组 13.6 s），
+  `statement_detail_decode(details,'plaintext',true)` 解析 Wait Events Area → 等待事件 Top（均每次 µs、占比），
+  行列 db_time/cpu_time/data_io_time/lock_wait_time/lwlock_wait_time/net_*_info/parse+plan+rewrite → 单次耗时构成（其他 = 差值）。
+  OLTP 短语句（UPDATE accounts 等）不在 statement_history（低于慢 SQL 阈值未采样）→ 卡片如实写"未进入采样"。
+  og5 `track_stmt_stat_level = L2,L2`，statement_history 8.9 万行 / 52 个 unique_query_id。

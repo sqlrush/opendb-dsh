@@ -69,6 +69,7 @@ export interface TopSqlItem {
   shares: Partial<Record<DimKey, number>>;   // 占全库百分比（1 位小数）；avg 无占比
   ranks: Partial<Record<DimKey, number>>;    // 各榜榜位（1 起）
   tables: string[];            // 引用的表名（小写、不带 schema），规则归因用
+  specified?: boolean;         // 任务配置里也贴了这条（按指纹对上），不再另立 Q 项
 }
 export interface Board { dim: DimKey; label: string; desc: string; unit: DimUnit; keys: string[]; values: number[]; shares: (number | null)[] }
 export interface Insight { level: 'warn' | 'notice' | 'ok'; key?: string; text: string }
@@ -194,6 +195,84 @@ ORDER BY ${spec.expr} DESC LIMIT ${n}`, n)).rows;
     });
   }
   return { workload, boards, items };
+}
+
+/**
+ * SQL 指纹：字符串/数字字面量 → ?，小写、压空白、去尾分号。用于把任务配置里贴的 SQL（带具体参数）
+ * 与榜单里的 unique_sql 文本（og 记成 ? 占位符）对上——同一条语句不再出现 S/Q 两份（2026-08-27 user 问"S1-3 和 Q1-3 有什么区别"）。
+ */
+export function fingerprint(text: string): string {
+  return text
+    .replace(/'(?:[^']|'')*'/g, '?')
+    .replace(/\b\d+(?:\.\d+)?\b/g, '?')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/;$/, '')
+    .toLowerCase();
+}
+
+// ── 单次耗时构成 + 等待事件（dbe_perf.statement_history 最近 N 次执行的均值；只有进了慢 SQL 采样的语句才有）──
+export interface WaitEvent { type: string; event: string; us: number; count: number; pct: number }
+export interface ExecProfile {
+  samples: number;                       // 参与均值的执行次数
+  avgDbUs: number;                       // 单次 DB Time 均值
+  parts: { name: string; us: number }[];  // CPU / IO / 锁等待 / LWLock 等待 / 网络 / 解析计划 / 其他（= DB Time − 前面各项，近似）
+  waits: WaitEvent[];                    // 等待事件 Top（按累计 µs），pct = 占本条全部等待事件时间
+  note?: string;
+}
+
+/** 解析 statement_detail_decode(details,'plaintext') 里的 Wait Events Area 行：'1' TYPE  event   12345 (us) */
+export function parseWaitDetails(text: string): { type: string; event: string; us: number }[] {
+  const out: { type: string; event: string; us: number }[] = [];
+  const area = text.split(/LOCK\/LWLOCK Area/)[0] ?? '';
+  for (const line of area.split('\n')) {
+    const m = line.match(/^\s*'?\d+'?\s+(\S+)\s+(.+?)\s+(\d+)\s*\(us\)/);
+    if (m !== null) out.push({ type: m[1].trim(), event: m[2].trim(), us: Number(m[3]) });
+  }
+  return out;
+}
+
+const netUs = (v: unknown): number => {
+  if (typeof v !== 'string' || v === '') return 0;
+  try { return num((JSON.parse(v) as { time?: unknown }).time); } catch { return 0; }
+};
+
+/** 由最近 N 次执行行算均值构成与等待事件汇总（纯函数，可测） */
+export function profileFromRows(rows: readonly Record<string, unknown>[]): ExecProfile | undefined {
+  if (rows.length === 0) return undefined;
+  const n = rows.length;
+  const avg = (k: string) => rows.reduce((s, r) => s + num(r[k]), 0) / n;
+  const cpu = avg('cpu_time'); const io = avg('data_io_time'); const lock = avg('lock_wait_time'); const lw = avg('lwlock_wait_time');
+  const net = rows.reduce((s, r) => s + netUs(r.net_send_info) + netUs(r.net_recv_info), 0) / n;
+  const parse = avg('parse_time') + avg('plan_time') + avg('rewrite_time');
+  const db = avg('db_time');
+  const other = Math.max(0, db - cpu - io - lock - lw - net - parse);
+  const parts = [
+    { name: 'CPU', us: cpu }, { name: 'IO', us: io }, { name: '锁等待', us: lock }, { name: 'LWLock 等待', us: lw },
+    { name: '网络', us: net }, { name: '解析/计划', us: parse }, { name: '其他', us: other },
+  ].map((p) => ({ name: p.name, us: Math.round(p.us) })).filter((p) => p.us > 0);
+  const agg = new Map<string, { type: string; event: string; us: number; count: number }>();
+  for (const r of rows) {
+    for (const w of parseWaitDetails(str(r.d))) {
+      const k = `${w.type}|${w.event}`;
+      const cur = agg.get(k) ?? { type: w.type, event: w.event, us: 0, count: 0 };
+      agg.set(k, { ...cur, us: cur.us + w.us, count: cur.count + 1 });
+    }
+  }
+  const total = [...agg.values()].reduce((s, w) => s + w.us, 0);
+  const waits = [...agg.values()].sort((a, b) => b.us - a.us).slice(0, 6)
+    .map((w) => ({ ...w, us: Math.round(w.us / n), pct: total > 0 ? Math.round((w.us / total) * 1000) / 10 : 0 }));
+  return { samples: n, avgDbUs: Math.round(db), parts, waits };
+}
+
+/** 取一条 SQL 最近 sampleN 次执行（og 实测：按 unique_query_id 取 20 行 + 解码 ≈ 30 ms；不要 GROUP BY 全表） */
+export async function fetchExecProfile(q: QueryFn, uniqueSqlId: string, sampleN = 20): Promise<ExecProfile | undefined> {
+  if (!/^\d+$/.test(uniqueSqlId)) return undefined;
+  const n = Math.max(1, Math.min(sampleN, 50));
+  const rows = (await q(`SELECT db_time, cpu_time, execution_time, parse_time, plan_time, rewrite_time, data_io_time, lock_wait_time, lwlock_wait_time,
+  net_send_info, net_recv_info, pg_catalog.statement_detail_decode(details, 'plaintext', true) AS d
+FROM (SELECT * FROM dbe_perf.statement_history WHERE unique_query_id = ${uniqueSqlId} ORDER BY start_time DESC LIMIT ${n}) s`, n)).rows;
+  return profileFromRows(rows);
 }
 
 /** 规则违规归因：文本类按 key；目录类按"违规所在表 ∈ SQL 引用的表"。返回每条 SQL 的违规下标与未归因下标 */

@@ -19,9 +19,9 @@ export { scanSql, explainOne, annotatePlan, topCost, shortKey } from './sqlscan.
 export type { SqlItem, PlanFinding } from './sqlscan.ts';
 export {
   DIMENSIONS, DIM_KEYS, DEFAULT_DIMENSIONS, normalizeDimensions, buildTopSql, fetchWorkload, attributeRules, insightsOf,
-  classify, referencedTables, dimValue, sharesOf, STATEMENT_FILTER,
+  classify, referencedTables, dimValue, sharesOf, STATEMENT_FILTER, fingerprint, parseWaitDetails, profileFromRows, fetchExecProfile,
 } from './topsql.ts';
-export type { DimKey, DimSpec, DimUnit, SqlMetrics, Workload, SqlKind, TopSqlItem, Board, Insight, TopSqlResult } from './topsql.ts';
+export type { DimKey, DimSpec, DimUnit, SqlMetrics, Workload, SqlKind, TopSqlItem, Board, Insight, TopSqlResult, ExecProfile, WaitEvent } from './topsql.ts';
 
 export const name = 'task-sqlreview';
 export const inject = ['opendbTasks', 'opendbThresholds'];
@@ -40,7 +40,7 @@ export const SQLREVIEW_TASK_TYPE: TaskType<SqlReviewConfig> = {
     node: z.string().default('').description('目标节点名；空 = 该 agent 唯一绑定节点'),
     dimensions: z.array(z.string()).default([...DEFAULT_DIMENSIONS]).description(`榜单维度，每个维度各出一榜（用户说"按执行次数和耗时"→ ["calls","elapsed"]）：${DIM_HELP}`),
     topN: z.number().step(1).min(1).max(20).default(5).description('每个维度榜单条数（Top-N）'),
-    sqls: z.array(z.string()).default([]).description('额外指定要分析的 SQL 文本（会话贴 SQL 场景；与榜单并存）'),
+    sqls: z.array(z.string()).default([]).description('只放榜单之外、用户自己贴的 SQL 文本；榜单里会出现的语句不要再传（同一条会按指纹合并）'),
     focus: z.string().default('').description('本任务额外关注点（只影响模型解读，不改采集）'),
   }),
   /**
