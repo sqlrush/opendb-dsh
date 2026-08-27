@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Top SQL 报表 · R5 设计稿</title>
+<style>
+  /* ── dsh 原生 token（内容区体系）──────────────────────────────── */
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C; --ph:#ADB2B8;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC;
+    --s1:#4176E6; --s2:#2FA79A; --s3:#8B6BE0; --s4:#E0963F; --s5:#D9607A; --s6:#5BA95B; --s7:#4FA3D9; --s8:#B08A5A; --s9:#7A8AA6; --s10:#C67BB5; --rest:#DDE0E5;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  a{color:var(--blue);text-decoration:none}
+  .num{font-variant-numeric:tabular-nums}
+  .mono{font-family:var(--mono)}
+  /* ── 页面骨架（模拟任务页主区）──────────────────────────────── */
+  .topbar{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 24px;font-size:14px}
+  .topbar b{font-weight:600}
+  .topbar .dim{color:var(--dim)}
+  .topbar .ret{margin-left:auto;border:1px solid var(--line);border-radius:10px;padding:4px 12px;color:var(--sub)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  .page{max-width:1180px;margin:0 auto;padding:20px 24px 80px}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .title h1{font-size:20px;font-weight:600;margin:0}
+  .title .meta{font-size:13.5px;color:var(--dim)}
+  .title .meta b{color:var(--warn);font-weight:500}
+  .title .btns{margin-left:auto;display:flex;gap:8px}
+  .btn{border:1px solid var(--line);border-radius:10px;padding:5px 12px;font-size:14px;color:var(--ink);background:#fff}
+  .btn.danger{color:var(--crit)}
+  .tabs{display:flex;gap:22px;margin:12px 0 22px;border-bottom:1px solid var(--line);font-size:14px}
+  .tabs span{padding:6px 0 8px;color:var(--sub)}
+  .tabs span.on{color:var(--blue);border-bottom:2px solid var(--blue)}
+  /* ── 通用 ─────────────────────────────────────────────────── */
+  .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 20px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)}
+  h2{font-size:18px;font-weight:600;margin:30px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  h2 .hint{font-size:13.5px;color:var(--dim);font-weight:400}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;border-radius:6px;padding:2px 10px;font-weight:500}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}
+  .chip.warn{background:var(--warn-soft);color:var(--warn)}
+  .chip.notice{background:var(--notice-soft);color:var(--notice)}
+  .chip.crit{background:var(--crit-soft);color:var(--crit)}
+  .chip.grey{background:var(--fill);color:var(--sub)}
+  .key{font:600 12px var(--mono);background:var(--fill);border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:var(--sub)}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:4px;flex:none}
+  .tag{font-size:12px;border-radius:4px;padding:0 7px;border:1px solid var(--line);color:var(--sub);background:#fff;white-space:nowrap}
+  /* ── 状态带 + 负载总量 ───────────────────────────────────── */
+  .band{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .band .worst{font-size:18px;font-weight:600;color:var(--warn)}
+  .band .win{font-size:13.5px;color:var(--dim)}
+  .stats{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+  .stat{background:var(--fill);border-radius:8px;padding:12px 14px}
+  .stat .l{font-size:13px;color:var(--dim)}
+  .stat .v{font-size:22px;font-weight:600;line-height:1.3;margin-top:2px}
+  .stat .u{font-size:13px;color:var(--dim)}
+  /* ── 资源占比堆叠条 ───────────────────────────────────────── */
+  .share{display:grid;grid-template-columns:1fr 340px;gap:24px}
+  .rows{display:grid;gap:12px}
+  .row{display:grid;grid-template-columns:96px 1fr 128px;gap:12px;align-items:center}
+  .row .l{font-size:13.5px;color:var(--sub);text-align:right}
+  .row .l small{display:block;font-size:12px;color:var(--dim)}
+  .bar{display:flex;height:26px;border-radius:5px;overflow:hidden;background:var(--rest)}
+  .seg{height:100%;display:flex;align-items:center;justify-content:center;font:600 11.5px var(--mono);color:#fff;white-space:nowrap;overflow:hidden}
+  .seg.rest{background:var(--rest);color:var(--sub)}
+  .row .r{font-size:13.5px;color:var(--sub)}
+  .row .r b{font-weight:600;color:var(--ink)}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:14px;font-size:13px;color:var(--sub)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend .key{margin-right:2px}
+  .insights{border-left:1px solid var(--line);padding-left:24px}
+  .insights .t{font-size:13.5px;color:var(--dim);margin-bottom:8px}
+  .insights li{list-style:none;display:flex;gap:10px;margin:0 0 12px;font-size:14.5px;line-height:1.6}
+  .insights li .sw{margin-top:8px}
+  .insights li b{font-weight:600}
+  /* ── 榜单 ─────────────────────────────────────────────────── */
+  .dims{display:flex;gap:8px;flex-wrap:wrap;font-size:13px;align-items:center;color:var(--dim)}
+  .dims .d{border:1px solid var(--line);border-radius:6px;padding:1px 9px;color:var(--ph)}
+  .dims .d.on{color:var(--ink);background:var(--fill2);border-color:transparent;font-weight:500}
+  .boards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .boards>.card{min-width:0}
+  .board .h{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .board .h b{font-size:16px;font-weight:600}
+  .board .h span{font-size:12.5px;color:var(--dim)}
+  .rk{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;padding:9px 0;border-top:1px solid var(--line);align-items:start;min-width:0;color:inherit}
+  .rk>div{min-width:0}
+  .rk:first-of-type{border-top:none}
+  .rk .n{font:600 13px var(--mono);color:var(--dim);padding-top:3px}
+  .rk .top{display:flex;align-items:center;gap:8px;min-width:0}
+  .rk .sql{font:12.5px var(--mono);color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+  .rk .vb{display:grid;grid-template-columns:1fr 150px;gap:10px;align-items:center;margin-top:5px}
+  .rk .vb .b{height:8px;border-radius:3px;background:var(--fill2);overflow:hidden}
+  .rk .vb .b i{display:block;height:100%;border-radius:3px}
+  .rk .vb .v{font-size:13px;color:var(--sub);text-align:right;white-space:nowrap}
+  .rk .vb .v b{color:var(--ink);font-weight:600}
+  .rk .sub{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--dim);margin-top:3px;flex-wrap:wrap}
+  .badge{font-size:11.5px;border-radius:4px;padding:0 6px;font-weight:600}
+  .badge.warn{background:var(--warn-soft);color:var(--warn)}
+  .badge.notice{background:var(--notice-soft);color:var(--notice)}
+  .badge.none{background:var(--fill);color:var(--dim);font-weight:500}
+  /* ── 逐条分析卡 ───────────────────────────────────────────── */
+  .sqlcard{margin-bottom:14px;padding:0;overflow:hidden}
+  .sqlcard .hd{display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .sqlcard .hd .rank{font-size:12.5px;color:var(--sub);display:inline-flex;gap:6px;flex-wrap:wrap}
+  .sqlcard .hd .rank span{background:var(--fill);border-radius:4px;padding:0 7px}
+  .sqlcard .hd .verify{margin-left:auto}
+  .mstrip{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--line)}
+  .m{padding:10px 16px;border-right:1px solid var(--line)}
+  .m:last-child{border-right:none}
+  .m .l{font-size:12.5px;color:var(--dim)}
+  .m .v{font-size:17px;font-weight:600;line-height:1.35}
+  .m .s{font-size:12px;color:var(--dim)}
+  .m .s.hot{color:var(--warn);font-weight:600}
+  .body{padding:14px 20px 16px;display:grid;gap:14px}
+  .lab{font-size:13.5px;color:var(--dim);font-weight:500;margin-bottom:4px}
+  .lab i{font-style:normal;font-weight:400}
+  .code{background:var(--fill);border-radius:10px;padding:12px 14px;font:13px/1.8 var(--mono);white-space:pre-wrap;word-break:break-all;overflow-x:auto}
+  .code.plan{white-space:pre}
+  .code.good{background:var(--ok-soft)}
+  .pl{display:block}
+  .pl.warn{background:var(--warn-soft);border-radius:4px;margin:0 -6px;padding:0 6px}
+  .pl.crit{background:var(--crit-soft);border-radius:4px;margin:0 -6px;padding:0 6px}
+  .pl b{margin-left:10px;font-weight:600}
+  .pl.warn b{color:var(--warn)} .pl.crit b{color:var(--crit)}
+  .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+  .two>*{min-width:0}
+  .rules{display:grid;gap:6px}
+  .rule{display:grid;grid-template-columns:8px 64px 1fr;gap:10px;align-items:start;font-size:13.5px;padding:6px 0;border-top:1px solid var(--line)}
+  .rule:first-child{border-top:none}
+  .rule .dot{margin-top:9px}
+  .rule .o{font-family:var(--mono);font-size:12.5px;color:var(--sub)}
+  .rule .p{color:var(--ink)}
+  .rule .a{color:var(--dim);font-size:13px}
+  .cost{display:grid;gap:6px;max-width:520px}
+  .cost .cr{display:grid;grid-template-columns:56px 1fr 150px;gap:10px;align-items:center;font-size:13.5px}
+  .cost .cr .l{color:var(--dim)}
+  .cost .cr .b{height:12px;border-radius:4px}
+  .cost .cr b{font-weight:600}
+  .detail{font-size:15px;color:var(--sub)}
+  .ft{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--fill);border-top:1px solid var(--line);font-size:14px}
+  .ft .primary{background:var(--blue);color:#fff;border-radius:10px;padding:6px 14px;font-weight:500;display:inline-flex;gap:6px;align-items:center}
+  .ft .sec{color:var(--sub)}
+  .ft .note{margin-left:auto;font-size:12.5px;color:var(--dim)}
+  .more{display:grid;gap:0}
+  .more .r{display:grid;grid-template-columns:18px 44px minmax(0,1fr) 190px 120px;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px;min-width:0}
+  .more .r:first-child{border-top:none}
+  .more .sql{font:12.5px var(--mono);color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .more .v{color:var(--sub);text-align:right}
+  /* ── 根因 / 优先级 / 历史 ──────────────────────────────────── */
+  .pri{display:grid;gap:8px}
+  .pri .p{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start;font-size:15px}
+  .pri .p .n{font:600 13px var(--mono);background:var(--fill2);border-radius:6px;text-align:center;padding:2px 0;margin-top:4px}
+  .pri .refs{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}
+  .strip{display:flex;gap:3px;align-items:flex-end;height:26px}
+  .strip i{flex:1;max-width:16px;height:100%;border-radius:3px;background:var(--warn)}
+  .strip i.ok{background:var(--ok)} .strip i.sel{outline:2px solid var(--ink);outline-offset:1px}
+  .notes{font-size:13.5px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:8px 14px;margin-top:16px}
+  .foot{margin-top:40px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:12px}
+  @media (max-width:1000px){.stats{grid-template-columns:repeat(4,1fr)}.share{grid-template-columns:1fr}.insights{border-left:none;padding-left:0}.boards{grid-template-columns:1fr}.mstrip{grid-template-columns:repeat(4,1fr)}.two{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="ribbon">R5 设计稿（静态原型）· 数字取自 og5 实测 dbe_perf.statement（08-27 18:24 累计值）与 08-27 09:05 那份真实报告 · 交互：榜单行点击滚到分析卡；「在新会话中深挖」直接建会话并发送，不再复制提示词</div>
+<div class="topbar"><b>任务</b><span class="dim">agent：og-lab</span><span class="ret">返回会话</span></div>
+<div class="page">
+
+  <div class="title">
+    <h1>og5 Top SQL 报表</h1>
+    <span class="meta">任务 · 每天 18:00 · 榜单：总耗时 / 执行次数 / 平均耗时 · Top 5 · 最近 <b>warn</b> · 调整维度或范围，在会话里说一句即可</span>
+    <span class="btns"><span class="btn">▶ 立即运行</span><span class="btn">⏸ 停用</span><span class="btn danger">删除</span></span>
+  </div>
+  <div class="tabs"><span class="on">报告</span><span>历史</span><span>配置</span></div>
+
+  <!-- ① 状态带 + 负载总量 -->
+  <div class="band">
+    <span class="worst">总体：告警</span>
+    <span class="chip ok">✓ 数字来自采集器直读 · 分析由模型解读</span>
+    <span class="win">统计口径：dbe_perf.statement 累计值（自统计重置起）· 采集 08-27 09:05 · 节点 og5</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="l">唯一 SQL</div><div class="v num">3,088</div><div class="u">条 · 已过滤平台查询</div></div>
+    <div class="stat"><div class="l">总调用</div><div class="v num">4,798 万</div><div class="u">次</div></div>
+    <div class="stat"><div class="l">总耗时</div><div class="v num">16.0 h</div><div class="u">= 57,668 s</div></div>
+    <div class="stat"><div class="l">DB Time</div><div class="v num">21.5 h</div><div class="u">含并行 · = 77,280 s</div></div>
+    <div class="stat"><div class="l">CPU 时间</div><div class="v num">9.6 h</div><div class="u">= 34,718 s</div></div>
+    <div class="stat"><div class="l">IO 时间</div><div class="v num">42.5 min</div><div class="u">= 2,550 s</div></div>
+    <div class="stat"><div class="l">逻辑读</div><div class="v num">4.38 亿</div><div class="u">块 · 命中率 97.4%</div></div>
+  </div>
+
+  <!-- ② 资源占比（最显眼板块） -->
+  <h2>Top SQL 资源占比 <span class="hint">每根横条 = 该资源的 100% · 彩色段 = 上榜 SQL · 灰色 = 其余 3,078 条</span></h2>
+  <div class="card">
+    <div class="share">
+      <div>
+        <div class="rows">
+          <div class="row"><div class="l">总耗时<small>elapsed</small></div>
+            <div class="bar"><div class="seg" style="width:45.9%;background:var(--s1)" title="S1 45.9%">45.9%</div><div class="seg" style="width:13.2%;background:var(--s2)" title="S2 13.2%">13.2%</div><div class="seg" style="width:13.1%;background:var(--s3)" title="S3 13.1%">13.1%</div><div class="seg" style="width:11.1%;background:var(--s4)" title="S4 11.1%">11.1%</div><div class="seg" style="width:5.3%;background:var(--s5)" title="S5 5.3%">5.3</div><div class="seg" style="width:4.2%;background:var(--s6)" title="S6 4.2%"></div><div class="seg rest" style="flex:1" title="其余 7.2%">7.2%</div></div>
+            <div class="r">上榜合计 <b class="num">92.8%</b></div></div>
+          <div class="row"><div class="l">DB Time<small>db_time</small></div>
+            <div class="bar"><div class="seg" style="width:34.6%;background:var(--s1)" title="S1 34.6%">34.6%</div><div class="seg" style="width:24.6%;background:var(--s8)" title="S8 COMMIT 24.6%">24.6%</div><div class="seg" style="width:9.8%;background:var(--s2)" title="S2 9.8%">9.8%</div><div class="seg" style="width:9.4%;background:var(--s3)" title="S3 9.4%">9.4%</div><div class="seg" style="width:8.2%;background:var(--s4)" title="S4 8.2%">8.2%</div><div class="seg" style="width:4.7%;background:var(--s5)" title="S5 4.7%"></div><div class="seg" style="width:3.9%;background:var(--s6)" title="S6 3.9%"></div><div class="seg rest" style="flex:1" title="其余 4.8%">4.8%</div></div>
+            <div class="r">上榜合计 <b class="num">95.2%</b></div></div>
+          <div class="row"><div class="l">CPU 时间<small>cpu_time</small></div>
+            <div class="bar"><div class="seg" style="width:66.2%;background:var(--s1)" title="S1 66.2%">66.2%</div><div class="seg" style="width:5.8%;background:var(--s5)" title="S5 5.8%">5.8</div><div class="seg" style="width:4.9%;background:var(--s6)" title="S6 4.9%"></div><div class="seg" style="width:4.8%;background:var(--s3)" title="S3 4.8%"></div><div class="seg" style="width:4.5%;background:var(--s2)" title="S2 4.5%"></div><div class="seg" style="width:3.5%;background:var(--s4)" title="S4 3.5%"></div><div class="seg" style="width:2.6%;background:var(--s8)" title="S8 2.6%"></div><div class="seg" style="width:1.5%;background:var(--s7)" title="S7 1.5%"></div><div class="seg rest" style="flex:1" title="其余 6.2%">6.2%</div></div>
+            <div class="r">上榜合计 <b class="num">93.8%</b></div></div>
+          <div class="row"><div class="l">IO 时间<small>data_io_time</small></div>
+            <div class="bar"><div class="seg" style="width:77.5%;background:var(--s3)" title="S3 77.5%">77.5%</div><div class="seg" style="width:7.1%;background:var(--s4)" title="S4 7.1%">7.1</div><div class="seg" style="width:4.0%;background:var(--s10)" title="S10 4.0%"></div><div class="seg" style="width:3.6%;background:var(--s9)" title="S9 3.6%"></div><div class="seg" style="width:3.3%;background:var(--s2)" title="S2 3.3%"></div><div class="seg rest" style="flex:1" title="其余 4.5%"></div></div>
+            <div class="r">上榜合计 <b class="num">95.5%</b></div></div>
+          <div class="row"><div class="l">逻辑读<small>n_blocks_fetched</small></div>
+            <div class="bar"><div class="seg" style="width:27.6%;background:var(--s5)" title="S5 27.6%">27.6%</div><div class="seg" style="width:21.0%;background:var(--s6)" title="S6 21.0%">21.0%</div><div class="seg" style="width:17.4%;background:var(--s3)" title="S3 17.4%">17.4%</div><div class="seg" style="width:12.8%;background:var(--s2)" title="S2 12.8%">12.8%</div><div class="seg" style="width:10.7%;background:var(--s4)" title="S4 10.7%">10.7%</div><div class="seg" style="width:2.6%;background:var(--s7)" title="S7 2.6%"></div><div class="seg" style="width:2.6%;background:var(--s8)" title="S8 2.6%"></div><div class="seg rest" style="flex:1" title="其余 5.3%">5.3</div></div>
+            <div class="r">上榜合计 <b class="num">94.7%</b></div></div>
+          <div class="row"><div class="l">调用次数<small>n_calls</small></div>
+            <div class="bar"><div class="seg" style="width:23.6%;background:var(--s7)" title="S7 BEGIN 23.6%">23.6%</div><div class="seg" style="width:23.6%;background:var(--s6)" title="S6 23.6%">23.6%</div><div class="seg" style="width:23.6%;background:var(--s5)" title="S5 23.6%">23.6%</div><div class="seg" style="width:23.6%;background:var(--s8)" title="S8 COMMIT 23.6%">23.6%</div><div class="seg" style="width:2.0%;background:var(--s9)" title="S9 2.0%"></div><div class="seg rest" style="flex:1" title="其余 3.6%"></div></div>
+            <div class="r">上榜合计 <b class="num">96.4%</b></div></div>
+        </div>
+        <div class="legend">
+          <span><i class="sw" style="background:var(--s1)"></i><span class="key">S1</span>会话内存监控 · GROUP BY sessid</span>
+          <span><i class="sw" style="background:var(--s2)"></i><span class="key">S2</span>按品类聚合 fact_sales</span>
+          <span><i class="sw" style="background:var(--s3)"></i><span class="key">S3</span>按区域/门店聚合 fact_sales ⋈ customers</span>
+          <span><i class="sw" style="background:var(--s4)"></i><span class="key">S4</span>按日期聚合 fact_sales</span>
+          <span><i class="sw" style="background:var(--s5)"></i><span class="key">S5</span>UPDATE accounts 余额</span>
+          <span><i class="sw" style="background:var(--s6)"></i><span class="key">S6</span>SELECT balance FROM accounts</span>
+          <span><i class="sw" style="background:var(--s7)"></i><span class="key">S7</span>BEGIN READ WRITE</span>
+          <span><i class="sw" style="background:var(--s8)"></i><span class="key">S8</span>COMMIT</span>
+          <span><i class="sw" style="background:var(--s9)"></i><span class="key">S9</span>INSERT orders</span>
+          <span><i class="sw" style="background:var(--s10)"></i><span class="key">S10</span>整表 sum fact_sales</span>
+          <span><i class="sw" style="background:var(--rest)"></i>其余 3,078 条</span>
+        </div>
+      </div>
+      <div class="insights">
+        <div class="t">一眼结论（脚本按占比自动生成）</div>
+        <ul style="margin:0;padding:0">
+          <li><i class="sw" style="background:var(--s1)"></i><div><b>1 条监控类 SQL 吃掉 45.9% 总耗时、66.2% CPU</b>：S1 每 2 秒左右跑一次（25.6 万次 × 103 ms），来源需确认是否为平台/监控自身。</div></li>
+          <li><i class="sw" style="background:var(--s3)"></i><div><b>IO 时间 77.5% 集中在 S3</b>：429 次 × 17.6 s 的分析型聚合，伴随哈希下盘——已有 EXPLAIN 实证的改写（cost ↓7.2%）。</div></li>
+          <li><i class="sw" style="background:var(--s8)"></i><div><b>COMMIT 占 DB Time 24.6%</b>：1,134 万次提交等待 WAL 落盘，OLTP 四件套（S5–S8）调用各 23.6%，单次 ≤0.3 ms，属高频小语句。</div></li>
+          <li><i class="sw" style="background:var(--rest)"></i><div><b>上榜 10 条合计占总耗时 93%</b>——优化面集中，逐条处理即可覆盖绝大部分负载。</div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ 榜单：按维度 -->
+  <h2>Top SQL 榜单 <span class="hint">任务配置勾选的维度各出一榜 · 同一条 SQL 可同时上多榜</span></h2>
+  <div class="dims" style="margin-bottom:10px">维度：<span class="d on">总耗时</span><span class="d on">执行次数</span><span class="d on">平均耗时</span><span class="d">CPU 时间</span><span class="d">IO 时间</span><span class="d">逻辑读</span><span class="d">DB Time</span><span class="d">下盘</span><span class="d">返回行数</span><span style="margin-left:6px">灰色 = 可在配置里加开</span></div>
+  <div class="boards">
+    <div class="card board">
+      <div class="h"><b>按总耗时 Top 5</b><span>total_elapse_time · 占总耗时</span></div>
+      <a class="rk" href="#S1"><div class="n">1</div><div><div class="top"><i class="sw" style="background:var(--s1)"></i><span class="key">S1</span><span class="sql">SELECT substring(sessid FROM ?) AS "sessid", SUM(totalsize)/?/? FROM gs_session_memory_detail GROUP BY sessid</span></div><div class="vb"><div class="b"><i style="width:45.9%;background:var(--s1)"></i></div><div class="v"><b class="num">7.35 h</b> · 45.9%</div></div><div class="sub"><span class="tag">监控类</span>25.6 万次 · 均 103 ms<span class="badge none">规范 0</span></div></div></a>
+      <a class="rk" href="#S2"><div class="n">2</div><div><div class="top"><i class="sw" style="background:var(--s2)"></i><span class="key">S2</span><span class="sql">SELECT /*+ set(query_dop 1) */ p.category_id, count(*), sum(f.amount) … FROM fact_sales f JOIN products p …</span></div><div class="vb"><div class="b"><i style="width:13.2%;background:var(--s2)"></i></div><div class="v"><b class="num">2.11 h</b> · 13.2%</div></div><div class="sub"><span class="tag">分析型</span>2,314 次 · 均 3.29 s<span class="badge warn">规范 3</span></div></div></a>
+      <a class="rk" href="#S3"><div class="n">3</div><div><div class="top"><i class="sw" style="background:var(--s3)"></i><span class="key">S3</span><span class="sql">SELECT /*+ set(query_dop 1) */ c.region_id, f.store_id, sum(f.amount), count(*) FROM (SELECT … FROM fact_sales LIMIT ?) f JOIN customers c …</span></div><div class="vb"><div class="b"><i style="width:13.1%;background:var(--s3)"></i></div><div class="v"><b class="num">2.10 h</b> · 13.1%</div></div><div class="sub"><span class="tag">分析型</span>429 次 · 均 17.6 s · 下盘<span class="badge warn">规范 3</span></div></div></a>
+      <a class="rk" href="#S4"><div class="n">4</div><div><div class="top"><i class="sw" style="background:var(--s4)"></i><span class="key">S4</span><span class="sql">SELECT /*+ set(query_dop 1) */ f.sale_date, sum(f.amount), avg(f.amount), max(f.amount) FROM (SELECT … FROM fact_sales …</span></div><div class="vb"><div class="b"><i style="width:11.1%;background:var(--s4)"></i></div><div class="v"><b class="num">1.78 h</b> · 11.1%</div></div><div class="sub"><span class="tag">分析型</span>2,131 次 · 均 3.01 s<span class="badge warn">规范 3</span></div></div></a>
+      <a class="rk" href="#S5"><div class="n">5</div><div><div class="top"><i class="sw" style="background:var(--s5)"></i><span class="key">S5</span><span class="sql">UPDATE gsbench_e2e_20260801_100g.accounts SET balance=balance+?, updated_at=current_timestamp WHERE dist_key=? AND id=?</span></div><div class="vb"><div class="b"><i style="width:5.3%;background:var(--s5)"></i></div><div class="v"><b class="num">50.7 min</b> · 5.3%</div></div><div class="sub"><span class="tag">OLTP 高频</span>1,134 万次 · 均 0.3 ms<span class="badge warn">规范 1</span></div></div></a>
+    </div>
+    <div class="card board">
+      <div class="h"><b>按执行次数 Top 5</b><span>n_calls · 占总调用</span></div>
+      <a class="rk" href="#S7"><div class="n">1</div><div><div class="top"><i class="sw" style="background:var(--s7)"></i><span class="key">S7</span><span class="sql">BEGIN READ WRITE</span></div><div class="vb"><div class="b"><i style="width:23.6%;background:var(--s7)"></i></div><div class="v"><b class="num">1,134 万</b> · 23.6%</div></div><div class="sub"><span class="tag">事务控制</span>均 0.03 ms<span class="badge none">规范 0</span></div></div></a>
+      <a class="rk" href="#S6"><div class="n">2</div><div><div class="top"><i class="sw" style="background:var(--s6)"></i><span class="key">S6</span><span class="sql">SELECT balance FROM gsbench_e2e_20260801_100g.accounts WHERE dist_key=? AND id=?</span></div><div class="vb"><div class="b"><i style="width:23.6%;background:var(--s6)"></i></div><div class="v"><b class="num">1,134 万</b> · 23.6%</div></div><div class="sub"><span class="tag">OLTP 高频</span>均 0.2 ms · 逻辑读 21%<span class="badge warn">规范 1</span></div></div></a>
+      <a class="rk" href="#S5"><div class="n">3</div><div><div class="top"><i class="sw" style="background:var(--s5)"></i><span class="key">S5</span><span class="sql">UPDATE gsbench_e2e_20260801_100g.accounts SET balance=balance+? … WHERE dist_key=? AND id=?</span></div><div class="vb"><div class="b"><i style="width:23.6%;background:var(--s5)"></i></div><div class="v"><b class="num">1,134 万</b> · 23.6%</div></div><div class="sub"><span class="tag">OLTP 高频</span>均 0.3 ms · 逻辑读 27.6%<span class="badge warn">规范 1</span></div></div></a>
+      <a class="rk" href="#S8"><div class="n">4</div><div><div class="top"><i class="sw" style="background:var(--s8)"></i><span class="key">S8</span><span class="sql">COMMIT</span></div><div class="vb"><div class="b"><i style="width:23.6%;background:var(--s8)"></i></div><div class="v"><b class="num">1,134 万</b> · 23.6%</div></div><div class="sub"><span class="tag">事务控制</span>均 0.03 ms · <b style="color:var(--warn)">DB Time 24.6%</b><span class="badge none">规范 0</span></div></div></a>
+      <a class="rk" href="#S9"><div class="n">5</div><div><div class="top"><i class="sw" style="background:var(--s9)"></i><span class="key">S9</span><span class="sql">INSERT INTO gsbench_e2e_20260801_100g.orders(dist_key,id,customer_id,status,amount,created_at) VALUES(?,?,?,?,?,current_timestamp)</span></div><div class="vb"><div class="b"><i style="width:2.0%;background:var(--s9)"></i></div><div class="v"><b class="num">96.7 万</b> · 2.0%</div></div><div class="sub"><span class="tag">OLTP 高频</span>均 0.3 ms<span class="badge notice">规范 2</span></div></div></a>
+    </div>
+    <div class="card board">
+      <div class="h"><b>按平均耗时 Top 5</b><span>total_elapse_time / n_calls</span></div>
+      <a class="rk" href="#S10"><div class="n">1</div><div><div class="top"><i class="sw" style="background:var(--s10)"></i><span class="key">S10</span><span class="sql">SELECT sum(amount),sum(quantity),sum(length(payload)) FROM "gsbench_e2e_20260801_100g".fact_sales</span></div><div class="vb"><div class="b"><i style="width:100%;background:var(--s10)"></i></div><div class="v"><b class="num">27.2 s</b> / 次</div></div><div class="sub"><span class="tag">分析型</span>4 次 · 总耗时 0.2%<span class="badge warn">规范 3</span></div></div></a>
+      <a class="rk" href="#S3"><div class="n">2</div><div><div class="top"><i class="sw" style="background:var(--s3)"></i><span class="key">S3</span><span class="sql">SELECT /*+ set(query_dop 1) */ c.region_id, f.store_id, sum(f.amount), count(*) FROM (SELECT … LIMIT ?) f JOIN customers c …</span></div><div class="vb"><div class="b"><i style="width:64.8%;background:var(--s3)"></i></div><div class="v"><b class="num">17.6 s</b> / 次</div></div><div class="sub"><span class="tag">分析型</span>429 次 · 总耗时 13.1%<span class="badge warn">规范 3</span></div></div></a>
+      <a class="rk" href="#S11"><div class="n">3</div><div><div class="top"><i class="sw" style="background:var(--rest)"></i><span class="key">S11</span><span class="sql">SELECT sum(lookup_key),sum(skew_key),sum(length(payload)) FROM "gsbench_e2e_20260801_100g".plan_data</span></div><div class="vb"><div class="b"><i style="width:62.9%;background:#B8BCC4"></i></div><div class="v"><b class="num">17.1 s</b> / 次</div></div><div class="sub"><span class="tag">分析型</span>1 次 · 总耗时 0.03%<span class="badge none">规范 0</span></div></div></a>
+      <a class="rk" href="#S12"><div class="n">4</div><div><div class="top"><i class="sw" style="background:var(--rest)"></i><span class="key">S12</span><span class="sql">SELECT sum(sort_key),sum(group_id),sum(length(payload)) FROM "gsbench_e2e_20260801_100g".sort_data</span></div><div class="vb"><div class="b"><i style="width:37.7%;background:#B8BCC4"></i></div><div class="v"><b class="num">10.3 s</b> / 次</div></div><div class="sub"><span class="tag">分析型</span>3 次 · 总耗时 0.05%<span class="badge none">规范 0</span></div></div></a>
+      <a class="rk" href="#S13"><div class="n">5</div><div><div class="top"><i class="sw" style="background:var(--rest)"></i><span class="key">S13</span><span class="sql">UPDATE gsbench_e2e_20260801_100g.lock_targets SET value=value+? WHERE id=?</span></div><div class="vb"><div class="b"><i style="width:30.8%;background:#B8BCC4"></i></div><div class="v"><b class="num">8.4 s</b> / 次</div></div><div class="sub"><span class="tag">锁竞争</span>149 次 · 总耗时 2.2%<span class="badge none">规范 0</span></div></div></a>
+    </div>
+  </div>
+
+  <!-- ④ 逐条分析 -->
+  <h2>逐条分析 <span class="hint">上榜 SQL 去重后 13 条 · 每条：指标 → 计划 → 违反规范 → 优化 → 解读 · 违规不再在顶部汇总</span></h2>
+
+  <div class="card sqlcard" id="S3">
+    <div class="hd"><i class="sw" style="background:var(--s3)"></i><span class="key">S3</span><span class="mono" style="font-size:12.5px;color:var(--dim)">0e2b488c</span>
+      <span class="rank"><span>总耗时 #3</span><span>平均耗时 #2</span><span>IO #1</span><span>逻辑读 #3</span></span><span class="tag">分析型</span>
+      <span class="chip ok verify">✓ EXPLAIN 实证 · cost ↓7.23%</span></div>
+    <div class="mstrip">
+      <div class="m"><div class="l">调用次数</div><div class="v num">429</div><div class="s">占 0.001%</div></div>
+      <div class="m"><div class="l">平均耗时</div><div class="v num">17.6 s</div><div class="s">最长 41.2 s</div></div>
+      <div class="m"><div class="l">总耗时</div><div class="v num">2.10 h</div><div class="s hot">占 13.1%</div></div>
+      <div class="m"><div class="l">CPU 时间</div><div class="v num">27.5 min</div><div class="s">占 4.8%</div></div>
+      <div class="m"><div class="l">IO 时间</div><div class="v num">33.0 min</div><div class="s hot">占 77.5%</div></div>
+      <div class="m"><div class="l">逻辑读</div><div class="v num">7,626 万</div><div class="s hot">占 17.4% · 命中 91.4%</div></div>
+      <div class="m"><div class="l">下盘</div><div class="v num">有</div><div class="s hot">哈希聚合外存</div></div>
+    </div>
+    <div class="body">
+      <div><div class="lab">原 SQL</div><div class="code">SELECT /*+ set(query_dop 1) */ c.region_id, f.store_id, sum(f.amount), count(*)
+FROM (SELECT id,sale_date,customer_id,product_id,store_id,amount,quantity FROM gsbench_e2e_20260801_100g.fact_sales LIMIT ?) f
+JOIN gsbench_e2e_20260801_100g.customers c ON c.id=f.customer_id
+GROUP BY c.region_id,f.store_id ORDER BY count(*) DESC LIMIT ?</div></div>
+      <div><div class="lab">原执行计划 <i>· 总 cost 13,480,830.65 · 优化点标在计划行上 · 计划取自 ? → NULL 归一化文本</i></div>
+        <div class="code plan"><span class="pl">Limit  (cost=13478335.40..13480830.65 rows=998100 width=54)</span><span class="pl">  ->  Sort  (cost=13478335.40..13480830.65 rows=998100 width=54)</span><span class="pl">        Sort Key: (count(*)) DESC</span><span class="pl">        ->  HashAggregate  (cost=12199311.15..13336919.15 rows=998100 width=54)</span><span class="pl">              Group By Key: c.region_id, f.store_id</span><span class="pl">              ->  Hash Join  (cost=407048.88..9550815.74 rows=107675734 width=14)</span><span class="pl">                    Hash Cond: (f.customer_id = c.id)</span><span class="pl">                    ->  Subquery Scan on f  (cost=0.00..4722476.12 rows=111848106 width=18)</span><span class="pl">                          ->  Limit  (cost=0.00..3603995.06 rows=111848106 width=38)</span><span class="pl crit">                                ->  Seq Scan on fact_sales  (cost=0.00..3603995.06 rows=111848106 width=38)<b>🔴 全表扫描 fact_sales（1.12 亿行）——LIMIT 参数化后无界</b></span><span class="pl">                    ->  Hash  (cost=237942.17..237942.17 rows=6711817 width=12)</span><span class="pl warn">                          ->  Seq Scan on customers c  (cost=0.00..237942.17 rows=6711817 width=12)<b>⚠ 全表扫描 customers（671 万行）</b></span></div></div>
+      <div class="two">
+        <div><div class="lab">违反规范 <i>· 本条涉及对象 fact_sales / customers · 3 条（规则与级别来自脚本，不可下调）</i></div>
+          <div class="rules">
+            <div class="rule"><i class="dot" style="background:var(--warn)"></i><span class="key">TBL001</span><div><div class="o">gsbench.fact_sales</div><div class="p">表无主键/唯一键（约 3,355 万行）</div><div class="a">补自增主键或业务唯一键；上线前 DDL 评审拦截</div></div></div>
+            <div class="rule"><i class="dot" style="background:var(--warn)"></i><span class="key">IDX003</span><div><div class="o">fact_sales_customer_idx ×2</div><div class="p">表 fact_sales 上完全重复索引（列序一致：4 1 2）</div><div class="a">保留一个，删除另一个</div></div></div>
+            <div class="rule"><i class="dot" style="background:var(--notice)"></i><span class="key">IDX004</span><div><div class="o">fact_sales_product_idx</div><div class="p">前缀冗余：(4) 被 fact_sales_customer_idx(4 1 2) 覆盖</div><div class="a">删除 fact_sales_product_idx，先入观察清单</div></div></div>
+          </div></div>
+        <div><div class="lab">优化方案 <i>· 改写类 · 已用 db_query EXPLAIN 实证</i></div>
+          <div class="code good">SELECT c.region_id, f.store_id, sum(f.amount), count(*)
+FROM (SELECT customer_id, store_id, amount FROM gsbench_e2e_20260801_100g.fact_sales LIMIT NULL) f
+JOIN gsbench_e2e_20260801_100g.customers c ON c.id = f.customer_id
+GROUP BY c.region_id, f.store_id ORDER BY count(*) DESC LIMIT NULL</div>
+          <div class="cost" style="margin-top:10px">
+            <div class="cr"><span class="l">原计划</span><div class="b" style="width:100%;background:#E9B8B8"></div><b class="num" style="color:#C97878">cost 13,480,831</b></div>
+            <div class="cr"><span class="l">优化后</span><div class="b" style="width:92.8%;background:var(--ok)"></div><b class="num" style="color:var(--ok)">12,506,036 ↓7.23%</b></div>
+          </div></div>
+      </div>
+      <div class="detail">改写两处：① 子查询去掉未使用的 id / sale_date / product_id / quantity 四列，仅保留 customer_id / store_id / amount，缩小扫描行宽；② 移除 set(query_dop 1) 提示恢复并行（新计划 fact_sales / customers 均出现 Streaming dop 1/2）。计划基于 ? → NULL 归一化（LIMIT 无界），真实调用 LIMIT 有值时收益更大。IO 时间占全库 77.5% 与哈希聚合下盘直接相关——work_mem 与并行度是第二步。</div>
+    </div>
+    <div class="ft"><span class="primary">💬 在新会话中深挖 →</span><span class="sec">复制 SQL</span><span class="sec">复制优化后 SQL</span><span class="note">点击即新建会话并把本条 SQL、指标、计划与违规作为背景发出——不用复制提示词</span></div>
+  </div>
+
+  <div class="card sqlcard" id="S1">
+    <div class="hd"><i class="sw" style="background:var(--s1)"></i><span class="key">S1</span><span class="mono" style="font-size:12.5px;color:var(--dim)">a1c3f0e2</span>
+      <span class="rank"><span>总耗时 #1</span><span>CPU #1</span><span>DB Time #1</span></span><span class="tag">监控类</span>
+      <span class="chip grey verify">无低风险优化空间 · 建议查来源</span></div>
+    <div class="mstrip">
+      <div class="m"><div class="l">调用次数</div><div class="v num">25.6 万</div><div class="s">占 0.5% · ≈ 每 2.3 s 一次</div></div>
+      <div class="m"><div class="l">平均耗时</div><div class="v num">103 ms</div><div class="s">最长 2.9 s</div></div>
+      <div class="m"><div class="l">总耗时</div><div class="v num">7.35 h</div><div class="s hot">占 45.9%</div></div>
+      <div class="m"><div class="l">CPU 时间</div><div class="v num">6.38 h</div><div class="s hot">占 66.2%</div></div>
+      <div class="m"><div class="l">IO 时间</div><div class="v num">0.08 s</div><div class="s">占 0.0%</div></div>
+      <div class="m"><div class="l">逻辑读</div><div class="v num">167 万</div><div class="s">占 0.4%</div></div>
+      <div class="m"><div class="l">返回行数</div><div class="v num">2.13 亿</div><div class="s hot">均 832 行/次</div></div>
+    </div>
+    <div class="body">
+      <div><div class="lab">原 SQL</div><div class="code">SELECT substring(sessid FROM ?) AS "sessid", SUM(totalsize)/?/? AS "totalsize" FROM gs_session_memory_detail GROUP BY sessid;</div></div>
+      <div class="two">
+        <div><div class="lab">违反规范 <i>· 涉及对象为系统视图，无目录类规则命中</i></div><div class="rules"><div class="rule"><i class="dot" style="background:var(--ok)"></i><span class="key">—</span><div class="p" style="color:var(--dim)">0 条</div></div></div></div>
+        <div><div class="lab">执行计划</div><div class="code plan"><span class="pl">HashAggregate  (cost=1.34..1.36 rows=200 width=72)</span><span class="pl">  Group By Key: substring(sessid FROM NULL)</span><span class="pl">  ->  Function Scan on gs_session_memory_detail  (cost=0.00..1.00 rows=1000 width=72)</span></div></div>
+      </div>
+      <div class="detail">这是系统内存视图的全量聚合（gs_session_memory_detail 是函数视图，每次调用都要遍历全部会话内存上下文），单次 103 ms 不算慢，但高频轮询把它推成 CPU 第一大户。它不是业务 SQL：先确认发起方（平台采集器 / 第三方监控 / WLM）与轮询频率，把周期从 ~2 s 放宽到 30–60 s 即可释放约六成 CPU；语句本身无改写空间。</div>
+    </div>
+    <div class="ft"><span class="primary">💬 在新会话中深挖 →</span><span class="sec">复制 SQL</span><span class="note">提示词会带上：调用频率、CPU 占比、返回行数与「确认发起方」的排查线索</span></div>
+  </div>
+
+  <div class="card sqlcard" id="S5">
+    <div class="hd"><i class="sw" style="background:var(--s5)"></i><span class="key">S5</span><span class="mono" style="font-size:12.5px;color:var(--dim)">9f01d3c7</span>
+      <span class="rank"><span>执行次数 #3</span><span>逻辑读 #1</span><span>总耗时 #5</span></span><span class="tag">OLTP 高频</span>
+      <span class="chip grey verify">计划不可得 · 参数化写语句</span></div>
+    <div class="mstrip">
+      <div class="m"><div class="l">调用次数</div><div class="v num">1,134 万</div><div class="s hot">占 23.6%</div></div>
+      <div class="m"><div class="l">平均耗时</div><div class="v num">0.27 ms</div><div class="s">最长 1.8 s</div></div>
+      <div class="m"><div class="l">总耗时</div><div class="v num">50.7 min</div><div class="s">占 5.3%</div></div>
+      <div class="m"><div class="l">CPU 时间</div><div class="v num">33.7 min</div><div class="s">占 5.8%</div></div>
+      <div class="m"><div class="l">IO 时间</div><div class="v num">22.4 s</div><div class="s">占 0.9%</div></div>
+      <div class="m"><div class="l">逻辑读</div><div class="v num">1.21 亿</div><div class="s hot">占 27.6% · 命中 99.9%</div></div>
+      <div class="m"><div class="l">每次逻辑读</div><div class="v num">10.7</div><div class="s">块 / 次</div></div>
+    </div>
+    <div class="body">
+      <div><div class="lab">原 SQL</div><div class="code">UPDATE gsbench_e2e_20260801_100g.accounts SET balance=balance+?, updated_at=current_timestamp WHERE dist_key=? AND id=?</div></div>
+      <div class="two">
+        <div><div class="lab">违反规范 <i>· 涉及对象 accounts · 1 条</i></div>
+          <div class="rules"><div class="rule"><i class="dot" style="background:var(--warn)"></i><span class="key">IDX003</span><div><div class="o">accounts_customer_idx ×2</div><div class="p">表 accounts 上完全重复索引（列序一致：3 1 2）——每次 UPDATE 多维护一份索引</div><div class="a">保留一个，删除另一个</div></div></div></div></div>
+        <div><div class="lab">优化方案</div><div class="detail" style="font-size:14.5px">单次 0.27 ms、每次 10.7 块逻辑读，已是点更新的理想形态；总量大来自调用次数（23.6%）而非语句本身。可做的只有减少写放大：清理 accounts 上的重复索引（IDX003），预估每次 UPDATE 少维护 1 个索引 ≈ 逻辑读 −1～2 块。<span class="chip notice" style="margin-left:6px">预估 · 未实证（无 hypopg）</span></div></div>
+      </div>
+    </div>
+    <div class="ft"><span class="primary">💬 在新会话中深挖 →</span><span class="sec">复制 SQL</span></div>
+  </div>
+
+  <div class="card" style="padding:12px 20px">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px"><b style="font-size:15px">其余 10 条上榜 SQL</b><span style="font-size:13px;color:var(--dim)">同样有完整分析卡，设计稿只展开上面 3 条 · 点击展开</span></div>
+    <div class="more">
+      <div class="r"><i class="sw" style="background:var(--s2)"></i><span class="key">S2</span><span class="sql">SELECT /*+ set(query_dop 1) */ p.category_id, count(*), sum(f.amount), avg(f.quantity) FROM … fact_sales … JOIN products …</span><span style="font-size:12.5px;color:var(--dim)">总耗时 #2 · 逻辑读 #4</span><span class="v">2.11 h · 13.2%</span></div>
+      <div class="r"><i class="sw" style="background:var(--s4)"></i><span class="key">S4</span><span class="sql">SELECT /*+ set(query_dop 1) */ f.sale_date, sum(f.amount), avg(f.amount), max(f.amount) FROM … fact_sales …</span><span style="font-size:12.5px;color:var(--dim)">总耗时 #4 · IO #2</span><span class="v">1.78 h · 11.1%</span></div>
+      <div class="r"><i class="sw" style="background:var(--s6)"></i><span class="key">S6</span><span class="sql">SELECT balance FROM gsbench_e2e_20260801_100g.accounts WHERE dist_key=? AND id=?</span><span style="font-size:12.5px;color:var(--dim)">执行次数 #2 · 逻辑读 #2</span><span class="v">1,134 万次</span></div>
+      <div class="r"><i class="sw" style="background:var(--s7)"></i><span class="key">S7</span><span class="sql">BEGIN READ WRITE</span><span style="font-size:12.5px;color:var(--dim)">执行次数 #1</span><span class="v">1,134 万次</span></div>
+      <div class="r"><i class="sw" style="background:var(--s8)"></i><span class="key">S8</span><span class="sql">COMMIT</span><span style="font-size:12.5px;color:var(--dim)">执行次数 #4 · DB Time #2</span><span class="v">1,134 万次</span></div>
+      <div class="r"><i class="sw" style="background:var(--s9)"></i><span class="key">S9</span><span class="sql">INSERT INTO gsbench_e2e_20260801_100g.orders(dist_key,id,customer_id,status,amount,created_at) VALUES(…)</span><span style="font-size:12.5px;color:var(--dim)">执行次数 #5</span><span class="v">96.7 万次</span></div>
+      <div class="r"><i class="sw" style="background:var(--s10)"></i><span class="key">S10</span><span class="sql">SELECT sum(amount),sum(quantity),sum(length(payload)) FROM "gsbench_e2e_20260801_100g".fact_sales</span><span style="font-size:12.5px;color:var(--dim)">平均耗时 #1 · IO #3</span><span class="v">27.2 s / 次</span></div>
+      <div class="r"><i class="sw" style="background:var(--rest)"></i><span class="key">S11</span><span class="sql">SELECT sum(lookup_key),sum(skew_key),sum(length(payload)) FROM "gsbench_e2e_20260801_100g".plan_data</span><span style="font-size:12.5px;color:var(--dim)">平均耗时 #3</span><span class="v">17.1 s / 次</span></div>
+      <div class="r"><i class="sw" style="background:var(--rest)"></i><span class="key">S12</span><span class="sql">SELECT sum(sort_key),sum(group_id),sum(length(payload)) FROM "gsbench_e2e_20260801_100g".sort_data</span><span style="font-size:12.5px;color:var(--dim)">平均耗时 #4</span><span class="v">10.3 s / 次</span></div>
+      <div class="r"><i class="sw" style="background:var(--rest)"></i><span class="key">S13</span><span class="sql">UPDATE gsbench_e2e_20260801_100g.lock_targets SET value=value+? WHERE id=?</span><span style="font-size:12.5px;color:var(--dim)">平均耗时 #5 · 锁竞争</span><span class="v">8.4 s / 次</span></div>
+    </div>
+  </div>
+
+  <!-- ⑤ 与上榜 SQL 无关的规范发现：收到底部、默认折叠 -->
+  <h2>其他对象的规范发现 <span class="hint">与上榜 SQL 无关的 12 条 · 默认折叠 · 不再占据顶部</span></h2>
+  <div class="card" style="padding:12px 20px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:14px">
+      <span class="badge warn">TBL001 ×7</span><span style="color:var(--sub)">无主键大表：loadtest.big、demo_mem.big_orders、snapshot.snap_* ×5</span>
+      <span class="badge warn">TBL002 ×2</span><span style="color:var(--sub)">无任何索引的大表</span>
+      <span class="badge warn">IDX003 ×2</span><span class="badge notice">IDX002 / IDX004 / IDX005</span>
+      <a style="margin-left:auto;font-size:14px">展开 12 条 ▾</a>
+    </div>
+  </div>
+
+  <!-- ⑥ 根因 + 优先级 -->
+  <h2>根因串联与处置优先级 <span class="hint">模型解读 · 引用的数字均有出处</span></h2>
+  <div class="two">
+    <div class="card" style="background:var(--fill);border:none"><div class="lab">根因串联</div><div class="detail">负载高度集中：一条监控轮询（S1）占 CPU 66%；分析型聚合（S2–S4、S10）集中在 100G 压测库 gsbench_e2e_20260801_100g，无 WHERE 谓词整表聚合 + LIMIT 参数化后无界的子查询全扫，并叠加 set(query_dop 1) 人为抑制并行；OLTP 四件套单次极快，总量大只因 1,134 万次调用，COMMIT 的提交等待占 DB Time 24.6% 值得看 WAL 落盘。UPDATE lock_targets 慢由行锁争用而非缺索引。规则侧为历史欠账：缺主键、重复/前缀冗余/未使用索引。</div></div>
+    <div class="card"><div class="lab">处置优先级</div>
+      <div class="pri">
+        <div class="p"><span class="n">P1</span><div>确认 S1 发起方并放宽轮询周期（2 s → 30–60 s），释放约 60% CPU <span class="refs"><span class="key">S1</span></span></div></div>
+        <div class="p"><span class="n">P2</span><div>落地 S3 改写（EXPLAIN 实证 cost ↓7.23%），随后看 work_mem / 并行度消化 IO 77.5% <span class="refs"><span class="key">S3</span></span></div></div>
+        <div class="p"><span class="n">P3</span><div>清理 5 处完全重复索引与 3 处前缀冗余索引，减少 OLTP 写放大 <span class="refs"><span class="key">IDX003</span><span class="key">IDX004</span></span></div></div>
+        <div class="p"><span class="n">P4</span><div>为 fact_sales（3,355 万行）等无主键大表补主键 <span class="refs"><span class="key">TBL001</span></span></div></div>
+        <div class="p"><span class="n">P5</span><div>COMMIT 占 DB Time 24.6%：检查 WAL 落盘（synchronous_commit / 盘延迟） <span class="refs"><span class="key">S8</span></span></div></div>
+      </div></div>
+  </div>
+
+  <!-- ⑦ 历史 -->
+  <h2>检查历史 <span class="hint">一格一次运行 · 点格子查看当次报告</span></h2>
+  <div class="card">
+    <div class="strip"><i class="ok"></i><i class="ok"></i><i></i><i></i><i class="ok"></i><i></i><i></i><i class="ok"></i><i></i><i></i><i></i><i class="sel"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:6px"><span>08-16</span><span>最新 ▲</span></div>
+  </div>
+  <div class="notes">📋 Collection Notes：hypopg 不可用，索引类建议仅 estimated · S3 计划取自参数占位符归一化（? → NULL） · S13 计划不可得（operator does not exist: bigint +?），不做 cost 断言</div>
+
+  <div class="foot">设计稿 R5 · 2026-08-27 · 数字：og5 dbe_perf.statement 实测 + 08-27 09:05 报告 · 占比 = 该 SQL 累计值 / 全库累计值（已过滤平台自身查询）</div>
+</div>
+</body>
+</html>
