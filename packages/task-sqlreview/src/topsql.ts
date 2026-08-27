@@ -243,9 +243,9 @@ export function insightsOf(result: TopSqlResult, dims: DimKey[], T: SqlreviewThr
     const maxAvg = Math.max(...oltp.map((it) => it.metrics.avgUs));
     out.push({ level: 'ok', text: `${oltp.length} 条 OLTP 高频短语句（单次 ≤ ${fmtUs(maxAvg)}），总量大只因调用次数，语句本身无优化空间` });
   }
+  // 与面板占比条同口径：所有上榜（去重后）SQL 在该维度的占比之和，而不只是该榜的 Top-N（否则两处"上榜合计"对不上）
   const covered = dims.filter((d) => DIMENSIONS[d].shareable).map((d) => {
-    const board = result.boards.find((b) => b.dim === d);
-    const sum = (board?.shares ?? []).reduce<number>((s, v) => s + (v ?? 0), 0);
+    const sum = items.reduce<number>((s, it) => s + (it.shares[d] ?? 0), 0);
     return `${DIMENSIONS[d].label} ${Math.min(100, Math.round(sum * 10) / 10)}%`;
   });
   if (covered.length > 0) out.push({ level: 'ok', text: `上榜 ${items.length} 条合计占：${covered.join(' · ')}——优化面集中` });

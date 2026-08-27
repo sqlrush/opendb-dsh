@@ -812,3 +812,9 @@ tasks 6/6；rollout.sh 全绿（17 条迁移）。e2e `scripts/e2e-topsql.mjs` *
 去重 9 条、每条带占比/榜位/ruleRefs、一眼结论 4 条（S6 监控 SQL 占总耗时 46.2% / COMMIT 占 DB Time 24.5% / 3 条 OLTP 短语句 /
 上榜合计 96.4%·88.9%）→ 报告 9/9 key 对齐采集 → 无头 Chrome 面板含「资源占比 / 两张榜 / 逐条分析 / 在新会话中深挖」、console 零错误
 （截图亲眼核对：状态带、负载卡、两根占比条、图例、一眼结论、两张榜排版与设计稿一致）。
+随后用平台 `/opendb tasks/runNow`（与「立即运行」按钮同路）给 user 的 `og5慢SQL Top5报表` 跑了一次三榜报告，分段截图
+（`scripts/browser/task-scroll-shots.mjs`，主区是内滚容器，fullPage 截不到下面）发现三处并修：① 计划块最长一行的
+min-content 把卡片列撑宽、右栏优化方案/cost 条被裁——卡内 grid 列钉 `minmax(0,1fr)` + 子项 `minWidth:0`；
+② IDX004 前缀冗余按索引对两两比较会对同一对象重复产出——展示层按 规则+对象+问题 去重（判定不动）；
+③ 「一眼结论」的"上榜合计"只加该榜 Top-N，而占比条加的是全部去重 SQL，两处对不上——改为同口径（全部上榜 SQL）。
+热更复核后镜像固化。

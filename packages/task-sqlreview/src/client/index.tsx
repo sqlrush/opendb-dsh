@@ -275,7 +275,7 @@ function Metric({ l, v, s, hot }: { l: string; v: string; s?: string; hot?: bool
 function PlanBlock({ plan, findings, cost, note }: { plan: string[]; findings: any[]; cost: string; note?: string }) {
   const byLine = new Map<number, any>(findings.map((f) => [Number(f.line), f]));
   return (
-    <div>
+    <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>原执行计划{cost !== '' ? <span style={{ fontWeight: 400 }}> · 总 cost {Number(cost).toLocaleString()}</span> : null}<span style={{ fontWeight: 400 }}> · 优化点标在计划行上</span>{note !== undefined && note !== '' ? <span style={{ fontWeight: 400 }}> · {note}</span> : null}</div>
       <div style={{ ...codeBlock, whiteSpace: 'pre', lineHeight: 1.75 }}>
         {plan.map((line, i) => {
@@ -358,8 +358,9 @@ function SqlCard({ it, rules, narrative, node, when }: { it: any; rules: any[]; 
           <Metric l="下盘" v={Number(m.spillBytes) > 0 ? fmtBytes(Number(m.spillBytes)) : '无'} s={Number(m.spillBytes) > 0 ? '排序/哈希外存' : undefined} hot={Number(m.spillBytes) > 0} />
         </div>
       ) : null}
-      <div style={{ padding: '14px 20px 16px', display: 'grid', gap: 14 }}>
-        <div><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>{isSpecified ? '指定 SQL' : '原 SQL'}</div><div style={codeBlock}>{String(it.text)}</div></div>
+      {/* 列宽钉死为 minmax(0,1fr)：计划块最长一行的 min-content 会把整列撑宽，把右侧的优化方案/cost 条挤出卡片（2026-08-27 实拍） */}
+      <div style={{ padding: '14px 20px 16px', display: 'grid', gap: 14, gridTemplateColumns: 'minmax(0,1fr)' }}>
+        <div style={{ minWidth: 0 }}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>{isSpecified ? '指定 SQL' : '原 SQL'}</div><div style={codeBlock}>{String(it.text)}</div></div>
         {(it.plan ?? []).length > 0 ? <PlanBlock plan={(it.plan ?? []).map(String)} findings={it.planFindings ?? []} cost={String(it.origCost ?? '')} note={it.note} />
           : String(it.note ?? '') !== '' ? <div style={{ fontSize: 13.5, color: T.dim }}>执行计划：{String(it.note)}</div> : null}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
@@ -491,8 +492,10 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
   const items: any[] = collect.items ?? [];
   const itemsByKey = new Map<string, any>(items.map((it) => [String(it.key), it]));
   const ruleFindings: any[] = collect.ruleFindings ?? [];
-  const rulesOf = (it: any): any[] => ((it.ruleRefs ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean);
-  const otherRules = ((collect.unattributedRules ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean);
+  // 规则引擎对同一对象可能重复产出（IDX004 前缀冗余按索引对两两比较）；展示层按 规则+对象+问题 去重，不改判定
+  const dedupe = (rows: any[]): any[] => { const seen = new Set<string>(); return rows.filter((f) => { const k = `${f.rule}|${f.object}|${f.problem}`; if (seen.has(k)) return false; seen.add(k); return true; }); };
+  const rulesOf = (it: any): any[] => dedupe(((it.ruleRefs ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean));
+  const otherRules = dedupe(((collect.unattributedRules ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean));
   const dims: string[] = collect.dimensions ?? [];
   const when = String(collect.collectedAt ?? current.firedAt ?? '').replace('T', ' ').slice(0, 16);
   const node = String(collect.node ?? task.config?.node ?? '');
@@ -513,7 +516,7 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
 
       <H2 hint={`任务配置的维度各出一榜（${dims.map((d) => DIM_LABEL[d] ?? d).join(' · ')}）· 同一条 SQL 可同时上多榜 · 在会话里说一句即可加减维度`}>Top SQL 榜单</H2>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${boards.length >= 3 ? 320 : 360}px, 1fr))`, gap: 12 }}>
-        {boards.map((b) => <Board key={String(b.dim)} board={b} items={itemsByKey} rulesCount={(k) => (itemsByKey.get(k)?.ruleRefs ?? []).length} />)}
+        {boards.map((b) => <Board key={String(b.dim)} board={b} items={itemsByKey} rulesCount={(k) => rulesOf(itemsByKey.get(k) ?? {}).length} />)}
       </div>
 
       <H2 hint={`上榜 SQL 去重后 ${items.length} 条 · 每条：指标 → 计划 → 违反规范 → 优化 → 解读 · 违规不在顶部汇总`}>逐条分析</H2>
