@@ -370,6 +370,9 @@ export function insightsOf(result: TopSqlResult, dims: DimKey[], T: SqlreviewThr
     return `${DIMENSIONS[d].label} ${Math.min(100, Math.round(sum * 10) / 10)}%`;
   });
   const tracked = items.length > 0 && items.every((it) => it.tracked === true);
-  if (covered.length > 0) out.push({ level: 'ok', text: `${tracked ? '跟踪的' : '上榜'} ${items.length} 条合计占：${covered.join(' · ')}${tracked ? '' : '——优化面集中'}` });
+  // 上榜合计占总耗时很小（按平均耗时/返回行数等排出来的 Top 常见）：如实说它不是负载大头，别写"优化面集中"
+  const elapsedSum = items.reduce<number>((s, it) => s + (it.shares.elapsed ?? 0), 0);
+  const tail = tracked ? '' : elapsedSum < 5 ? `——不是负载大头（按 ${dims.map((d) => DIMENSIONS[d].label).join('/')} 排出的 Top 只代表单次贵），要找吃资源的 SQL 请加开总耗时 / 执行次数榜` : '——优化面集中';
+  if (covered.length > 0) out.push({ level: elapsedSum < 5 && !tracked ? 'notice' : 'ok', text: `${tracked ? '跟踪的' : '上榜'} ${items.length} 条合计占：${covered.join(' · ')}${tail}` });
   return out.slice(0, 5);
 }
