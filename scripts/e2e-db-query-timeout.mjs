@@ -38,9 +38,10 @@ for (let t0 = Date.now(); Date.now() - t0 < 300_000; await sleep(5000)) {
 const calls = psql(`SELECT string_agg(coalesce(data->>'arguments',''), chr(10) ORDER BY seq) FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'tool/call' AND data->>'name' = 'db_query'`);
 const results = psql(`SELECT string_agg(left(regexp_replace(data::text, chr(10), ' ', 'g'), 700), chr(10) || '=====' || chr(10) ORDER BY seq) FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'tool/result'`);
 const blocks = results.split('\n=====\n');
-const okBlock = blocks.find((b) => /\bcnt\b/.test(b) && /\d+ rows/.test(b) && !/Error/.test(b));
+const okBlock = blocks.find((b) => /\bcnt\b/.test(b) && /\d+ rows/.test(b) && !/"isError": true/.test(b));   // 别用 /Error/：JSON 里有 "isError": false
 const toBlock = blocks.find((b) => /平台语句超时（2s）/.test(b));
 console.log('db_query 调用:', calls.split('\n').filter(Boolean).length, '次');
+blocks.forEach((b, i) => console.log(`  结果 ${i + 1}:`, b.replace(/\s+/g, ' ').replace(/^.*"content": \[\{"text": "/, '').slice(0, 260)));
 console.log('断言 · 60s 默认线下整表聚合成功（返回 mn/mx/cnt）:', okBlock !== undefined, okBlock ? okBlock.replace(/\s+/g, ' ').slice(0, 220) : '');
 console.log('断言 · timeout_ms=2000 时返回说明性超时提示（含 reltuples/TABLESAMPLE/timeout_ms 上限）:', toBlock !== undefined && /reltuples/.test(toBlock) && /TABLESAMPLE/.test(toBlock) && /上限 120000/.test(toBlock), toBlock ? toBlock.replace(/\s+/g, ' ').slice(0, 260) : '');
 const ok = okBlock !== undefined && toBlock !== undefined && /reltuples/.test(toBlock);

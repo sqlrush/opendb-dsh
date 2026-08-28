@@ -884,3 +884,10 @@ NotReady→Ready，OrbStack 整机抖动），14:00:55 `void heartbeat()` 的 re
 （改为只在有计划发现时显示「计划发现 N」）、底部「其他对象的规范发现」；采集器默认不再跑 12 条规则（`rules=true` 才跑），
 `det.worst` 只由执行计划发现决定；提示词删掉规范一步，深挖提示词改为带耗时构成/等待事件。rules.ts 引擎不动——规则总览 /
 阈值配置仍登记它们（借鉴成果不大改）。
+
+**db_query 语句超时 15s → 60s + timeout_ms（2026-08-28，user：1+2 一起）**：模型对 fact_sales（1.118 亿行）做 min/max/count 整表聚合
+（直连实测 19s）撞上 db seam 的 15s 线。改法：db seam `QueryOptions.timeoutMs` 生效（借连接 `SET statement_timeout` 跑完改回池默认，
+取消/超时后连接可复用），`db_query` 默认 60s、`timeout_ms` 上限 120s，采集器仍 15s；57014 报错改为说明性 `timeoutHint`
+（平台的线 + 值 + reltuples / TABLESAMPLE / 累计视图替代 + 上限）。e2e `scripts/e2e-db-query-timeout.mjs`：60s 下 17.9s 成功返回
+mn/mx/cnt；`timeout_ms=2000` 返回说明性提示。顺带：同名表 schema 提示排除 db4ai 等内部 schema（db4ai 里也有一张 snapshot）；
+任务面板「已加载未注册」红条先自动刷新一次（user 在两次连续发布窗口里加载页面撞到过，无头 Chrome 复查健康面板正常）。
