@@ -106,8 +106,12 @@ async function digInSession(text: string): Promise<string> {
   if (r?.ok === false) throw new Error(String(r.error?.message ?? 'prompt rejected'));
   return sessionId;
 }
-function digPrompt(node: string, when: string, it: any, rules: any[], narrative: any): string {
+function digPrompt(node: string, when: string, it: any, narrative: any): string {
   const m = it.metrics ?? {};
+  const p = it.profile;
+  const profileLine = p !== undefined
+    ? `单次耗时构成（最近 ${Number(p.samples)} 次均值，DB Time ${fmtUs(Number(p.avgDbUs))}/次）：${(p.parts ?? []).map((x: any) => `${String(x.name)} ${fmtUs(Number(x.us))}`).join('、')}；等待事件 Top：${(p.waits ?? []).slice(0, 4).map((w: any) => `${String(w.event)} ${fmtUs(Number(w.us))}/次（${Number(w.pct)}%）`).join('、')}`
+    : '';
   const shares = Object.entries(it.shares ?? {}).filter(([, v]) => Number(v) >= 1).map(([d, v]) => `${DIM_LABEL[d] ?? d} ${v}%`).join('、');
   const ranks = Object.entries(it.ranks ?? {}).map(([d, n]) => `${DIM_LABEL[d] ?? d} #${n}`).join(' · ');
   return [
@@ -115,9 +119,9 @@ function digPrompt(node: string, when: string, it: any, rules: any[], narrative:
     `指标：调用 ${fmtCount(m.calls)} 次 · 均 ${fmtUs(m.avgUs)} · 最长 ${fmtUs(m.maxUs)} · 总耗时 ${fmtUs(m.elapsedUs)} · CPU ${fmtUs(m.cpuUs)} · IO ${fmtUs(m.ioUs)} · 逻辑读 ${fmtCount(m.blocks)}${m.spillBytes > 0 ? ` · 下盘 ${fmtBytes(m.spillBytes)}` : ''}${shares !== '' ? `；占全库：${shares}` : ''}`,
     `SQL：${oneLine(String(it.text))}`,
     String(it.origCost ?? '') !== '' ? `原计划总 cost ${String(it.origCost)}${(it.planFindings ?? []).length > 0 ? `；脚本标注：${(it.planFindings ?? []).map((f: any) => String(f.detail)).join('；')}` : ''}` : String(it.note ?? '') !== '' ? `计划：${String(it.note)}` : '',
-    rules.length > 0 ? `归到本条的规范违规：${rules.map((f) => `[${String(f.rule)}] ${String(f.object)} ${String(f.problem)}`).join('；')}` : '',
+    profileLine,
     narrative !== undefined && String(narrative.detail ?? '') !== '' ? `报告里的解读：${String(narrative.detail)}${String(narrative.optimizedSql ?? '') !== '' ? `；已给出改写（verify=${String(narrative.verify)}）：${oneLine(String(narrative.optimizedSql))}` : ''}` : '',
-    '任务：请围绕这条 SQL 深挖——先用工具（db_query EXPLAIN / db_overview / metrics_chart / sqlreview_collect 等）取证，再给出：1) 瓶颈根因与依据；2) 可行的优化方案（改写请用 EXPLAIN 实证 cost 对比；索引类注明需人工执行）；3) 预期收益与风险。本平台只读，不执行任何变更。不要向我反问，直接给结论。',
+    '任务：请围绕这条 SQL 深挖性能——先用工具（db_query EXPLAIN / db_overview / metrics_chart / sqlreview_collect 等）取证，再给出：1) 瓶颈根因与依据（结合耗时构成与等待事件）；2) 可行的优化方案（改写请用 EXPLAIN 实证 cost 对比；索引类注明需人工执行）；3) 预期收益与风险。只谈性能不谈规范。本平台只读，不执行任何变更。不要向我反问，直接给结论。',
   ].filter((s) => s !== '').join('\n');
 }
 /** 同 task-health 的 DigLink：文案与三态（`${label} →` / 开会话中… / 失败，重试）一字不差 */
@@ -222,7 +226,7 @@ function ShareCard({ dims, items, workload, insights }: { dims: string[]; items:
 }
 
 // ───────────────────────────────────────────── ③ 榜单（每个维度一张）
-function Board({ board, items, rulesCount }: { board: any; items: Map<string, any>; rulesCount: (key: string) => number }) {
+function Board({ board, items, findingsCount }: { board: any; items: Map<string, any>; findingsCount: (key: string) => number }) {
   const dim = String(board.dim);
   const values: number[] = (board.values ?? []).map(Number);
   const max = Math.max(...values, 1e-9);
@@ -238,7 +242,7 @@ function Board({ board, items, rulesCount }: { board: any; items: Map<string, an
         const share = board.shares?.[i];
         const v = values[i];
         const m = it.metrics ?? {};
-        const n = rulesCount(String(k));
+        const n = findingsCount(String(k));
         return (
           <a key={String(k)} href={`#topsql-${String(k)}`} style={{ display: 'grid', gridTemplateColumns: '18px minmax(0,1fr)', gap: 10, padding: '9px 0', borderTop: i === 0 ? 'none' : `1px solid ${T.line}`, alignItems: 'start', color: 'inherit', textDecoration: 'none', minWidth: 0 }}>
             <div style={{ font: `600 13px ${mono}`, color: T.dim, paddingTop: 3 }}>{i + 1}</div>
@@ -254,7 +258,7 @@ function Board({ board, items, rulesCount }: { board: any; items: Map<string, an
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: T.dim, marginTop: 3, flexWrap: 'wrap' }}>
                 <Tag>{String(it.kind)}</Tag>
                 <span>{fmtCount(Number(m.calls))} 次 · 均 {fmtUs(Number(m.avgUs))}{Number(m.spillBytes) > 0 ? ' · 下盘' : ''}</span>
-                <span style={{ fontSize: 11.5, borderRadius: 4, padding: '0 6px', fontWeight: n > 0 ? 600 : 500, background: n > 0 ? T.sev.warn.soft : T.fill, color: n > 0 ? T.sev.warn.c : T.dim }}>规范 {n}</span>
+                {n > 0 ? <span style={{ fontSize: 11.5, borderRadius: 4, padding: '0 6px', fontWeight: 600, background: T.sev.warn.soft, color: T.sev.warn.c }}>计划发现 {n}</span> : null}
               </div>
             </div>
           </a>
@@ -336,24 +340,6 @@ function ProfileBlock({ p }: { p: any }) {
   );
 }
 
-function RuleRows({ rules }: { rules: any[] }) {
-  if (rules.length === 0) return <div style={{ fontSize: 13.5, color: T.dim }}>0 条——本条涉及的对象没有规则命中</div>;
-  return (
-    <div style={{ display: 'grid', gap: 0 }}>
-      {rules.map((f, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: '8px 64px minmax(0,1fr)', gap: 10, alignItems: 'start', fontSize: 13.5, padding: '6px 0', borderTop: i === 0 ? 'none' : `1px solid ${T.line}` }}>
-          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: sev(String(f.level)).c, marginTop: 9 }} />
-          <span style={keyChip}>{String(f.rule)}</span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: mono, fontSize: 12.5, color: T.sub, wordBreak: 'break-all' }}>{String(f.object)}</div>
-            <div>{String(f.problem)}</div>
-            {String(f.advice ?? '') !== '' ? <div style={{ fontSize: 13, color: T.dim }}>{String(f.advice)}</div> : null}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 function CostBars({ orig, next }: { orig: number; next: number }) {
   const max = Math.max(orig, next, 1);
   const drop = orig > 0 ? Math.round((1 - next / orig) * 1000) / 10 : 0;
@@ -371,7 +357,7 @@ function CostBars({ orig, next }: { orig: number; next: number }) {
     </div>
   );
 }
-function SqlCard({ it, rules, narrative, node, when }: { it: any; rules: any[]; narrative: any; node: string; when: string }) {
+function SqlCard({ it, narrative, node, when }: { it: any; narrative: any; node: string; when: string }) {
   const m = it.metrics ?? {}; const sh = it.shares ?? {};
   const verify = String(narrative?.verify ?? (it.explainOk ? 'no-gain' : 'plan-unavailable'));
   const badge = VERIFY_BADGE[verify] ?? VERIFY_BADGE['plan-unavailable'];
@@ -412,52 +398,25 @@ function SqlCard({ it, rules, narrative, node, when }: { it: any; rules: any[]; 
         <div style={{ minWidth: 0 }}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>{isSpecified ? '指定 SQL' : '原 SQL'}</div><div style={codeBlock}>{String(it.text)}</div></div>
         {(it.plan ?? []).length > 0 ? <PlanBlock plan={(it.plan ?? []).map(String)} findings={it.planFindings ?? []} cost={String(it.origCost ?? '')} note={it.note} />
           : String(it.note ?? '') !== '' ? <div style={{ fontSize: 13.5, color: T.dim }}>执行计划：{String(it.note)}</div> : null}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>违反规范 <span style={{ fontWeight: 400 }}>· 本条涉及对象{(it.tables ?? []).length > 0 ? ` ${(it.tables as string[]).join(' / ')}` : ''} · {rules.length} 条（规则与级别来自脚本，不可下调）</span></div>
-            <RuleRows rules={rules} />
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>优化方案{verify === 'explain-verified' ? <span style={{ fontWeight: 400 }}> · 改写类 · 已用 db_query EXPLAIN 实证</span> : verify === 'estimated' ? <span style={{ fontWeight: 400 }}> · 索引类 · 预估</span> : null}</div>
-            {String(narrative?.optimizedSql ?? '') !== '' ? <div style={{ ...codeBlock, background: T.sev.ok.soft }}>{String(narrative.optimizedSql)}</div>
-              : <div style={{ fontSize: 13.5, color: T.dim }}>{narrative === undefined ? '模型解读尚未生成（报告未提交或本条未被解读）' : badge.t}</div>}
-            {verify === 'explain-verified' && orig > 0 && next > 0 ? <CostBars orig={orig} next={next} /> : null}
-          </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>优化方案{verify === 'explain-verified' ? <span style={{ fontWeight: 400 }}> · 改写类 · 已用 db_query EXPLAIN 实证</span> : verify === 'estimated' ? <span style={{ fontWeight: 400 }}> · 索引类 · 预估</span> : null}</div>
+          {String(narrative?.optimizedSql ?? '') !== '' ? <div style={{ ...codeBlock, background: T.sev.ok.soft }}>{String(narrative.optimizedSql)}</div>
+            : <div style={{ fontSize: 13.5, color: T.dim }}>{narrative === undefined ? '模型解读尚未生成（报告未提交或本条未被解读）' : badge.t}</div>}
+          {verify === 'explain-verified' && orig > 0 && next > 0 ? <CostBars orig={orig} next={next} /> : null}
         </div>
         {String(narrative?.detail ?? '') !== '' ? <div style={{ fontSize: 15, color: T.sub }}>{String(narrative.detail)}</div> : null}
         {/* 右下角一排文字链，与监控面板的维度卡/发现行同款：复制 · 在会话里深挖 → */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 14, flexWrap: 'wrap', paddingTop: 2 }}>
           <CopyLink text={String(it.text)} label="复制 SQL" />
           {String(narrative?.optimizedSql ?? '') !== '' ? <CopyLink text={String(narrative.optimizedSql)} label="复制优化后 SQL" /> : null}
-          <DigLink prompt={digPrompt(node, when, it, rules, narrative)} label="在会话里深挖" />
+          <DigLink prompt={digPrompt(node, when, it, narrative)} label="在会话里深挖" />
         </div>
       </div>
     </div>
   );
 }
 
-// ───────────────────────────────────────────── 其他：未归因违规 / 根因优先级 / 历史
-function OtherRules({ rules }: { rules: any[] }) {
-  const [open, setOpen] = useState(false);
-  if (rules.length === 0) return null;
-  const byRule = new Map<string, { n: number; level: string }>();
-  for (const f of rules) {
-    const cur = byRule.get(String(f.rule)) ?? { n: 0, level: String(f.level) };
-    byRule.set(String(f.rule), { n: cur.n + 1, level: cur.level });
-  }
-  return (
-    <>
-      <H2 hint={`与上榜 SQL 无关的 ${rules.length} 条 · 默认折叠`}>其他对象的规范发现</H2>
-      <div style={{ ...card, padding: '12px 20px' }}>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 14 }}>
-          {[...byRule.entries()].map(([rule, v]) => <span key={rule} style={{ fontSize: 11.5, borderRadius: 4, padding: '0 6px', fontWeight: 600, background: sev(v.level).soft, color: sev(v.level).c }}>{rule} ×{v.n}</span>)}
-          <Link onClick={() => setOpen(!open)}>{open ? '收起 ▴' : `展开 ${rules.length} 条 ▾`}</Link>
-        </div>
-        {open ? <div style={{ marginTop: 10 }}><RuleRows rules={rules} /></div> : null}
-      </div>
-    </>
-  );
-}
+// ───────────────────────────────────────────── 其他：根因优先级 / 历史
 function RunStrip({ runs, selId, onSel }: { runs: any[]; selId: string; onSel: (id: string) => void }) {
   const cells = runs.slice(0, 30).reverse();
   if (cells.length === 0) return null;
@@ -540,11 +499,7 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
 
   const items: any[] = collect.items ?? [];
   const itemsByKey = new Map<string, any>(items.map((it) => [String(it.key), it]));
-  const ruleFindings: any[] = collect.ruleFindings ?? [];
-  // 规则引擎对同一对象可能重复产出（IDX004 前缀冗余按索引对两两比较）；展示层按 规则+对象+问题 去重，不改判定
-  const dedupe = (rows: any[]): any[] => { const seen = new Set<string>(); return rows.filter((f) => { const k = `${f.rule}|${f.object}|${f.problem}`; if (seen.has(k)) return false; seen.add(k); return true; }); };
-  const rulesOf = (it: any): any[] => dedupe(((it.ruleRefs ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean));
-  const otherRules = dedupe(((collect.unattributedRules ?? []) as number[]).map((i) => ruleFindings[i]).filter(Boolean));
+  // 规范规则已从这张大盘去掉（user 2026-08-27：与优化方案无关）；旧存档里的 ruleFindings/ruleRefs 一律忽略
   const dims: string[] = collect.dimensions ?? [];
   const mode = String(collect.mode ?? 'top');
   const shareDims: string[] = Array.isArray(collect.shareDims) ? collect.shareDims : dims;
@@ -570,17 +525,15 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
         <>
           <H2 hint={`任务配置的维度各出一榜（${dims.map((d) => DIM_LABEL[d] ?? d).join(' · ')}）· 同一条 SQL 可同时上多榜 · 在会话里说一句即可加减维度`}>Top SQL 榜单</H2>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${boards.length >= 3 ? 320 : 360}px, 1fr))`, gap: 12 }}>
-            {boards.map((b) => <Board key={String(b.dim)} board={b} items={itemsByKey} rulesCount={(k) => rulesOf(itemsByKey.get(k) ?? {}).length} />)}
+            {boards.map((b) => <Board key={String(b.dim)} board={b} items={itemsByKey} findingsCount={(k) => (itemsByKey.get(k)?.planFindings ?? []).length} />)}
           </div>
         </>
       ) : null}
 
       <H2 hint={mode === 'track'
-        ? `会话里指定跟踪的 ${Number(collect.trackedCount ?? items.length)} 条（找到运行记录 ${withRecord} 条）· 不出榜 · 每条：指标 → 耗时构成/等待 → 计划 → 违反规范 → 优化 → 解读`
-        : `上榜 SQL 去重后 ${items.length} 条 · 每条：指标 → 耗时构成/等待 → 计划 → 违反规范 → 优化 → 解读 · 违规不在顶部汇总`}>逐条分析</H2>
-      {items.map((it) => <SqlCard key={String(it.key)} it={it} rules={rulesOf(it)} narrative={narrativeByKey.get(String(it.key))} node={node} when={when} />)}
-
-      <OtherRules rules={otherRules} />
+        ? `会话里指定跟踪的 ${Number(collect.trackedCount ?? items.length)} 条（找到运行记录 ${withRecord} 条）· 不出榜 · 每条：指标 → 耗时构成/等待事件 → 计划 → 优化 → 解读`
+        : `上榜 SQL 去重后 ${items.length} 条 · 每条：指标 → 耗时构成/等待事件 → 计划 → 优化 → 解读`}>逐条分析</H2>
+      {items.map((it) => <SqlCard key={String(it.key)} it={it} narrative={narrativeByKey.get(String(it.key))} node={node} when={when} />)}
 
       {(String(data?.rootCause ?? '') !== '' || (data?.priorities ?? []).length > 0) ? (
         <>

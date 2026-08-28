@@ -879,3 +879,8 @@ NotReady→Ready，OrbStack 整机抖动），14:00:55 `void heartbeat()` 的 re
 `streamIdleTimeoutMs`（默认 5 分钟）也没触发，推测上游流一直在喂 keep-alive 空包、就是不出 token。dsh 没有"整次请求总时长"的开关
 （只有 `streamIdleTimeoutMs` 与 `retryPolicy`），不改核心的兜底放在平台层：runtime-worker 增加**轮次活动看门狗** `turnIdleMs`
 （默认 10 分钟）——会话日志事件数 10 分钟不变即判上游卡死，取消本轮并换 id 重投（计 attempt，3 次死信报错）。
+
+**规范从 Top SQL 大盘去掉（2026-08-27 晚，user：规范和优化方案之间没啥关系）**：面板删掉每张卡的「违反规范」、榜单行的「规范 N」
+（改为只在有计划发现时显示「计划发现 N」）、底部「其他对象的规范发现」；采集器默认不再跑 12 条规则（`rules=true` 才跑），
+`det.worst` 只由执行计划发现决定；提示词删掉规范一步，深挖提示词改为带耗时构成/等待事件。rules.ts 引擎不动——规则总览 /
+阈值配置仍登记它们（借鉴成果不大改）。

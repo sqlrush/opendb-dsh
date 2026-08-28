@@ -66,19 +66,20 @@ function modelView(items: CollectedItem[], ruleFindings: RuleFinding[]) {
       ? { samples: it.profile.samples, avgDbMs: ms(it.profile.avgDbUs), partsMs: Object.fromEntries(it.profile.parts.map((p) => [p.name, ms(p.us)])), topWaits: it.profile.waits.slice(0, 4).map((w) => `${w.type} ${w.event} 均 ${ms(w.us)} ms/次（${w.pct}%）`) }
       : it.profileNote,
     explainOk: it.explainOk, origCost: it.origCost, plan: it.plan.slice(0, 20), planNotes: it.planFindings.map((f) => f.detail), note: it.note,
-    rules: it.ruleRefs.map((i) => ruleFindings[i]).filter(Boolean).map((f) => ({ rule: f.rule, level: f.level, object: f.object, problem: f.problem })),
+    ...(it.ruleRefs.length > 0 ? { rules: it.ruleRefs.map((i) => ruleFindings[i]).filter(Boolean).map((f) => ({ rule: f.rule, level: f.level, object: f.object, problem: f.problem })) } : {}),
   }));
 }
 
 function defineSqlreviewCollectTool(deps: Deps) {
   return defineTool({
     name: 'sqlreview_collect',
-    description: `Top SQL 报表确定性采集器：按指定维度（${Object.values(DIMENSIONS).map((d) => `${d.key}=${d.label}`).join('、')}）各取 dbe_perf.statement 的 Top-N，去重后每条带全量指标、占全库比例、榜位、类型判定、EXPLAIN 计划与脚本标注的优化点，并把 12 条审核规则的违规归到引用该表的 SQL 名下；另产出负载总量与脚本生成的「一眼结论」。结果自动存档供任务面板直读。用户在会话里说"按执行次数和耗时分别 Top5"就传 dimensions=["calls","elapsed"], topN=5。`,
+    description: `Top SQL 报表确定性采集器：按指定维度（${Object.values(DIMENSIONS).map((d) => `${d.key}=${d.label}`).join('、')}）各取 dbe_perf.statement 的 Top-N，去重后每条带全量指标、占全库比例、榜位、类型判定、单次耗时构成与等待事件、EXPLAIN 计划与脚本标注的优化点；另产出负载总量与脚本生成的「一眼结论」。只谈性能不谈规范（规范规则默认不跑）。结果自动存档供任务面板直读。用户在会话里说"按执行次数和耗时分别 Top5"就传 dimensions=["calls","elapsed"], topN=5；说"跟踪这几条 SQL"就传 sqls=[原文], dimensions=[]。`,
     parameters: {
       node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
       dimensions: { type: 'array', items: { type: 'string' }, description: '榜单维度数组（elapsed/calls/avg/cpu/io/blocks/dbtime/spill/rows，也接受中文如 "执行次数"）；省略 = ["elapsed","calls","avg"]。跟踪模式（只分析 sqls 里那几条）传 []。' },
       topN: { type: 'integer', description: '每个维度的榜单条数（默认 5，最多 20）；跟踪模式忽略。' },
       sqls: { type: 'array', items: { type: 'string' }, description: '跟踪模式：用户在对话里讨论/贴出并要求跟踪的 SQL 原文（配合 dimensions=[]，结果只含这几条，会到 dbe_perf.statement 里按指纹找它们的运行记录）。榜单模式留空。' },
+      rules: { type: 'boolean', description: '是否附带 12 条规范规则的违规（默认 false：Top SQL 报表只谈性能，不谈规范）。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { content: { type: 'string', required: true } } },
@@ -144,13 +145,14 @@ function defineSqlreviewCollectTool(deps: Deps) {
         }
       }
 
-      // 3) 规则引擎：目录类（联动 Top SQL 文本）+ 文本类；再按引用的表归因到各条 SQL
+      // 3) 规范规则（目录类 + 文本类）默认不再进 Top SQL 报表（user 2026-08-27：规范与优化方案没关系，大盘里去掉）；
+      //    规则引擎本身保留（规则总览/阈值配置仍登记它们），rules=true 时才跑并归因
+      const withRules = args.rules === true;
       const texts = items.map((s) => s.text);
-      const ruleFindings: RuleFinding[] = [
-        ...await runCatalogRules(q, texts, notes, T),
-        ...textRules(items.map((s) => ({ key: s.key, text: s.text }))),
-      ].sort((a, b) => LEVEL_ORDER[b.level] - LEVEL_ORDER[a.level]);
-      const attribution = attributeRules(items, ruleFindings);
+      const ruleFindings: RuleFinding[] = withRules
+        ? [...await runCatalogRules(q, texts, notes, T), ...textRules(items.map((s) => ({ key: s.key, text: s.text })))].sort((a, b) => LEVEL_ORDER[b.level] - LEVEL_ORDER[a.level])
+        : [];
+      const attribution = withRules ? attributeRules(items, ruleFindings) : { byKey: {} as Record<string, number[]>, unattributed: [] as number[] };
       for (const it of items) it.ruleRefs = attribution.byKey[it.key] ?? [];
 
       // 4) hypopg 可用性（只探测不启用）
@@ -195,13 +197,13 @@ function defineSqlreviewCollectTool(deps: Deps) {
       }
       const header = [
         mode === 'track'
-          ? `-- sqlreview_collect · ${node.name} · 跟踪模式：会话指定 ${extraSqls.length} 条（找到运行记录 ${items.filter((it) => it.kind !== '指定').length} 条）· 不出榜 · 规则违规 ${ruleFindings.length} 条 · worst=${worst}（${LEVEL_CN[worst]}）`
-          : `-- sqlreview_collect · ${node.name} · 维度 ${dims.map((d) => DIMENSIONS[d].label).join('/')} · 各 Top ${topN} · 去重 ${items.length} 条 · 规则违规 ${ruleFindings.length} 条 · worst=${worst}（${LEVEL_CN[worst]}）`,
+          ? `-- sqlreview_collect · ${node.name} · 跟踪模式：会话指定 ${extraSqls.length} 条（找到运行记录 ${items.filter((it) => it.kind !== '指定').length} 条）· 不出榜 · 计划发现 ${planFindingTotal} 条 · worst=${worst}（${LEVEL_CN[worst]}）`
+          : `-- sqlreview_collect · ${node.name} · 维度 ${dims.map((d) => DIMENSIONS[d].label).join('/')} · 各 Top ${topN} · 去重 ${items.length} 条 · 计划发现 ${planFindingTotal} 条 · worst=${worst}（${LEVEL_CN[worst]}）`,
         `-- 一眼结论（脚本按占比生成）：${insights.length > 0 ? insights.map((i) => i.text).join('；') : '无'}`,
         `-- 以下 JSON 是唯一事实来源：det 逐字进报告；sqlItems 按 key 逐条给 optimizedSql/newCost/verify/detail（每条都要有）`,
         `-- 优化改写请另行 db_query EXPLAIN 实证（不要 EXPLAIN ANALYZE）；hypopg=${hypopg ? '可用' : '不可用'}`,
       ].join('\n');
-      const forModel = { det: payload.det, node: node.name, mode, dimensions: dims, workload: top.workload, insights: insights.map((i) => i.text), sqlItems: modelView(items, ruleFindings), unattributedRules: attribution.unattributed.map((i) => ruleFindings[i]).map((f) => ({ rule: f.rule, level: f.level, object: f.object, problem: f.problem })), collectionNotes: notes };
+      const forModel = { det: payload.det, node: node.name, mode, dimensions: dims, workload: top.workload, insights: insights.map((i) => i.text), sqlItems: modelView(items, ruleFindings), collectionNotes: notes };
       return { content: clampText(`${header}${archiveLine}\n${JSON.stringify(forModel, null, 1)}`, deps.maxContentBytes) };
     },
   } as any);
