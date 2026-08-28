@@ -10,8 +10,8 @@
 import { Component, type ReactNode } from 'react';
 import { makeSidebar } from './sidebar.tsx';
 import { makeOverlay } from './overlay.tsx';
-import { startQueueSync } from './queue-sync.ts';
-import { setState } from './state.ts';
+import { startQueueSync, currentSessionId } from './queue-sync.ts';
+import { getState, setState } from './state.ts';
 
 /** 构建期由 build-client.mjs 从根 package.json 注入（esbuild define）；类型检查时只需声明 */
 declare const __OPENDB_VERSION__: string;
@@ -146,6 +146,31 @@ export function apply(ctx: any): void {
     w.__opendbHarness__ = w.__opendbHarness__ ?? {};
     w.__opendbHarness__.openSession = (id: string) => { setState({ view: 'chat' }); ctx.sessions.open(id); };
   } catch { /* 桥不可用时面板退回 ctx.sessions.open */ }
+
+  // 2026-08-28 user 报障：在任务报表页点侧栏顶部「新会话」没反应——那个按钮是官方侧栏的，它在聊天区起草新会话，
+  // 但我们的 shell.overlay（任务/数据库/资源页）还盖在上面，看起来就是没反应。两道保险，都不碰官方 DOM：
+  // ① 捕获阶段监听侧栏里「新会话」的点击 → 切回聊天区；② 当前会话 id 变成一个新 id（任何原生入口打开会话）→ 同样切回。
+  try {
+    const isNewSessionControl = (start: HTMLElement | null): boolean => {
+      let el: HTMLElement | null = start;
+      for (let i = 0; i < 5 && el !== null; i += 1, el = el.parentElement) {
+        const text = (el.textContent ?? '').trim();
+        if (/^(新会话|New session|New chat)$/i.test(text)) return el.getBoundingClientRect().left < 400;
+      }
+      return false;
+    };
+    document.addEventListener('click', (ev) => {
+      if (getState().view !== 'chat' && isNewSessionControl(ev.target as HTMLElement | null)) setState({ view: 'chat' });
+    }, true);
+    let lastCurrent = currentSessionId(ctx);
+    const watch = setInterval(() => {
+      const c = currentSessionId(ctx);
+      if (c === lastCurrent) return;
+      lastCurrent = c;
+      if (c !== undefined && getState().view !== 'chat') setState({ view: 'chat' });
+    }, 500);
+    if (typeof ctx.effect === 'function') ctx.effect(() => () => clearInterval(watch), 'harness.currentSessionWatch');
+  } catch { /* 切视图保险失效不影响启动 */ }
 
   // 排队投影 → 原生 queue dock（见 queue-sync.ts）；同步器自身永不抛，这里再兜一层不让它影响启动
   try {

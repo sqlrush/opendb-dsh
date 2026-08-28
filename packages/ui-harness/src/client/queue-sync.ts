@@ -16,7 +16,7 @@ interface QueueItem { id: string; placement: 'queued' | 'steering' | 'context'; 
 const POLL_MS = 1000;
 
 /** Current session id as the dsh client runtime tracks it (undefined when nothing is open). */
-function currentSessionId(ctx: any): string | undefined {
+export function currentSessionId(ctx: any): string | undefined {
   try {
     const current = ctx.sessions?.list?.getSnapshot?.()?.current;
     return typeof current === 'string' && current !== '' ? current : undefined;
