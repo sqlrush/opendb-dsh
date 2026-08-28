@@ -28,6 +28,9 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ### Fixed
 - 在任务报表 / 数据库 / 资源页点侧栏「新会话」没反应：那是官方侧栏按钮，在聊天区起草新会话但被任务页盖住。现在捕获该点击
   并切回聊天区；任何入口打开新会话（当前会话 id 变化）也会切回。行为测试 `scripts/browser/new-session-from-task.mjs`。
+- `db_query` 语句超时从 15s 放到 60s，模型可按语句传 `timeout_ms`（上限 120s）；超时报错改为说明性文字（是平台的线、值多少、
+  改用 `pg_class.reltuples` / `TABLESAMPLE` / 累计统计视图）。采集器等仍用 db seam 的 15s。
+- 任务面板「已加载但未注册」红条先自动刷新一次（连续发布窗口里加载的页面常见），刷新后仍如此才提示代码 bug。
 - `db_query` 报「关系不存在」时顺手查同名表在哪个 schema 并给出应写的全名（模型常把 WDR 快照写成 `dbe_perf.snapshot`，
   实际在 `snapshot.snapshot`）；工具描述补充 WDR 快照位置。
 - 归档的任务不再按 cron 触发（一个归档的 `*/10` 定时对话任务曾在无人可见的情况下跑了 3 小时）。

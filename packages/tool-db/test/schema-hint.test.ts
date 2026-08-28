@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildHint, closestColumn, cteNames, missingColumn, referencedRelations } from '../src/schema-hint.ts';
+import { buildHint, closestColumn, cteNames, missingColumn, referencedRelations, timeoutHint } from '../src/schema-hint.ts';
+
+test('timeoutHint：写明是平台的线、值、上限与更省的替代做法', () => {
+  const h = timeoutHint(60000, 120000);
+  assert.match(h, /平台语句超时（60s）/);
+  assert.match(h, /pg_class\.reltuples/);
+  assert.match(h, /TABLESAMPLE/);
+  assert.match(h, /timeout_ms（本次 60000，上限 120000）/);
+});
 
 const WAIT_EVENTS = ['nodename', 'type', 'event', 'wait', 'failed_wait', 'total_wait_time', 'avg_wait_time', 'max_wait_time', 'min_wait_time', 'last_updated'];
 const STATEMENT = ['unique_sql_id', 'query', 'n_calls', 'total_elapse_time', 'db_time', 'cpu_time'];

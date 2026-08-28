@@ -101,7 +101,10 @@ export default class DbService extends Service {
     const maxRows = options.maxRows ?? this.cfg.maxRows;   // callers (tool-db) clamp model-facing requests themselves; collector needs larger scans
     const pool = this.poolFor(node);
     const started = Date.now();
-    const result = lastResult(await pool.query(sql));
+    // 语句超时：连接池默认 statementTimeoutMs（采集器等用）；调用方可按语句放宽/收紧（db_query 默认 60s，user 2026-08-28）
+    const timeoutMs = options.timeoutMs !== undefined && Number.isFinite(options.timeoutMs) ? Math.max(1000, Math.floor(options.timeoutMs)) : undefined;
+    const raw = timeoutMs === undefined || timeoutMs === this.cfg.statementTimeoutMs ? await pool.query(sql) : await this.queryWithTimeout(pool, sql, timeoutMs);
+    const result = lastResult(raw);
     const ms = Date.now() - started;
     const all = (result.rows ?? []) as Record<string, unknown>[];
     const rows = all.length > maxRows ? all.slice(0, maxRows) : all;
@@ -134,6 +137,25 @@ export default class DbService extends Service {
       return { ok: true, version: String(r.rows[0]?.version ?? '') };
     } catch (cause) {
       return { ok: false, error: String((cause as Error).message ?? cause) };
+    }
+  }
+
+  /** 借一条连接改 statement_timeout 跑这一条，跑完改回池默认再归还（取消/超时后连接仍可用；致命错误则销毁） */
+  private async queryWithTimeout(pool: pg.Pool, sql: string, timeoutMs: number): Promise<pg.QueryResult | pg.QueryResult[]> {
+    const c = await pool.connect();
+    let broken = false;
+    try {
+      await c.query(`SET statement_timeout = ${timeoutMs}`);
+      return await c.query(sql);
+    } catch (cause) {
+      const code = (cause as { code?: string }).code ?? '';
+      broken = code !== '' && !code.startsWith('57') && !code.startsWith('42') && !code.startsWith('22') && !code.startsWith('25');   // 非语句级错误：连接可能已坏
+      throw cause;
+    } finally {
+      if (broken) c.release(true);
+      else {
+        try { await c.query(`SET statement_timeout = ${this.cfg.statementTimeoutMs}`); c.release(); } catch { c.release(true); }
+      }
     }
   }
 

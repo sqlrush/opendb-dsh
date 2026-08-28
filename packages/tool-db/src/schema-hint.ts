@@ -107,5 +107,20 @@ export function buildHint(
   return `\n提示（openGauss dbe_perf 视图列名与 PostgreSQL 不同，请按下面的实际列改写后重试）：\n- ${lines.join('\n- ')}`;
 }
 
+/** PG 57014 = 语句被取消（statement_timeout 到点） */
+export const TIMEOUT_CODE = '57014';
+
+/**
+ * 语句超时的说明（2026-08-28 user：模型对 3,355 万行事实表做无谓词整表聚合撞上平台 15s 线，报错文字看不出是谁的线）。
+ * 把超时值、可放宽的上限和更省的替代做法一起给模型，它下一次自己选轻量路径。
+ */
+export function timeoutHint(timeoutMs: number, maxTimeoutMs: number): string {
+  const s = Math.round(timeoutMs / 1000);
+  return `平台语句超时（${s}s）：canceling statement due to statement timeout。这是 opendb 对诊断查询的保护线，不是数据库故障。`
+    + `大表整表聚合 / 无谓词扫描请改用更省的做法：行数用 pg_class.reltuples（SELECT reltuples FROM pg_class WHERE relname='<表>'）估算；`
+    + `分布/极值用 TABLESAMPLE SYSTEM(1) 抽样；负载与耗时用 dbe_perf.statement / snapshot.snap_* 的累计统计。`
+    + `确有必要跑全量时可传 timeout_ms（本次 ${timeoutMs}，上限 ${maxTimeoutMs}）。`;
+}
+
 /** 工具描述里的一行速查（每轮都会发给模型，保持短） */
 export const OG_SCHEMA_HINT = 'openGauss dbe_perf 视图列名与 PG 不同——wait_events(type,event,wait,total_wait_time,avg_wait_time…，没有 event_name)、statement(unique_sql_id,query,n_calls,total_elapse_time,db_time,cpu_time…)、os_runtime(name,value 键值对：LOAD/NUM_CPUS/BUSY_TIME…)、session_stat_activity≈pg_stat_activity；WDR 快照不在 dbe_perf，在 schema snapshot：snapshot.snapshot(snapshot_id,start_ts,end_ts) 与 snapshot.snap_*；不确定先查 information_schema.columns / tables。';

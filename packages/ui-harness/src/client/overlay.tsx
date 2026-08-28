@@ -66,7 +66,10 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   function DefaultTaskPanel({ task, runId }: { task: any; runId?: string }) {
     const [runs, setRuns] = useState<any[]>([]);
     const [bundle] = useState(() => pluginBundleFailed(String(task.type)));
-    const [reloading] = useState(() => bundle.failed && autoReloadOnce(`任务类型「${String(task.type)}」的面板插件包未加载（HTTP ${bundle.status ?? '无请求'}）`));
+    // 2026-08-28 user：连续两次发布的窗口里加载的页面，包"拿到了"却没注册出面板（内容不完整/版本错配），
+    // 这种情况刷新是能好的——先自动刷一次，刷完还这样才按代码 bug 提示
+    const [reloading] = useState(() => (bundle.failed || bundle.loaded)
+      && autoReloadOnce(bundle.failed ? `任务类型「${String(task.type)}」的面板插件包未加载（HTTP ${bundle.status ?? '无请求'}）` : `任务类型「${String(task.type)}」的面板插件包已加载但未注册面板`));
     const refresh = async () => { try { setRuns((await call('runs/list', { taskId: task.id })).runs); } catch { /* retry */ } };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, [task.id]);
     return (
@@ -83,8 +86,9 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
           </div>
         ) : bundle.loaded ? (
           <div style={{ margin: '10px 0 0', padding: '9px 12px', borderRadius: 8, fontSize: 13, background: '#fdecec', color: '#b53434', border: '1px solid rgba(214,69,69,.25)' }}>
-            <b>面板插件包已加载，但没有注册出「{task.type}」的面板</b>——插件初始化时抛了异常（这是代码 bug，刷新解决不了）。
-            请打开浏览器 console，把 <code>task-{task.type}</code> 相关的报错发给开发者。
+            <b>面板插件包已加载，但没有注册出「{task.type}」的面板</b>
+            {reloading ? '——多半是页面正赶上发布窗口加载的，正在自动刷新…' : '——已自动刷新过一次仍如此，才可能是插件初始化异常：请打开浏览器 console，把 '}
+            {reloading ? null : <><code>task-{task.type}</code> 相关的报错发给开发者。<button type="button" onClick={() => location.reload()} style={{ ...S.btn, marginLeft: 8, color: '#b53434' }}>再刷新一次</button></>}
           </div>
         ) : null}
         {/*
