@@ -505,7 +505,10 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
   // 规范规则已从这张大盘去掉（user 2026-08-27：与优化方案无关）；旧存档里的 ruleFindings/ruleRefs 一律忽略
   const dims: string[] = collect.dimensions ?? [];
   const mode = String(collect.mode ?? 'top');
-  const shareDims: string[] = Array.isArray(collect.shareDims) ? collect.shareDims : dims;
+  // 旧存档只按配置维度记 shareDims（如 ["avg"]，不可分摊）→ 退回六个标准资源维度，占比条不空
+  const STANDARD_SHARE_DIMS = ['elapsed', 'dbtime', 'cpu', 'io', 'blocks', 'calls'];
+  const storedShareDims: string[] = Array.isArray(collect.shareDims) ? collect.shareDims : dims;
+  const shareDims: string[] = storedShareDims.some((d) => d !== 'avg') ? storedShareDims : STANDARD_SHARE_DIMS;
   const when = String(collect.collectedAt ?? current.firedAt ?? '').replace('T', ' ').slice(0, 16);
   const node = String(collect.node ?? task.config?.node ?? '');
   const boards: any[] = collect.boards ?? [];

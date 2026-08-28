@@ -119,7 +119,11 @@ function defineSqlreviewCollectTool(deps: Deps) {
       // 统一 S 编号：榜单项在前（已编号），指定/跟踪项接着编（跟踪模式即 S1..Sn 按对话顺序）
       specified.forEach((s, i) => { s.label = `S${top.items.length + i + 1}`; });
       const all: TopSqlItem[] = [...top.items, ...specified.filter((s) => !top.items.some((it) => it.key === s.key))];
-      const shareDims: DimKey[] = mode === 'track' ? TRACK_SHARE_DIMS : dims;
+      // 占比条的维度：榜单只决定"谁上榜"，资源占比始终按六个标准资源维度画（配置里可分摊的维度排前面）。
+      // 2026-08-28 user：只按平均耗时出 Top1 时整块占比没了——avg 不是可分摊资源，但上榜 SQL 的总耗时/CPU/IO 占比照样该看
+      const shareDims: DimKey[] = mode === 'track'
+        ? TRACK_SHARE_DIMS
+        : [...dims.filter((d) => DIMENSIONS[d].shareable), ...TRACK_SHARE_DIMS.filter((d) => !dims.includes(d))];
 
       // 2) 逐条计划锚定（事务控制语句没有计划，不浪费一次 EXPLAIN）
       const items: CollectedItem[] = [];
