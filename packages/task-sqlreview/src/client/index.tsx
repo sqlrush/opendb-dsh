@@ -340,19 +340,19 @@ function ProfileBlock({ p }: { p: any }) {
   );
 }
 
-function CostBars({ orig, next }: { orig: number; next: number }) {
+function CostBars({ orig, next, label = '原计划' }: { orig: number; next: number; label?: string }) {
   const max = Math.max(orig, next, 1);
   const drop = orig > 0 ? Math.round((1 - next / orig) * 1000) / 10 : 0;
-  const row = (label: string, v: number, color: string, txt: string) => (
-    <div style={{ display: 'grid', gridTemplateColumns: '56px minmax(0,1fr) 150px', gap: 10, alignItems: 'center', fontSize: 13.5 }}>
-      <span style={{ color: T.dim }}>{label}</span>
+  const row = (l: string, v: number, color: string, txt: string) => (
+    <div style={{ display: 'grid', gridTemplateColumns: '120px minmax(0,1fr) 150px', gap: 10, alignItems: 'center', fontSize: 13.5 }}>
+      <span style={{ color: T.dim }}>{l}</span>
       <div style={{ height: 12, borderRadius: 4, background: color, width: `${Math.max(3, (v / max) * 100)}%`, minWidth: 20 }} />
       <b style={{ color, ...tnum }}>{txt}</b>
     </div>
   );
   return (
-    <div style={{ display: 'grid', gap: 6, marginTop: 10, maxWidth: 520 }}>
-      {row('原计划', orig, '#e9b8b8', `cost ${orig.toLocaleString()}`)}
+    <div style={{ display: 'grid', gap: 6, marginTop: 10, maxWidth: 560 }}>
+      {row(label, orig, '#e9b8b8', `cost ${orig.toLocaleString()}`)}
       {row('优化后', next, T.sev.ok.c, `${next.toLocaleString()} ${drop > 0 ? `↓${drop}%` : '持平'}`)}
     </div>
   );
@@ -362,7 +362,9 @@ function SqlCard({ it, narrative, node, when }: { it: any; narrative: any; node:
   const verify = String(narrative?.verify ?? (it.explainOk ? 'no-gain' : 'plan-unavailable'));
   const badge = VERIFY_BADGE[verify] ?? VERIFY_BADGE['plan-unavailable'];
   const drop = String(narrative?.costDropPct ?? '');
-  const orig = Number(it.origCost || 0); const next = Number(narrative?.newCost || 0);
+  // cost 对比只在同口径下画：模型给了 baseCost（同参数/LIMIT 的原 SQL）就用它；没给则退回工具 origCost（?→NULL 归一化，口径可能不同）
+  const sameBase = String(narrative?.baseCost ?? '') !== '';
+  const orig = Number((sameBase ? narrative.baseCost : it.origCost) || 0); const next = Number(narrative?.newCost || 0);
   const ranks = Object.entries(it.ranks ?? {}) as [string, number][];
   const hot = (p: unknown) => Number(p) >= 10;
   const hitPct = Number(m.blocks) > 0 ? `${((Number(m.blocksHit) / Number(m.blocks)) * 100).toFixed(1)}%` : '—';
@@ -402,7 +404,8 @@ function SqlCard({ it, narrative, node, when }: { it: any; narrative: any; node:
           <div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>优化方案{verify === 'explain-verified' ? <span style={{ fontWeight: 400 }}> · 改写类 · 已用 db_query EXPLAIN 实证</span> : verify === 'estimated' ? <span style={{ fontWeight: 400 }}> · 索引类 · 预估</span> : null}</div>
           {String(narrative?.optimizedSql ?? '') !== '' ? <div style={{ ...codeBlock, background: T.sev.ok.soft }}>{String(narrative.optimizedSql)}</div>
             : <div style={{ fontSize: 13.5, color: T.dim }}>{narrative === undefined ? '模型解读尚未生成（报告未提交或本条未被解读）' : badge.t}</div>}
-          {verify === 'explain-verified' && orig > 0 && next > 0 ? <CostBars orig={orig} next={next} /> : null}
+          {verify === 'explain-verified' && sameBase && orig > 0 && next > 0 ? <CostBars orig={orig} next={next} label="原计划（同口径）" />
+            : verify === 'explain-verified' && Number(drop) > 0 ? <div style={{ fontSize: 13, color: T.dim, marginTop: 8 }}>降幅 ↓{drop}%（模型同口径 EXPLAIN；工具的原计划 cost 来自 ? → NULL 归一化文本，口径不同不画对比条）</div> : null}
         </div>
         {String(narrative?.detail ?? '') !== '' ? <div style={{ fontSize: 15, color: T.sub }}>{String(narrative.detail)}</div> : null}
         {/* 右下角一排文字链，与监控面板的维度卡/发现行同款：复制 · 在会话里深挖 → */}
