@@ -28,6 +28,8 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ### Fixed
 - 在任务报表 / 数据库 / 资源页点侧栏「新会话」没反应：那是官方侧栏按钮，在聊天区起草新会话但被任务页盖住。现在捕获该点击
   并切回聊天区；任何入口打开新会话（当前会话 id 变化）也会切回。行为测试 `scripts/browser/new-session-from-task.mjs`。
+- `db_query` 报「关系不存在」时顺手查同名表在哪个 schema 并给出应写的全名（模型常把 WDR 快照写成 `dbe_perf.snapshot`，
+  实际在 `snapshot.snapshot`）；工具描述补充 WDR 快照位置。
 - 归档的任务不再按 cron 触发（一个归档的 `*/10` 定时对话任务曾在无人可见的情况下跑了 3 小时）。
 - **同一轮不会再被两台 Runtime 同时执行**：Host 因心跳陈旧重投后，原 Runtime 的心跳现在充当所有权栅栏（线程已不归自己
   → 立即取消本地轮次，不 release / 不重投 / 不算失败）；关机/失败重投只对本 pod 仍持有的队列行生效；心跳异常不再是未处理

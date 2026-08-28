@@ -26,5 +26,8 @@ test('buildHint：42703 附真实列 + 建议；表不存在写明；非目标�
   assert.match(hint, /"event_name" 应为 "event"/);
   const missingRel = buildHint('SELECT 1 FROM dbe_perf.no_such', { code: '42P01', message: 'relation does not exist' }, () => undefined);
   assert.match(missingRel, /关系 dbe_perf\.no_such 不存在/);
+  // 同名表在别的 schema：直接给出应写的全名（2026-08-28 dbe_perf.snapshot → snapshot.snapshot）
+  const wrongSchema = buildHint('SELECT * FROM dbe_perf.snapshot ORDER BY snap_id DESC LIMIT 20', { code: '42P01', message: 'relation "dbe_perf.snapshot" does not exist' }, () => undefined, (rel) => (rel === 'dbe_perf.snapshot' ? ['snapshot'] : undefined));
+  assert.match(wrongSchema, /关系 dbe_perf\.snapshot 不存在——同名表\/视图在 schema snapshot：应写 snapshot\.snapshot/);
   assert.equal(buildHint(sql, { code: '57014', message: 'canceled' }, () => WAIT_EVENTS), '');
 });

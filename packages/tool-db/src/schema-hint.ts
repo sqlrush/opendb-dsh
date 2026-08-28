@@ -78,7 +78,12 @@ function editDistance(a: string, b: string): number {
 }
 
 /** 拼装附加提示；columnsOf 返回某关系的真实列（不存在返回 undefined） */
-export function buildHint(sql: string, error: { code?: string; message?: string }, columnsOf: (relation: string) => readonly string[] | undefined): string {
+export function buildHint(
+  sql: string, error: { code?: string; message?: string },
+  columnsOf: (relation: string) => readonly string[] | undefined,
+  /** 同名表/视图所在的其他 schema（2026-08-28：模型把 WDR 快照写成 dbe_perf.snapshot，其实在 snapshot.snapshot） */
+  sameNameIn: (relation: string) => readonly string[] | undefined = () => undefined,
+): string {
   const code = String(error.code ?? '');
   if (!HINT_CODES.has(code)) return '';
   const rels = referencedRelations(sql, cteNames(sql));
@@ -86,7 +91,14 @@ export function buildHint(sql: string, error: { code?: string; message?: string 
   const missing = code === '42703' ? missingColumn(String(error.message ?? '')) : undefined;
   for (const rel of rels) {
     const cols = columnsOf(rel);
-    if (cols === undefined) { lines.push(`关系 ${rel} 不存在（或无权访问）`); continue; }
+    if (cols === undefined) {
+      const table = rel.includes('.') ? rel.split('.', 2)[1] : rel;
+      const elsewhere = (sameNameIn(rel) ?? []).filter((s) => s !== '');
+      lines.push(elsewhere.length > 0
+        ? `关系 ${rel} 不存在——同名表/视图在 schema ${elsewhere.join(' / ')}：应写 ${elsewhere.map((s) => `${s}.${table}`).join(' 或 ')}`
+        : `关系 ${rel} 不存在（或无权访问）`);
+      continue;
+    }
     const suggest = missing !== undefined ? closestColumn(missing, cols) : undefined;
     lines.push(`${rel} 的实际列：${cols.join(', ')}${suggest !== undefined ? `——你写的 "${missing}" 应为 "${suggest}"` : ''}`);
   }
@@ -96,4 +108,4 @@ export function buildHint(sql: string, error: { code?: string; message?: string 
 }
 
 /** 工具描述里的一行速查（每轮都会发给模型，保持短） */
-export const OG_SCHEMA_HINT = 'openGauss dbe_perf 视图列名与 PG 不同——wait_events(type,event,wait,total_wait_time,avg_wait_time…，没有 event_name)、statement(unique_sql_id,query,n_calls,total_elapse_time,db_time,cpu_time…)、os_runtime(name,value 键值对：LOAD/NUM_CPUS/BUSY_TIME…)、session_stat_activity≈pg_stat_activity；不确定先查 information_schema.columns。';
+export const OG_SCHEMA_HINT = 'openGauss dbe_perf 视图列名与 PG 不同——wait_events(type,event,wait,total_wait_time,avg_wait_time…，没有 event_name)、statement(unique_sql_id,query,n_calls,total_elapse_time,db_time,cpu_time…)、os_runtime(name,value 键值对：LOAD/NUM_CPUS/BUSY_TIME…)、session_stat_activity≈pg_stat_activity；WDR 快照不在 dbe_perf，在 schema snapshot：snapshot.snapshot(snapshot_id,start_ts,end_ts) 与 snapshot.snap_*；不确定先查 information_schema.columns / tables。';

@@ -96,9 +96,22 @@ function defineDbQueryTool(deps: ToolDeps) {
             return q.rows.length > 0 ? q.rows.map((row: any) => String(row.column_name)) : undefined;
           } catch { return undefined; }
         };
+        // 表不存在时再找同名表在哪个 schema（模型常把 snapshot.snapshot 写成 dbe_perf.snapshot）
+        const elsewhere = new Map<string, readonly string[] | undefined>();
+        const whereElse = async (rel: string): Promise<readonly string[] | undefined> => {
+          const table = (rel.includes('.') ? rel.split('.', 2)[1] : rel).replace(/'/g, "''");
+          try {
+            const q = await deps.db.query(node, `SELECT table_schema FROM information_schema.tables WHERE table_name = '${table}' AND table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema`, { maxRows: 8 });
+            return q.rows.length > 0 ? q.rows.map((row: any) => String(row.table_schema)) : undefined;
+          } catch { return undefined; }
+        };
         // buildHint 是同步的：先把所有引用关系的列查好再拼
-        for (const rel of referencedRelations(sql, cteNames(sql))) cache.set(rel, await lookup(rel));
-        const hint = buildHint(sql, err, (rel) => cache.get(rel));
+        for (const rel of referencedRelations(sql, cteNames(sql))) {
+          const cols = await lookup(rel);
+          cache.set(rel, cols);
+          if (cols === undefined) elsewhere.set(rel, await whereElse(rel));
+        }
+        const hint = buildHint(sql, err, (rel) => cache.get(rel), (rel) => elsewhere.get(rel));
         throw new Error(`${String(err?.message ?? cause)}${hint}`);
       }
     },
