@@ -923,3 +923,10 @@ run.error（余额不足 / 鉴权 / 限流 / 其他），不再催交；cron 任
 
 **教训**：ssh 到 mac 跑 pnpm 连续四次漏了 `cd /Users/sqlrush/dsh-k8s`（在 $HOME 扫目录直接 OOM 4 GB）——改用
 `ssh mac 'bash -s' <<'EOF'` 脚本体、第一行 `cd … || exit 9`，不再拼单行命令。
+**全面测试时的两个坑（同日下午）**：① `kubectl exec … psql` 撞上 IPv6 "no route to host" 抖动会**永久挂住**（`kubectl get` 几十秒
+自愈，exec 流不会）——e2e 脚本里的 `psql()` 走 execSync 无超时，整套测试跟着挂 10 分钟；mac 没有 coreutils `timeout`，
+用 `perl -e 'alarm shift; exec @ARGV' 60 kubectl …` 做包装（`/tmp/kbin/kubectl` 前置到 PATH）。② 抖动正好落在
+`DROP DATABASE dsh_test` 与 `CREATE DATABASE` 之间，测试库没了、port-forward 也死了——重建测试库的命令要放在同一条 psql 里且带重试。
+③ `scripts/ci/check-patch-wiring.sh` 早已红（bundle-host 缺 ui-chart/thresholds-pg/task-thresholds，bundle-runtime 缺
+thresholds-pg/task-thresholds/tool-thresholds/tool-chart 的 workspace 依赖——profiles/*/package.json 有、bundle 没有），
+push 前补齐；以后新增插件包按 CLAUDE.md"三处缺一不可"之外再加第四处：bundle-*/package.json。

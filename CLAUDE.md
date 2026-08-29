@@ -68,6 +68,8 @@
   **`profiles/host|runtime/package.json` 的 workspace 依赖**。dsh 从 `/var/lib/dsh/profiles/<profile>/` 解析插件，
   漏第三处 = 镜像能建、pod 启动 `ERR_MODULE_NOT_FOUND` 崩循环（2026-08-24 thresholds 三包实证；
   旧 pod 因 rollout 卡住仍在服务，不会立刻察觉）。加完要 `pnpm install` 更新 lockfile（Docker 用 --frozen-lockfile）。
+  **第四处：`packages/bundle-host|bundle-runtime/package.json` 的 workspace 依赖**——CI 的 `scripts/ci/check-patch-wiring.sh`
+  按它校验 patch 引用（2026-08-29 全面测试发现 7 个包漏登记，CI 早已红）；push 前本地跑一次该脚本。
 
 ## 插件纪律
 

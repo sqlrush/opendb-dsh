@@ -11,7 +11,10 @@ let reg: Registry;
 before(async () => {
   if (!PG_URL) return;
   const p = createPool(PG_URL);
-  await p.query('DROP TABLE IF EXISTS dsh_db_nodes, dsh_db_groups, dsh_agents, dsh_users, dsh_tenants CASCADE').catch(() => {});
+  // 要的是"全新库"：迁移有台账（opendb_schema_migrations）后，只 DROP 几张表不会被重建——003_registry 已记为已应用
+  //（2026-08-29 全面测试实证 relation "dsh_agents" does not exist）。整 schema 重建，让 runMigrations 从头跑。
+  // 重建后补回 PG15+ 不再默认给的 PUBLIC 权限，否则后面 tenant-context 的非特权探针角色查 dsh_agents 会 "does not exist"
+  await p.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC').catch(() => {});
   await p.end();
   await ctx.plugin(Registry, { connectionString: PG_URL });
   reg = (ctx as any).opendbRegistry as Registry;

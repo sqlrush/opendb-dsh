@@ -45,6 +45,10 @@
     "@opendb-dsh/agent-presets-pg": "workspace:*",
     "@opendb-dsh/tool-knowledge": "workspace:*",
     "@opendb-dsh/memory-context": "workspace:*",
-    "@opendb-dsh/tool-memory": "workspace:*"
+    "@opendb-dsh/tool-memory": "workspace:*",
+    "@opendb-dsh/thresholds-pg": "workspace:*",
+    "@opendb-dsh/task-thresholds": "workspace:*",
+    "@opendb-dsh/tool-thresholds": "workspace:*",
+    "@opendb-dsh/tool-chart": "workspace:*"
   }
 }

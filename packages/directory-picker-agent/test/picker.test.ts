@@ -17,7 +17,8 @@ let picker: AgentDirectoryPicker;
 before(async () => {
   if (!PG_URL) return;
   const p = createPool(PG_URL);
-  await p.query('DROP TABLE IF EXISTS dsh_db_nodes, dsh_db_groups, dsh_agents, dsh_users, dsh_tenants CASCADE').catch(() => {});
+  // 同 registry.test：迁移有台账后只 DROP 表不会被重建，整 schema 重建取"全新库"语义（2026-08-29）
+  await p.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC').catch(() => {});
   await p.end();
   await ctx.plugin(Registry, { connectionString: PG_URL });
   await ctx.plugin(AgentDirectoryPicker, { agentsRoot: root });

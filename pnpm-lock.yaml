@@ -253,6 +253,9 @@ importers:
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../task-sqlreview
+      '@opendb-dsh/task-thresholds':
+        specifier: workspace:*
+        version: link:../task-thresholds
       '@opendb-dsh/task-wdr':
         specifier: workspace:*
         version: link:../task-wdr
@@ -262,6 +265,12 @@ importers:
       '@opendb-dsh/tenant-context':
         specifier: workspace:*
         version: link:../tenant-context
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../thresholds-pg
+      '@opendb-dsh/ui-chart':
+        specifier: workspace:*
+        version: link:../ui-chart
       '@opendb-dsh/ui-harness':
         specifier: workspace:*
         version: link:../ui-harness
@@ -358,6 +367,9 @@ importers:
       '@opendb-dsh/task-sqlreview':
         specifier: workspace:*
         version: link:../task-sqlreview
+      '@opendb-dsh/task-thresholds':
+        specifier: workspace:*
+        version: link:../task-thresholds
       '@opendb-dsh/task-wdr':
         specifier: workspace:*
         version: link:../task-wdr
@@ -367,6 +379,12 @@ importers:
       '@opendb-dsh/tenant-context':
         specifier: workspace:*
         version: link:../tenant-context
+      '@opendb-dsh/thresholds-pg':
+        specifier: workspace:*
+        version: link:../thresholds-pg
+      '@opendb-dsh/tool-chart':
+        specifier: workspace:*
+        version: link:../tool-chart
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../tool-db
@@ -400,6 +418,9 @@ importers:
       '@opendb-dsh/tool-task-report':
         specifier: workspace:*
         version: link:../tool-task-report
+      '@opendb-dsh/tool-thresholds':
+        specifier: workspace:*
+        version: link:../tool-thresholds
       '@opendb-dsh/tool-wdr-collect':
         specifier: workspace:*
         version: link:../tool-wdr-collect
