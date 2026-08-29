@@ -199,21 +199,35 @@ export class TaskEngine {
   private async fireDue(now: Date): Promise<void> {
     const r = await this.d.pool.query(
       // 归档的任务不再按 cron 触发（2026-08-27：一个归档的 */10 任务在无人可见的情况下跑了 3 小时）
+      // last_error / last_finished 只看已结束的运行（running 的手动运行 error 为空，会把"模型服务失败"的守卫瞬间解除——
+      // 2026-08-29 实测：点一次「立即运行」，被守卫压着的 cron 槽位同一秒补发，一个任务并排跑两轮）
       `SELECT t.*,
-              (SELECT r.error FROM dsh_task_runs r WHERE r.task_id = t.id ORDER BY r.fired_at DESC LIMIT 1) AS last_error,
-              (SELECT r.finished_at FROM dsh_task_runs r WHERE r.task_id = t.id ORDER BY r.fired_at DESC LIMIT 1) AS last_finished
+              (SELECT r.error FROM dsh_task_runs r WHERE r.task_id = t.id AND r.finished_at IS NOT NULL ORDER BY r.fired_at DESC LIMIT 1) AS last_error,
+              (SELECT r.finished_at FROM dsh_task_runs r WHERE r.task_id = t.id AND r.finished_at IS NOT NULL ORDER BY r.fired_at DESC LIMIT 1) AS last_finished,
+              EXISTS (SELECT 1 FROM dsh_task_runs r WHERE r.task_id = t.id AND r.status IN ('queued', 'running')) AS has_active
          FROM dsh_tasks t WHERE t.tenant_id = $1 AND t.enabled AND t.cron IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM opendb_archived_tasks a WHERE a.task_id = t.id)`, [this.d.tenant]);
     for (const raw of r.rows) {
       const task = taskRow(raw);
       try {
         if (!isDue(task.cron!, task.lastFiredAt, now, this.d.tzOffsetMinutes)) continue;
+        // 跳过本槽位时也要把 last_fired_at 推到 now：否则错过的槽位一直"到期"，守卫一解除就补发（cron 追赶），
+        // 与用户的手动运行撞在同一秒并排跑（2026-08-29 Top1 / 过载监控 / WDR 三次实测）
+        const consumeSlot = async (why: string): Promise<void> => {
+          await this.d.pool.query(
+            `UPDATE dsh_tasks SET last_fired_at = $3, updated_at = now()
+             WHERE id = $1 AND coalesce(last_fired_at, 'epoch'::timestamptz) = coalesce($2, 'epoch'::timestamptz)`,
+            [task.id, task.lastFiredAt ?? null, now]);
+          process.stderr.write(`[tasks] "${task.name}" cron slot skipped: ${why}\n`);
+        };
+        // 同一任务上一轮还在跑（手动或上一个 cron 槽位）：不叠加开第二轮
+        if (raw.has_active === true) { await consumeSlot('a run of this task is still active'); continue; }
         // 上一次因模型服务失败（余额不足/鉴权/限流）而失败的任务：30 分钟内不再按 cron 开新会话（每 5 分钟开一个只会失败的会话没意义），
         // 30 分钟后自动重试一次；user 充值后想立刻恢复就点「立即运行」
         const lastErr = typeof raw.last_error === 'string' ? raw.last_error : '';
         const lastFinished = raw.last_finished ? new Date(raw.last_finished).getTime() : 0;
         if (lastErr.startsWith(MODEL_ERROR_PREFIX) && now.getTime() - lastFinished < 30 * 60_000) {
-          if (now.getTime() - lastFinished < 60_000) process.stderr.write(`[tasks] "${task.name}" skipped: model service failing (${lastErr.slice(0, 60)}); retry in 30min\n`);
+          await consumeSlot(`model service failing (${lastErr.slice(0, 60)}); retry after 30min`);
           continue;
         }
         const claimed = await this.d.pool.query(
