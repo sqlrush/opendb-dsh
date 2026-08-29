@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WDR 窗口报告 · R2 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C; --ph:#ADB2B8;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC;
+    --cpu:#4176E6; --io:#E0963F; --net:#4FA3D9; --parse:#B08A5A; --pl:#8B6BE0; --other:#C9CCD2;
+    --lwlock:#8B6BE0; --lock:#D9607A;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  a{color:var(--blue);text-decoration:none}
+  .num{font-variant-numeric:tabular-nums}
+  .mono{font-family:var(--mono)}
+  .topbar{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 24px;font-size:14px}
+  .topbar b{font-weight:600}.topbar .dim{color:var(--dim)}
+  .topbar .ret{margin-left:auto;border:1px solid var(--line);border-radius:10px;padding:4px 12px;color:var(--sub)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  .page{max-width:1180px;margin:0 auto;padding:20px 24px 80px}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .title h1{font-size:20px;font-weight:600;margin:0}
+  .title .meta{font-size:13.5px;color:var(--dim)}
+  .title .meta b{color:var(--warn);font-weight:500}
+  .title .btns{margin-left:auto;display:flex;gap:8px}
+  .btn{border:1px solid var(--line);border-radius:10px;padding:5px 12px;font-size:14px;color:var(--ink);background:#fff}
+  .btn.danger{color:var(--crit)}
+  .tabs{display:flex;gap:22px;margin:12px 0 22px;border-bottom:1px solid var(--line);font-size:14px}
+  .tabs span{padding:6px 0 8px;color:var(--sub)}.tabs span.on{color:var(--blue);border-bottom:2px solid var(--blue)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 20px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);min-width:0}
+  h2{font-size:18px;font-weight:600;margin:30px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  h2 .hint{font-size:13.5px;color:var(--dim);font-weight:400}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;border-radius:6px;padding:2px 10px;font-weight:500}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.notice{background:var(--notice-soft);color:var(--notice)}.chip.grey{background:var(--fill);color:var(--sub)}
+  .key{font:600 12px var(--mono);background:var(--fill);border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:var(--sub);white-space:nowrap}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+  .tag{font-size:12px;border-radius:4px;padding:0 7px;border:1px solid var(--line);color:var(--sub);background:#fff;white-space:nowrap}
+  .attr{font:600 11.5px var(--mono);border-radius:4px;padding:1px 7px;white-space:nowrap}
+  .attr.tmp{background:#F1ECFB;color:#6B4FC7}.attr.cpu{background:#EEF3FF;color:#2F55B3}.attr.io{background:var(--warn-soft);color:var(--warn)}.attr.blk{background:var(--crit-soft);color:var(--crit)}.attr.other{background:var(--fill2);color:var(--sub)}
+  /* 状态带 */
+  .band{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .band .worst{font-size:18px;font-weight:600;color:var(--warn)}
+  .band .win{font-size:13.5px;color:var(--dim)}
+  .picker{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--dim);margin-bottom:14px;flex-wrap:wrap}
+  .picker .w{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:3px 10px;color:var(--ink);background:#fff}
+  .picker .w b{font-weight:600}
+  /* 摘要卡 */
+  .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .stat{background:var(--fill);border-radius:8px;padding:11px 13px;min-width:0}
+  .stat .l{font-size:12.5px;color:var(--dim);white-space:nowrap}
+  .stat .v{font-size:21px;font-weight:600;line-height:1.3;margin-top:2px;white-space:nowrap}
+  .stat .d{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .up{color:var(--warn)}.down{color:var(--ok)}.flat{color:var(--dim)}
+  /* 趋势图 */
+  .trend{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px}
+  .trend .legend{display:flex;gap:16px;font-size:12.5px;color:var(--sub);margin-top:6px;flex-wrap:wrap}
+  .insights .t{font-size:13.5px;color:var(--dim);margin-bottom:8px}
+  .insights li{list-style:none;display:flex;gap:10px;margin:0 0 10px;font-size:14px;line-height:1.55}
+  .insights li .sw{margin-top:7px}
+  .insights{border-left:1px solid var(--line);padding-left:24px}
+  /* 两栏 */
+  .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+  .three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .bar{display:flex;height:22px;border-radius:5px;overflow:hidden;background:var(--rest)}
+  .seg{height:100%;display:flex;align-items:center;justify-content:center;font:600 11.5px var(--mono);color:#fff;white-space:nowrap;overflow:hidden}
+  .lg{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:12.5px;color:var(--sub)}
+  .lg span{display:inline-flex;align-items:center;gap:5px}
+  .lg b{color:var(--ink);font-weight:500}
+  .waits{display:grid;grid-template-columns:auto minmax(0,1fr) 200px;row-gap:6px;column-gap:10px;font-size:12.5px;align-items:center}
+  .waits .ev{font-family:var(--mono);font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .waits .b{height:4px;border-radius:2px;background:var(--fill2);margin-top:2px}
+  .waits .b i{display:block;height:100%;border-radius:2px}
+  .waits .v{text-align:right;color:var(--sub);white-space:nowrap}
+  .waits .v b{color:var(--ink);font-weight:600}
+  .wtype{font-size:11px;border-radius:4px;padding:0 6px;background:var(--fill2);color:var(--sub);white-space:nowrap}
+  /* 表格 */
+  table{border-collapse:collapse;width:100%;font-size:13.5px}
+  th{color:var(--dim);font-weight:500;text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;font-size:13px}
+  td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  .eff{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .eff .e{background:var(--fill);border-radius:8px;padding:8px 14px;font-size:13px;color:var(--sub);min-width:150px}
+  .eff .e b{display:block;font-size:18px;font-weight:600;color:var(--ink)}
+  .eff .e.bad b{color:var(--warn)}
+  .dtabs{display:flex;gap:6px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;align-items:center}
+  .dtabs .d{border:1px solid var(--line);border-radius:6px;padding:1px 10px;color:var(--sub)}
+  .dtabs .d.on{color:#fff;background:var(--blue);border-color:var(--blue);font-weight:500}
+  .sqltxt{font:12.5px var(--mono);color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:330px}
+  .sharebar{height:6px;border-radius:3px;background:var(--fill2);margin-top:4px;width:120px}
+  .topsql th,.topsql td{padding-left:8px;padding-right:8px}
+  .topsql td.r{white-space:nowrap}
+  .sharebar i{display:block;height:100%;border-radius:3px;background:var(--blue)}
+  .expand{background:var(--fill);border-radius:10px;padding:12px 14px;margin:2px 0 6px;font-size:13.5px}
+  .expand .code{font:12.5px/1.7 var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--ink);background:#fff;border-radius:8px;padding:10px 12px;margin:6px 0 10px}
+  .link{font-size:12.5px;color:var(--blue);white-space:nowrap}
+  .mini{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px;font-size:13px;margin-top:6px}
+  .mini .l{color:var(--dim)}.mini .v{font-weight:600;text-align:right}
+  .find{display:grid;grid-template-columns:8px 130px minmax(0,1fr) 190px 110px;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+  .find:first-child{border-top:none}
+  .find .dot{width:8px;height:8px;border-radius:4px;margin-top:9px}
+  .find .m{font-size:12.5px;color:var(--dim)}
+  .pri .p{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:start;font-size:15px;margin-bottom:8px}
+  .pri .n{font:600 13px var(--mono);background:var(--fill2);border-radius:6px;text-align:center;padding:2px 0;margin-top:4px}
+  .strip{display:flex;gap:3px;align-items:flex-end;height:26px}
+  .strip i{flex:1;max-width:16px;height:100%;border-radius:3px;background:var(--warn)}
+  .strip i.ok{background:var(--ok)}.strip i.sel{outline:2px solid var(--ink);outline-offset:1px}
+  .notes{font-size:13.5px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:8px 14px;margin-top:16px}
+  .foot{margin-top:40px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:12px}
+  @media (max-width:1000px){.stats{grid-template-columns:repeat(4,1fr)}.trend,.two{grid-template-columns:1fr}.three{grid-template-columns:1fr}.insights{border-left:none;padding-left:0}}
+</style>
+</head>
+<body>
+<div class="ribbon">WDR 窗口报告 R2 设计稿（静态原型）· 数字取自 og5 快照 1915→1916（08-29 10:30–10:39，9 分钟）与上一窗口 1914→1915 的真实增量 · 交互：维度切换 / 行展开 / 深挖建会话在实现时接通</div>
+<div class="topbar"><b>任务</b><span class="dim">agent：og-lab</span><span class="ret">返回会话</span></div>
+<div class="page">
+  <div class="title">
+    <h1>og5-wdr-hourly</h1>
+    <span class="meta">任务 · 每小时 45 分 · 启用 · 最近 <b>warn</b> · 调整周期或窗口，在会话里说一句即可</span>
+    <span class="btns"><span class="btn">▶ 立即运行</span><span class="btn">⏸ 暂停</span><span class="btn danger">删除</span></span>
+  </div>
+  <div class="tabs"><span class="on">报告</span><span>历史</span><span>配置</span></div>
+
+  <!-- ① 状态带 + 窗口选择 -->
+  <div class="band">
+    <span class="worst">窗口态势：告警</span>
+    <span class="chip ok">✓ 全部数字来自快照增量直读 · 归因由脚本判定 · 模型只做解读</span>
+    <span class="win">og5 · 采集 08-29 10:48 · 原生 WDR 可留底（DBA 执行 generate_wdr_report(1915, 1916)）</span>
+  </div>
+  <div class="picker">
+    分析窗口 <span class="w"><b>snap 1915 → 1916</b> · 08-29 10:30 → 10:39 · 9 分钟</span>
+    对比窗口 <span class="w">snap 1914 → 1915 · 09:39 → 10:30 · 51 分钟</span>
+    <span>快照每小时自动产生 · 换窗口在会话里说一句（"看 14 点到 15 点"）· 摘要卡里的箭头 = 与对比窗口相比</span>
+  </div>
+
+  <!-- ② 摘要卡（vs 上一窗口） -->
+  <div class="stats">
+    <div class="stat"><div class="l">DB Time</div><div class="v num">5,803 s</div><div class="d up">▲ ×1.95 · 上窗 2,972 s</div></div>
+    <div class="stat"><div class="l">平均活跃会话 AAS</div><div class="v num">10.82</div><div class="d up">▲ ×11 · 上窗 0.97 · 18 核</div></div>
+    <div class="stat"><div class="l">事务 TPS</div><div class="v num">27.2 /s</div><div class="d flat">▼ 2% · 上窗 27.7 /s</div></div>
+    <div class="stat"><div class="l">缓存命中</div><div class="v num" style="color:var(--warn)">93.56%</div><div class="d up">▼ 2.8 pt · 上窗 96.40%</div></div>
+    <div class="stat"><div class="l">物理读</div><div class="v num">3,771 块/s</div><div class="d up">▲ ×9.3 · 上窗 406 块/s</div></div>
+    <div class="stat"><div class="l">临时文件</div><div class="v num">19.3 GB</div><div class="d up">▲ 36 MB/s · 上窗 3.8 MB/s</div></div>
+    <div class="stat"><div class="l">WAL 写</div><div class="v num">56.6 KB/s</div><div class="d up">▲ ×1.9 · 上窗 29.5 KB/s</div></div>
+    <div class="stat"><div class="l">Checkpoint</div><div class="v num">8 <span style="font-size:13px;font-weight:500;color:var(--dim)">定时</span></div><div class="d flat">被动 0 · 刷脏 13.5 MB</div></div>
+  </div>
+
+  <!-- ③ 负载趋势（hero） -->
+  <h2>负载趋势 <span class="hint">最近 24 个快照窗口的平均活跃会话（AAS = ΔDB Time / 窗口时长）· 按 CPU / IO / 其他等待分解 · 参考：CPU 核数 18（AAS 超过核数 = 饱和）</span></h2>
+  <div class="card">
+    <div class="trend">
+      <div style="min-width:0">
+        <svg id="aas" width="100%" height="230" viewBox="0 0 820 230" preserveAspectRatio="none" style="display:block"></svg>
+        <div class="legend"><span><i class="sw" style="background:var(--cpu)"></i> CPU</span><span><i class="sw" style="background:var(--io)"></i> IO</span><span><i class="sw" style="background:var(--other)"></i> 其他等待（锁 / LWLock / 网络 / 空闲）</span><span><i class="sw" style="background:#fff;border:2px solid var(--ink);width:8px;height:8px"></i> 分析窗口</span></div>
+      </div>
+      <div class="insights">
+        <div class="t">一眼结论（脚本按增量自动生成）</div>
+        <ul style="margin:0;padding:0">
+          <li><i class="sw" style="background:var(--warn)"></i><div><b>这 9 分钟是 24 小时里最重的窗口</b>：AAS 10.82，是基线 0.20 的 54 倍、上一窗口的 11 倍；等待占 DB Time 71%，CPU 只占 19%。</div></li>
+          <li><i class="sw" style="background:#6B4FC7"></i><div><b>下盘主导等待</b>：BufFileWrite/Read 合计 327 s，占非空闲等待 65%，与窗口 19.3 GB 临时文件互证——work_mem 不足或 hash 聚合过大。</div></li>
+          <li><i class="sw" style="background:var(--io)"></i><div><b>物理读 ×9.3、命中率跌到 93.56%</b>：三条串行大聚合把全表扫描压进本窗口。</div></li>
+          <li><i class="sw" style="background:var(--rest)"></i><div><b>事务面平稳</b>：TPS 27.2/s 与上窗持平，回滚 0.14%，Checkpoint 全部定时——瓶颈在分析型 SQL，不在 OLTP。</div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ DB Time 构成 | 等待事件 -->
+  <div class="two" style="margin-top:12px">
+    <div class="card">
+      <h2 style="margin:0 0 10px;font-size:16px">DB Time 构成 <span class="hint">5,803 s · 按 instance_time 分解</span></h2>
+      <div class="bar">
+        <div class="seg" style="width:19.5%;background:var(--cpu)" title="CPU 19.5%">CPU 19.5%</div>
+        <div class="seg" style="width:7.5%;background:var(--io)" title="IO 7.5%">IO 7.5%</div>
+        <div class="seg" style="width:1.7%;background:var(--pl)" title="PL 1.7%"></div>
+        <div class="seg" style="width:1.4%;background:var(--parse)" title="解析/计划 1.4%"></div>
+        <div class="seg" style="width:0.8%;background:var(--net)" title="网络 0.8%"></div>
+        <div class="seg" style="flex:1;background:var(--other);color:var(--sub)" title="其他等待 69.1%">其他等待 69.1%</div>
+      </div>
+      <div class="lg">
+        <span><i class="sw" style="background:var(--cpu)"></i>CPU <b>1,131 s</b> · AAS 2.11</span>
+        <span><i class="sw" style="background:var(--io)"></i>IO <b>437 s</b> · AAS 0.81</span>
+        <span><i class="sw" style="background:var(--pl)"></i>PL 执行 <b>99 s</b></span>
+        <span><i class="sw" style="background:var(--parse)"></i>解析/计划 <b>83 s</b></span>
+        <span><i class="sw" style="background:var(--net)"></i>网络 <b>44 s</b></span>
+        <span><i class="sw" style="background:var(--other)"></i>其他等待 <b>4,009 s</b> · AAS 7.47</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--dim);margin-top:10px">其他等待 = DB Time − 以上各项：锁 / LWLock / 缓冲区文件 / 网络之外的等待与调度间隙；具体事件见右侧。</div>
+    </div>
+    <div class="card">
+      <h2 style="margin:0 0 10px;font-size:16px">等待事件 Top 10 <span class="hint">窗口增量 · 已剔除 STATUS 空闲类 · 非空闲等待合计 503 s</span></h2>
+      <div class="lg" style="margin:0 0 10px"><span><i class="sw" style="background:var(--io)"></i>IO 事件 <b>96.3%</b></span><span><i class="sw" style="background:var(--lwlock)"></i>LWLock <b>3.6%</b></span><span><i class="sw" style="background:var(--lock)"></i>锁 <b>0.1%</b></span></div>
+      <div class="waits">
+        <span class="wtype">IO</span><div><div class="ev">BufFileWrite</div><div class="b"><i style="width:100%;background:var(--io)"></i></div></div><div class="v"><b>232.0 s</b> · 46.1% · 2.25M 次 · 均 103 µs</div>
+        <span class="wtype">IO</span><div><div class="ev">BufFileRead</div><div class="b"><i style="width:41%;background:var(--io)"></i></div></div><div class="v"><b>95.2 s</b> · 18.9% · 2.24M · 42 µs</div>
+        <span class="wtype">IO</span><div><div class="ev">BufHashTableSearch</div><div class="b"><i style="width:38%;background:var(--io)"></i></div></div><div class="v"><b>88.3 s</b> · 17.6% · 30.2M · 2.9 µs</div>
+        <span class="wtype">IO</span><div><div class="ev">DataFileRead</div><div class="b"><i style="width:27%;background:var(--io)"></i></div></div><div class="v"><b>63.7 s</b> · 12.7% · 1.95M · 33 µs</div>
+        <span class="wtype">LWLock</span><div><div class="ev">BufferIOLock</div><div class="b"><i style="width:7%;background:var(--lwlock)"></i></div></div><div class="v"><b>16.2 s</b> · 3.2% · 7,715 · 2.1 ms</div>
+        <span class="wtype">IO</span><div><div class="ev">StrategyGetBuffer</div><div class="b"><i style="width:1%;background:var(--io)"></i></div></div><div class="v"><b>2.2 s</b> · 0.4%</div>
+        <span class="wtype">LWLock</span><div><div class="ev">DoubleWriteLock</div><div class="b"><i style="width:1%;background:var(--lwlock)"></i></div></div><div class="v"><b>1.7 s</b> · 0.3%</div>
+        <span class="wtype">IO</span><div><div class="ev">WALWrite</div><div class="b"><i style="width:1%;background:var(--io)"></i></div></div><div class="v"><b>1.5 s</b> · 0.3% · 2,425 · 614 µs</div>
+        <span class="wtype">IO</span><div><div class="ev">DoubleWriteFileWrite</div><div class="b"><i style="width:1%;background:var(--io)"></i></div></div><div class="v"><b>1.3 s</b> · 0.3%</div>
+        <span class="wtype">IO</span><div><div class="ev">DataFileWrite</div><div class="b"><i style="width:1%;background:var(--io)"></i></div></div><div class="v"><b>1.2 s</b> · 0.2% · 24.6k · 49 µs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑤ Load Profile -->
+  <h2>Load Profile <span class="hint">AWR 式 · 每秒 / 每事务 / 窗口合计 · 最后一列 = 上一窗口每秒值</span></h2>
+  <div class="card" style="padding:0 0 14px">
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th style="padding-left:20px">指标</th><th class="r">每秒</th><th class="r">每事务</th><th class="r">窗口合计</th><th class="r">上一窗口 / 秒</th><th class="r">变化</th></tr></thead>
+      <tbody>
+        <tr><td style="padding-left:20px">DB Time</td><td class="r">10.81 s</td><td class="r">397.6 ms</td><td class="r">5,803 s</td><td class="r">0.97 s</td><td class="r up">×11.1</td></tr>
+        <tr><td style="padding-left:20px">CPU 时间</td><td class="r">2.11 s</td><td class="r">77.5 ms</td><td class="r">1,131 s</td><td class="r">0.34 s</td><td class="r up">×6.2</td></tr>
+        <tr><td style="padding-left:20px">执行时间</td><td class="r">8.46 s</td><td class="r">311 ms</td><td class="r">4,544 s</td><td class="r">0.76 s</td><td class="r up">×11.1</td></tr>
+        <tr><td style="padding-left:20px">逻辑读（块）</td><td class="r">58,591</td><td class="r">2,156</td><td class="r">31.46M</td><td class="r">11,258</td><td class="r up">×5.2</td></tr>
+        <tr><td style="padding-left:20px">物理读（块）</td><td class="r">3,771</td><td class="r">139</td><td class="r">2.02M</td><td class="r">406</td><td class="r up">×9.3</td></tr>
+        <tr><td style="padding-left:20px">WAL 写</td><td class="r">56.6 KB · 4.6 次</td><td class="r">2.1 KB</td><td class="r">30.4 MB · 2,453 次</td><td class="r">29.5 KB · 3.0 次</td><td class="r up">×1.9</td></tr>
+        <tr><td style="padding-left:20px">事务（提交 + 回滚）</td><td class="r">27.2</td><td class="r">—</td><td class="r">14,596 · 回滚 21</td><td class="r">27.7</td><td class="r flat">−2%</td></tr>
+        <tr><td style="padding-left:20px">SQL 执行</td><td class="r">≈1,415</td><td class="r">≈52</td><td class="r">≈760k（statement_count）</td><td class="r">≈1,120</td><td class="r flat">+26%</td></tr>
+        <tr><td style="padding-left:20px">元组返回 / 取出</td><td class="r">2.41M / 901</td><td class="r">88.7k / 33</td><td class="r">1.29B / 484k</td><td class="r">253k / 347</td><td class="r up">×9.5</td></tr>
+        <tr><td style="padding-left:20px">插入 / 更新 / 删除</td><td class="r">62 / 0.2 / 58</td><td class="r">2.3 / 0 / 2.1</td><td class="r">33,272 / 89 / 31,338</td><td class="r">37 / 0.1 / 36</td><td class="r up">×1.7</td></tr>
+        <tr><td style="padding-left:20px">临时文件</td><td class="r">8.1 个 · 36.0 MB</td><td class="r">1.32 MB</td><td class="r">4,357 个 · 19.3 GB</td><td class="r">0.8 个 · 3.8 MB</td><td class="r up">×9.5</td></tr>
+        <tr><td style="padding-left:20px">会话（backends）</td><td class="r">—</td><td class="r">—</td><td class="r">18</td><td class="r">18</td><td class="r flat">—</td></tr>
+      </tbody>
+    </table></div>
+    <div class="eff" style="padding:0 20px">
+      <div class="e bad">缓存命中率<b>93.56%</b>目标 ≥ 95%</div>
+      <div class="e">CPU / DB Time<b>19.5%</b>等待型负载</div>
+      <div class="e">执行 / DB Time<b>78.3%</b></div>
+      <div class="e">回滚率<b>0.14%</b>21 / 14,596</div>
+      <div class="e">响应 p80 / p95<b>4.5 / 5.9 ms</b>statement 分位</div>
+      <div class="e">主机负载<b>6.31 / 18 核</b>0.35 / 核 · CPU 忙 18.1%</div>
+    </div>
+  </div>
+
+  <!-- ⑥ Top SQL -->
+  <h2>Top SQL <span class="hint">窗口增量 · 按维度排序（同一批 SQL，换排序不换口径）· 归因徽章由脚本按纪律判定 · 点行展开 SQL 与解读</span></h2>
+  <div class="card" style="padding:14px 0 6px">
+    <div class="dtabs" style="padding:0 20px">排序：<span class="d on">总耗时</span><span class="d">CPU 时间</span><span class="d">IO 时间</span><span class="d">执行次数</span><span class="d">返回行数</span><span class="d">逻辑读</span><span class="d">下盘</span><span style="margin-left:8px;color:var(--dim)">归因：tmp=有下盘 · cpu=cpu 占自身 ≥50% · io=物理读占自身 ≥30% · blk=耗时高而 cpu/io 双 &lt;5%（等待型）· 混合=都没过线</span></div>
+    <div style="overflow-x:auto"><table class="topsql">
+      <thead><tr><th style="padding-left:20px">#</th><th>SQL</th><th>归因</th><th class="r">总耗时 · 占窗口</th><th class="r">次数</th><th class="r">单次</th><th class="r">cpu · io（占自身）</th><th class="r">逻辑读 · 命中</th><th class="r">下盘</th><th></th></tr></thead>
+      <tbody>
+        <tr><td style="padding-left:20px" class="num">1</td><td><div class="sqltxt">SELECT /*+ set(query_dop 1) */ c.region_id, f.store_id, sum(f.amount), count(*) FROM (SELECT … FROM fact_sales LIMIT ?) f JOIN customers c …</div><div style="font-size:12px;color:var(--dim)">1136765424 ▾ 已展开</div></td><td><span class="attr tmp">tmp</span></td><td class="r"><b class="num">1,324 s</b> · 34.0%<div class="sharebar" style="margin-left:auto"><i style="width:100%"></i></div></td><td class="r">72</td><td class="r">18.4 s</td><td class="r">20% · 25%</td><td class="r">12.5M · 96.3%</td><td class="r">16.0 MB</td><td><span class="link">深挖 →</span></td></tr>
+        <tr><td colspan="10" style="padding:0 20px 8px 44px"><div class="expand">
+          <div style="font-size:12.5px;color:var(--dim)">原 SQL（快照记录文本，参数为 ? 占位）</div>
+          <div class="code">SELECT /*+ set(query_dop 1) */ c.region_id, f.store_id, sum(f.amount), count(*)
+FROM (SELECT id,sale_date,customer_id,product_id,store_id,amount,quantity FROM gsbench_e2e_20260801_100g.fact_sales LIMIT ?) f
+JOIN gsbench_e2e_20260801_100g.customers c ON c.id=f.customer_id GROUP BY c.region_id,f.store_id ORDER BY count(*) DESC LIMIT ?</div>
+          <div style="font-size:12.5px;color:var(--dim)">窗口内：72 次 × 均 18.4 s · CPU 262 s · IO 333 s · 逻辑读 12.5M（命中 96.3%）· 返回 13,000 行 · 哈希下盘 16.0 MB · 归因 tmp（有下盘优先）</div>
+          <div style="margin-top:6px"><b style="font-weight:500">解读（模型）</b>：query_dop=1 强制串行的 region×store 分组聚合，单条占窗口 34%。哈希聚合下盘与窗口 19.3 GB 临时文件同源；其串行全表扫描同时是命中率跌到 93.56% 的主因。去向：转 Top SQL 优化任务（放开并行 / 汇总表），属已知常态化负载。</div>
+          <div style="margin-top:6px;display:flex;gap:14px;justify-content:flex-end"><span class="link">复制 SQL</span><span class="link">在会话里深挖 →</span></div>
+        </div></td></tr>
+        <tr><td style="padding-left:20px" class="num">2</td><td><div class="sqltxt">SELECT /*+ set(query_dop 1) */ p.category_id, count(*), sum(f.amount), avg(f.quantity) FROM (SELECT … FROM fact_sales LIMIT ?) f JOIN dim_product p …</div><div style="font-size:12px;color:var(--dim)">1478806352</div></td><td><span class="attr other">混合</span></td><td class="r"><b class="num">1,275 s</b> · 32.7%<div class="sharebar" style="margin-left:auto"><i style="width:96%"></i></div></td><td class="r">357</td><td class="r">3.57 s</td><td class="r">18% · 1%</td><td class="r">8.6M · 94.9%</td><td class="r">—</td><td><span class="link">深挖 →</span></td></tr>
+        <tr><td style="padding-left:20px" class="num">3</td><td><div class="sqltxt">SELECT /*+ set(query_dop 1) */ f.sale_date, sum(f.amount), avg(f.amount), max(f.amount) FROM (SELECT … FROM fact_sales LIMIT ?) f GROUP BY f.sale_date …</div><div style="font-size:12px;color:var(--dim)">69381302</div></td><td><span class="attr other">混合</span></td><td class="r"><b class="num">1,091 s</b> · 28.0%<div class="sharebar" style="margin-left:auto"><i style="width:82%"></i></div></td><td class="r">353</td><td class="r">3.09 s</td><td class="r">18% · 2%</td><td class="r">7.7M · 91.8%</td><td class="r">—</td><td><span class="link">深挖 →</span></td></tr>
+        <tr><td style="padding-left:20px" class="num">4</td><td><div class="sqltxt">SELECT substring(sessid FROM ?) AS "sessid", SUM(totalsize)/?/? AS "totalsize" FROM gs_session_memory_detail GROUP BY sessid</div><div style="font-size:12px;color:var(--dim)">2937716114 · 监控类</div></td><td><span class="attr other">混合</span></td><td class="r"><b class="num">113.8 s</b> · 2.9%<div class="sharebar" style="margin-left:auto"><i style="width:9%"></i></div></td><td class="r">441</td><td class="r">258 ms</td><td class="r">38% · 0%</td><td class="r">3.2k · 99.9%</td><td class="r">—</td><td><span class="link">深挖 →</span></td></tr>
+        <tr><td style="padding-left:20px" class="num">5</td><td><div class="sqltxt">select version();</div><div style="font-size:12px;color:var(--dim)">604903316 · 连接探针</div></td><td><span class="attr cpu">cpu</span></td><td class="r"><b class="num">41.8 s</b> · 1.1%<div class="sharebar" style="margin-left:auto"><i style="width:3%"></i></div></td><td class="r">378,984</td><td class="r">0.11 ms</td><td class="r">100% · 0%</td><td class="r">758k · 100%</td><td class="r">—</td><td><span class="link">深挖 →</span></td></tr>
+        <tr><td style="padding-left:20px" class="num">6</td><td><div class="sqltxt">select current_user;</div><div style="font-size:12px;color:var(--dim)">669791848 · 连接探针</div></td><td><span class="attr cpu">cpu</span></td><td class="r"><b class="num">35.7 s</b> · 0.9%<div class="sharebar" style="margin-left:auto"><i style="width:3%"></i></div></td><td class="r">378,647</td><td class="r">0.09 ms</td><td class="r">100% · 0%</td><td class="r">761k · 100%</td><td class="r">—</td><td><span class="link">深挖 →</span></td></tr>
+      </tbody>
+    </table></div>
+    <div style="padding:8px 20px 0;font-size:12.5px;color:var(--dim)">占窗口 = 该 SQL 耗时增量 / 窗口内全部 SQL 耗时增量（3,895 s）· Top 6 合计 99.6% · 连接探针（version / current_user）每小时 38 万次，来自采集器心跳，可在会话里说"排除探针"隐藏</div>
+  </div>
+
+  <!-- ⑦ IO / Checkpoint / 主机 -->
+  <div class="three" style="margin-top:12px">
+    <div class="card"><h2 style="margin:0 0 4px;font-size:16px">IO 与 WAL <span class="hint">窗口增量</span></h2>
+      <div class="mini">
+        <span class="l">数据文件读</span><span class="v num">1.95M 次 · 均 33 µs</span>
+        <span class="l">数据文件写</span><span class="v num">24.6k 次 · 均 49 µs</span>
+        <span class="l">WAL 写</span><span class="v num">2,453 次 · 30.4 MB</span>
+        <span class="l">WAL 写延迟</span><span class="v num">均 644 µs · 最慢 495 ms</span>
+        <span class="l">双写文件写</span><span class="v num">374 次</span>
+        <span class="l">缓冲区文件（下盘）</span><span class="v num" style="color:var(--warn)">写 2.25M · 读 2.24M</span>
+      </div>
+    </div>
+    <div class="card"><h2 style="margin:0 0 4px;font-size:16px">Checkpoint 与脏页 <span class="hint">bgwriter 增量</span></h2>
+      <div class="mini">
+        <span class="l">定时 / 被动 checkpoint</span><span class="v num">8 / 0</span>
+        <span class="l">checkpoint 刷脏</span><span class="v num">1,723 块 · 13.5 MB</span>
+        <span class="l">write / sync 用时</span><span class="v num">0 / 0 ms</span>
+        <span class="l">bgwriter 清理 / backend 自刷</span><span class="v num">0 / 0</span>
+        <span class="l">上一窗口</span><span class="v num">51 定时 · 8,538 块</span>
+        <span class="l">判定</span><span class="v"><span class="chip ok" style="font-size:12px;padding:0 8px">正常 · 无被动 ckpt</span></span>
+      </div>
+    </div>
+    <div class="card"><h2 style="margin:0 0 4px;font-size:16px">主机 <span class="hint">os_runtime 增量</span></h2>
+      <div class="mini">
+        <span class="l">负载 load</span><span class="v num">6.31 · 0.35 / 核</span>
+        <span class="l">CPU 忙</span><span class="v num">18.1%（user 16.0 · sys 2.1）</span>
+        <span class="l">iowait</span><span class="v num">0.07%</span>
+        <span class="l">CPU / 内存</span><span class="v num">18 核 · 62.8 GB</span>
+        <span class="l">数据库内存</span><span class="v num">shared 8.0 GB · 进程 3.6 GB</span>
+        <span class="l">判定</span><span class="v"><span class="chip ok" style="font-size:12px;padding:0 8px">主机未饱和 · 瓶颈在 SQL</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑧ 发现 -->
+  <h2>发现 <span class="hint">阈值判定 · 级别由脚本产出，不可被解读下调 · 每条可直接深挖</span></h2>
+  <div class="card" style="padding:4px 20px">
+    <div class="find"><i class="dot" style="background:var(--warn)"></i><span class="key">WDR_LOAD_HIGH</span><div>平均活跃会话 10.82，窗口内负载高<div class="m">evidence：ΔDB_TIME = 5,802,970,259 µs / 窗口 537 s</div></div><div class="m">实测 <b style="color:var(--warn)">10.82</b> · 阈值 ≥ 5</div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--warn)"></i><span class="key">WDR_TEMP_SPILL</span><div>postgres 窗口内临时文件 18,442 MB——排序 / 哈希下盘<div class="m">evidence：temp_files 4,357 · BufFileWrite 等待 232 s · Top1 SQL 哈希下盘 16 MB</div></div><div class="m">实测 <b style="color:var(--warn)">18.4 GB</b> · 阈值 ≥ 100 MB</div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--warn)"></i><span class="key">WDR_CACHE_LOW</span><div>postgres 窗口命中率 93.56%，物理读偏高<div class="m">evidence：read 2,024,998 · hit 29,436,854 · 上一窗口 96.40%</div></div><div class="m">实测 <b style="color:var(--warn)">93.56%</b> · 阈值 &lt; 95%</div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">WDR_CKPT_REQ</span><div>被动 checkpoint 0 / 8——WAL 压力正常</div><div class="m">实测 0% · 阈值 ≥ 30%</div><span></span></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">WDR_SQL_BLOCKED</span><div>没有 elapsed 高而 cpu/io 双低的等待型 SQL——无锁链迹象</div><div class="m">实测 0% · 阈值 ≥ 20%</div><span></span></div>
+  </div>
+
+  <!-- ⑨ 根因 / 优先级 -->
+  <h2>根因串联与处置优先级 <span class="hint">模型解读 · 引用的数字均有出处</span></h2>
+  <div class="two">
+    <div class="card" style="background:var(--fill);border:none"><div style="font-size:13.5px;color:var(--dim);font-weight:500;margin-bottom:4px">根因串联</div><div style="font-size:15px;color:var(--sub)">窗口负载由 3 条 fact_sales 的 query_dop=1 强制串行大聚合主导（share 合计 94%）。跨维度互证：① 命中率 93.56% 与串行全表大扫描互证——物理读 2.02M 块、上窗只有 1.24M；② 临时文件 18.4 GB 与哈希聚合下盘互证——Top1 SQL 是窗口内唯一有显著 hash_spill 的语句，等待事件里 BufFileWrite/Read 合计 327 s 正是下盘的读写；③ 主机 CPU 忙 18%、iowait 0.07%、TPS 与上窗持平——瓶颈在分析型 SQL 的执行方式，不在硬件或 OLTP。</div></div>
+    <div class="card"><div style="font-size:13.5px;color:var(--dim);font-weight:500;margin-bottom:4px">处置优先级</div>
+      <div class="pri">
+        <div class="p"><span class="n">P1</span><div>三条串行聚合放开 query_dop（Top SQL 报表已实证同口径 cost 降 30–46%），或改汇总表——直接消掉 94% 的窗口耗时 <span class="key">1136765424</span> <span class="key">1478806352</span> <span class="key">69381302</span></div></div>
+        <div class="p"><span class="n">P2</span><div>哈希聚合下盘：评估 work_mem / hash_mem 对这三条语句的会话级调优（只读平台不代改，给出参数建议） <span class="key">WDR_TEMP_SPILL</span></div></div>
+        <div class="p"><span class="n">P3</span><div>命中率随 P1 消化；若仍低于 95%，再看 shared_buffers 与冷数据扫描策略 <span class="key">WDR_CACHE_LOW</span></div></div>
+      </div></div>
+  </div>
+
+  <!-- ⑩ 历史 -->
+  <h2>检查历史 <span class="hint">一格一次运行 · 点格子查看当次报告 · 每格 = 一个快照窗口</span></h2>
+  <div class="card">
+    <div class="strip"><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i></i><i class="sel"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:6px"><span>08-28</span><span>最新 ▲</span></div>
+  </div>
+  <div class="notes">📋 采集说明：快照每小时自动产生（enable_wdr_snapshot），本窗口只有 9 分钟是因为 1916 为手工快照 · 等待事件按非空闲类汇总，STATUS 类剔除 · 原生 WDR 可留底：`select generate_wdr_report(1915, 1916, 'all', 'node', 'og5')`（DBA 执行，平台只读不代跑）</div>
+  <div class="foot">设计稿 WDR R2 · 2026-08-29 · 数字：og5 snapshot 1915→1916 / 1914→1915 真实增量，AAS 趋势取最近 25 个快照 · 占比口径见各区块小字</div>
+</div>
+<script>
+  // 24 个快照窗口的 AAS（总 / CPU / IO），最后一个是分析窗口
+  const W = [
+    ['09:19','10:19',.21,.21,0],['10:19','11:19',.21,.21,0],['11:19','12:28',.11,.10,0],['12:28','13:53',.11,.11,0],['13:53','14:53',.22,.19,0],
+    ['14:53','15:53',2.45,.65,.21],['15:53','16:53',.20,.20,0],['16:53','17:53',.20,.19,0],['17:53','18:53',.21,.20,0],['18:53','20:16',.69,.08,0],
+    ['20:16','21:16',.21,.21,0],['21:16','22:16',.20,.20,0],['22:16','23:16',.20,.20,0],['23:16','00:16',.20,.20,0],['00:16','01:16',.20,.20,0],
+    ['01:16','02:16',.20,.20,0],['02:16','03:16',.20,.20,0],['03:16','04:16',.20,.20,0],['04:16','05:16',.20,.20,0],['05:16','06:16',.20,.20,0],
+    ['06:16','07:16',.20,.20,0],['07:16','08:39',.05,.05,0],['08:39','09:39',.20,.20,0],['09:39','10:30',.97,.34,.07],['10:30','10:39',10.82,2.11,.81],
+  ];
+  const svg = document.getElementById('aas');
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const L = 44, R = 12, T = 14, B = 34, Wd = 820, H = 230, ih = H - T - B, iw = Wd - L - R;
+  // 量程 = 最高窗口 ×1.15（让 0.2 的基线也看得见）；CPU 核数 18 在量程内才画参考线，否则只在图例里说
+  const CORES = 18;
+  const max = Math.max(...W.map((w) => w[2])) * 1.15;
+  const cs = getComputedStyle(document.documentElement);
+  const col = (v) => cs.getPropertyValue(v).trim();
+  const step = max > 8 ? 4 : max > 3 ? 1 : 0.5;
+  for (let v = 0; v <= max; v += step) {
+    const y = T + ih - (v / max) * ih;
+    svg.appendChild(el('line', { x1: L, x2: Wd - R, y1: y, y2: y, stroke: '#EEF0F3', 'stroke-width': 1 }));
+    const t = el('text', { x: L - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: col('--dim') }); t.textContent = String(v); svg.appendChild(t);
+  }
+  if (CORES <= max) {
+    const y = T + ih - (CORES / max) * ih;
+    svg.appendChild(el('line', { x1: L, x2: Wd - R, y1: y, y2: y, stroke: col('--ink'), 'stroke-width': 1, 'stroke-dasharray': '5 4' }));
+  } else {
+    const t = el('text', { x: L + 6, y: T + 4, 'font-size': 11, fill: col('--dim') }); t.textContent = `CPU 核数 ${CORES}：AAS 最高 ${Math.max(...W.map((w) => w[2])).toFixed(2)}，未饱和`; svg.appendChild(t);
+  }
+  const bw = iw / W.length;
+  W.forEach((w, i) => {
+    const [a, b, tot, cpu, io] = w; const x = L + i * bw + 3; const width = bw - 6;
+    const other = Math.max(0, tot - cpu - io);
+    let y = T + ih;
+    [[cpu, col('--cpu')], [io, col('--io')], [other, col('--other')]].forEach(([v, c]) => { const h = (v / max) * ih; y -= h; svg.appendChild(el('rect', { x, y, width, height: Math.max(0, h), fill: c, rx: 2 })); });
+    if (i === W.length - 1) {
+      svg.appendChild(el('rect', { x: x - 3, y: T - 6, width: width + 6, height: ih + 12, fill: 'none', stroke: col('--ink'), 'stroke-width': 1.5, rx: 4 }));
+      const t = el('text', { x: x + width / 2, y: T + ih - (tot / max) * ih - 8, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 700, fill: col('--ink') }); t.textContent = tot.toFixed(2); svg.appendChild(t);
+    }
+    if (i === 5 || i === 23) { const t = el('text', { x: x + width / 2, y: T + ih - (tot / max) * ih - 6, 'text-anchor': 'middle', 'font-size': 10.5, fill: col('--sub') }); t.textContent = tot.toFixed(2); svg.appendChild(t); }
+    if (i % 3 === 0 || i === W.length - 1) { const t = el('text', { x: x + width / 2, y: H - 14, 'text-anchor': 'middle', 'font-size': 10.5, fill: col('--dim') }); t.textContent = a; svg.appendChild(t); }
+  });
+  const d1 = el('text', { x: L, y: H - 2, 'font-size': 10.5, fill: col('--dim') }); d1.textContent = '08-28'; svg.appendChild(d1);
+  const d2 = el('text', { x: Wd - R, y: H - 2, 'text-anchor': 'end', 'font-size': 10.5, fill: col('--dim') }); d2.textContent = '08-29'; svg.appendChild(d2);
+</script>
+</body>
+</html>
