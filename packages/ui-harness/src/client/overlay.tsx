@@ -66,10 +66,20 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   function DefaultTaskPanel({ task, runId }: { task: any; runId?: string }) {
     const [runs, setRuns] = useState<any[]>([]);
     const [bundle] = useState(() => pluginBundleFailed(String(task.type)));
-    // 2026-08-28 user：连续两次发布的窗口里加载的页面，包"拿到了"却没注册出面板（内容不完整/版本错配），
-    // 这种情况刷新是能好的——先自动刷一次，刷完还这样才按代码 bug 提示
-    const [reloading] = useState(() => (bundle.failed || bundle.loaded)
-      && autoReloadOnce(bundle.failed ? `任务类型「${String(task.type)}」的面板插件包未加载（HTTP ${bundle.status ?? '无请求'}）` : `任务类型「${String(task.type)}」的面板插件包已加载但未注册面板`));
+    // 包没加载上（HTTP 非 200 / 无请求）：立刻自动刷新一次（2026-08-26 滚动窗口修复）
+    const [reloading, setReloading] = useState(() => bundle.failed && autoReloadOnce(`任务类型「${String(task.type)}」的面板插件包未加载（HTTP ${bundle.status ?? '无请求'}）`));
+    // 包加载了却没注册出面板：等 4s 再判——面板注册常常晚于任务页首绘（插件包异步 apply），这一拍就刷新会把正常页面刷掉
+    //（2026-08-28 下午 user：过载监控/Top1 两个任务"刷不出来"，就是我把这一拍判成了故障直接 reload）。
+    // 4s 后仍没注册才是"页面赶上发布窗口 / 插件初始化异常"：先自动刷一次，刷完还这样才提示看 console。
+    const [stale, setStale] = useState(false);
+    useEffect(() => {
+      if (!bundle.loaded) return undefined;
+      const t = setTimeout(() => { if (getTaskPanel(String(task.type)) === undefined) setStale(true); }, 4000);
+      return () => clearTimeout(t);
+    }, [task.type]);
+    useEffect(() => {
+      if (stale && !reloading) setReloading(autoReloadOnce(`任务类型「${String(task.type)}」的面板插件包已加载但 4s 内未注册面板`));
+    }, [stale]);
     const refresh = async () => { try { setRuns((await call('runs/list', { taskId: task.id })).runs); } catch { /* retry */ } };
     useEffect(() => { void refresh(); const t = setInterval(() => void refresh(), 15_000); return () => clearInterval(t); }, [task.id]);
     return (
@@ -84,7 +94,7 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
             {reloading ? ' 正在自动刷新…' : ' '}
             <button type="button" onClick={() => location.reload()} style={{ ...S.btn, marginLeft: 8, color: '#b53434' }}>立即刷新</button>
           </div>
-        ) : bundle.loaded ? (
+        ) : bundle.loaded && stale ? (
           <div style={{ margin: '10px 0 0', padding: '9px 12px', borderRadius: 8, fontSize: 13, background: '#fdecec', color: '#b53434', border: '1px solid rgba(214,69,69,.25)' }}>
             <b>面板插件包已加载，但没有注册出「{task.type}」的面板</b>
             {reloading ? '——多半是页面正赶上发布窗口加载的，正在自动刷新…' : '——已自动刷新过一次仍如此，才可能是插件初始化异常：请打开浏览器 console，把 '}
