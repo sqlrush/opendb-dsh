@@ -35,8 +35,9 @@ for (; Date.now() - t0 < 180_000; await sleep(3000)) {
 const secs = Math.round((Date.now() - t0) / 1000);
 const reason = psql(`SELECT coalesce(data->'reason'->>'kind','') || ' ' || coalesce(data->'reason'->'error'->>'code','') || ' ' || coalesce(data->'reason'->'error'->>'message','') FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'turn/end' ORDER BY seq DESC LIMIT 1`);
 const tools = psql(`SELECT string_agg(data->>'name', ',' ORDER BY seq) FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'tool/call'`);
-const model = psql(`SELECT string_agg(DISTINCT coalesce(data->>'model', data->'agentOptions'->>'model', ''), ',') FROM dsh_session_events WHERE session_id = '${sessionId}' AND type IN ('request/header','llm/request','agent/start')`);
-const answer = psql(`SELECT left(regexp_replace(coalesce(data->'content'->0->>'text', data->>'text', ''), '\\s+', ' ', 'g'), 200) FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'assistant/message' ORDER BY seq DESC LIMIT 1`);
+// assistant/message 的结构：data.message.{content[], source:{provider, model}}（2026-08-29 实测）
+const model = psql(`SELECT string_agg(DISTINCT coalesce(data->'message'->'source'->>'provider', '') || '/' || coalesce(data->'message'->'source'->>'model', ''), ',') FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'assistant/message'`);
+const answer = psql(`SELECT left(regexp_replace(coalesce((SELECT string_agg(c->>'text', ' ') FROM jsonb_array_elements(data->'message'->'content') c WHERE c->>'type' = 'text'), ''), '\\s+', ' ', 'g'), 200) FROM dsh_session_events WHERE session_id = '${sessionId}' AND type = 'assistant/message' ORDER BY seq DESC LIMIT 1`);
 const okEnd = /^completed/.test(reason);
 const okTool = /db_nodes/.test(tools);
 console.log(okEnd ? '✔' : '✖', `turn 正常结束（${secs}s）`, reason.trim());
