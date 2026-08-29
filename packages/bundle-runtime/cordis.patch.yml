@@ -110,6 +110,9 @@
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-wdr-collect
       name: '@opendb-dsh/tool-wdr-collect'
+      config:
+        # 2026-08-29 R2：WDR 窗口全景存档 opendb_task_collects，任务面板直读全部数字
+        connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-ddl-collect
       name: '@opendb-dsh/tool-ddl-collect'
     - id: tool-rules-catalog

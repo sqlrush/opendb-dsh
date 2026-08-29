@@ -19,7 +19,8 @@ test('buildPrompt 锚定纪律 + 只读铁律', async () => {
   assert.match(prompt, /wdr_collect/);
   assert.match(prompt, /create_wdr_snapshot/);
   assert.match(prompt, /逐字/);
-  assert.match(prompt, /归因纪律/);
+  assert.match(prompt, /锚定纪律/);
+  assert.match(prompt, /topSql\[\]\.note/);
 });
 
 test('归因纪律：tmp > blk > cpu > io 判定', () => {

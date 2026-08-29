@@ -897,3 +897,29 @@ mn/mx/cnt；`timeout_ms=2000` 返回说明性提示。顺带：同名表 schema 
 `is_available:false`）。平台改进：engine 结算时先看会话最后 turn/end 的 reason，是 error 就把 `describeModelError()` 的原因直接写进
 run.error（余额不足 / 鉴权 / 限流 / 其他），不再催交；cron 任务上一次因模型失败的 30 分钟内不再开新会话，30 分钟后自动重试，
 「立即运行」不受限。user 充值后任务自动恢复。
+
+## WDR 窗口报告重构 R2（2026-08-29，user 定稿设计稿后开发）
+
+**起因（user）**："wdr 任务报告功能和 UI 上设计的一般，全面重构下，先在 mac 浏览器里生成优化后版本的 UI，我通过后再开始编码"。
+设计稿 `docs/prototypes/wdr-r2.html`（数字全部取自 og5 快照 1915→1916 与 1914→1915 的真实增量）；user："这一版非常不错！…就按照这个版本编码"。
+
+**顺手查到的旧版问题**：① 等待事件整段为空——`snap_global_wait_events` 两快照 700+ 行，采集器 `maxRows 400` 把 end 快照截掉；
+② 下盘只看 `sort_spill_size`、且把字节当 KB（og5 Top1 累计 sort 2.65 GB / hash 93 MB，按 KB 会大三个量级），Top1 该判 tmp 判成了混合；
+③ Top SQL 只按 elapsed 一榜、只有 elapsed/calls/cpu%/io%；④ 报告 schema 让模型逐字复制全部数据（30 KB JSON 进 prompt 又抄回来）。
+
+**做法（与 Top SQL R5 同一条数据链）**
+- 纯函数层 `task-wdr/src/window.ts`：`aasTrend`（连续快照对 ΔDB_TIME/墙钟，CPU/IO 分解）、`dbTimeBreakdown`（含 PL）、
+  `topSqlFull`（calls/elapsed/cpu/io/rows/blocks/hit/spill(sort+hash 字节)/attr/probe，按 unique_sql_id 合并多用户行）、
+  `waitsFull`（按类 + Top10 次数/均耗）、`loadProfile`（每秒/每事务/合计/上窗每秒/变化）、`hostStat`、`efficiency`、`summaryOf`、
+  `checksOf`（7 条判定含通过项）、`insightsOf`（最重窗口 / 下盘主导 / 物理读倍增 / 事务面平稳 / 被动 ckpt）；17 个单测。
+- 采集器 `tool-wdr-collect`：窗口 + 上一窗口 + 最近 25 个快照；instance_time / stat_database / statement（end 快照累计耗时前 300 +
+  次数前 100 的 id 再取 begin 行）/ wait_events（SQL 里 `snap_type <> 'STATUS'`，maxRows 2000）/ bgwriter / redo / file_iostat /
+  statement_count / os_runtime / responsetime_percentile / double_write / memory；每段独立降级进 collectionNotes；
+  整包存档 `opendb_task_collects`（task_type='wdr'；bundle-runtime 给 `connectionString`）；给模型精简视图（≤ 40 KB）。
+- 报告 schema 只装解读：`situation / topSql[{sqlId,note}] / findings[{code,note}] / rootCause / priorities`；旧报告走兼容视图。
+- 面板 `task-wdr/src/client/{index.tsx,trend.tsx,format.ts}` 按设计稿十段落地；Top SQL 维度切换在前端排序（同一批 SQL 换排序不换口径）、
+  行展开、探针隐藏（任务配置 `hideProbes` 给默认值）、每条 SQL / 每条非 ok 判定都是健康报告同款 `DigLink`。
+- 验收 `scripts/e2e-wdr.mjs`：runNow → 存档字段齐全 → 报告引用 ⊆ 存档 → 无头 Chrome 关键区块 + console 零错误 + 截图。
+
+**教训**：ssh 到 mac 跑 pnpm 连续四次漏了 `cd /Users/sqlrush/dsh-k8s`（在 $HOME 扫目录直接 OOM 4 GB）——改用
+`ssh mac 'bash -s' <<'EOF'` 脚本体、第一行 `cd … || exit 9`，不再拼单行命令。

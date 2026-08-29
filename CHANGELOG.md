@@ -8,6 +8,15 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ## [Unreleased]
 
 ### Added
+- **WDR 窗口报告（重构 R2，user 2026-08-29 定稿 `docs/prototypes/wdr-r2.html`）**：采集器 `wdr_collect` 改为窗口全景——摘要卡
+  （DB Time / AAS / TPS / 命中率 / 物理读 / 临时文件 / WAL / Checkpoint，每张 vs 上一窗口）、最近 24 个快照窗口的 AAS 趋势
+  （CPU / IO / 其他等待堆叠，CPU 核数参考线）、DB Time 构成（含 PL）、等待事件按类 + Top10（次数 / 均耗）、AWR 式 Load Profile
+  （每秒 / 每事务 / 合计 / 上窗每秒 / 变化）、实例效率（命中率 / CPU 占比 / 回滚率 / p80 p95 / 主机负载）、Top SQL 多维指标
+  （总耗时 / CPU / IO / 次数 / 返回行 / 逻辑读 / 下盘，面板按维度切换排序、行展开、连接探针可隐藏、逐条深挖）、IO 与 WAL /
+  Checkpoint 与脏页 / 主机三卡、阈值判定含通过项（每条可深挖）、脚本生成的「一眼结论」；整包存档 `opendb_task_collects`
+  供面板直读，模型报告只装解读（situation / topSql[].note / findings[].note / rootCause / priorities）。
+  等待事件在 SQL 里剔除 STATUS 类并放开行数上限（旧版 maxRows 400 曾把整段截空）；Top SQL 的下盘改为 sort+hash 合计并按字节计
+  （旧版漏了 hash_spill 且把字节当 KB）；Top SQL 增量按 end 快照累计耗时前 300 + 累计次数前 100 的 id 精确取 begin 行。
 - **Top SQL 报表（慢 SQL 报表重构 R5）**：榜单维度按会话里的要求生成——任务配置 `dimensions`（总耗时 / 执行次数 / 平均耗时 /
   CPU / IO / 逻辑读 / DB Time / 下盘 / 返回行数，默认前三）每个维度各出一榜，同一条 SQL 可上多榜；采集器产出负载总量、
   各榜单占全库比例、去重 Top SQL 明细（指标·占比·榜位·类型判定·执行计划·归到该 SQL 名下的规范违规）与脚本生成的

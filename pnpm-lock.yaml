@@ -1492,12 +1492,18 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/session-persistence-pg':
+        specifier: workspace:*
+        version: link:../session-persistence-pg
       '@opendb-dsh/task-wdr':
         specifier: workspace:*
         version: link:../task-wdr
       '@opendb-dsh/tool-db':
         specifier: workspace:*
         version: link:../tool-db
+      pg:
+        specifier: ^8.13.0
+        version: 8.23.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
