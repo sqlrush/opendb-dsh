@@ -7,7 +7,14 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-29
+
+四个任务报表里的两个（Top SQL、WDR）按 user 定稿的设计稿重做：数字全部由采集器按确定性口径产出并存档，面板直读，模型只写解读；
+默认模型切到 Kimi K3；数据库权限改由数据库控制；调度、队列、Runtime 栅栏一批可靠性修复。
+
 ### Added
+- `deploy/k8s/rollout.sh`：构建 → 等用户轮次归零 → 滚动 → 自动验收（迁移台账 / 模块缺失 / 插件包 200 / 滚动窗口非 200 次数 /
+  无头 Chrome 任务页专属面板且 console 零错误），任一项失败即非零退出。
 - **WDR 窗口报告（重构 R2，user 2026-08-29 定稿 `docs/prototypes/wdr-r2.html`）**：采集器 `wdr_collect` 改为窗口全景——摘要卡
   （DB Time / AAS / TPS / 命中率 / 物理读 / 临时文件 / WAL / Checkpoint，每张 vs 上一窗口）、最近 24 个快照窗口的 AAS 趋势
   （CPU / IO / 其他等待堆叠，CPU 核数参考线）、DB Time 构成（含 PL）、等待事件按类 + Top10（次数 / 均耗）、AWR 式 Load Profile
@@ -54,6 +61,15 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   rejection（曾让整个 Runtime 进程退出）；陈旧线从 30s 放宽到 90s（节点/PG 抖动 10–30s 不再误回收）。
 - Runtime 轮次活动看门狗（`turnIdleMs`，默认 10 分钟）：会话日志长时间没有新事件（上游模型不出 token）即切断本轮并换 id 重投，
   不再出现一次 LLM 调用挂 55 分钟。
+- Host 滚动更新窗口里加载的页面拿不到任务面板插件包，任务页退化成默认历史列表：就绪探针改探插件包 URL（TCP 端口开了不算就绪）、
+  `maxUnavailable 0`；兜底视图检测到插件包未加载会自动刷新一次并给出「立即刷新」；插件包已加载却没注册面板（初始化异常）
+  时给出明确红条而不是静默退化。
+- 排队区只显示尚未被 Runtime 领走的消息：领走即撤下，不再出现「看得见却删不掉（可能已经开始发送）」的 1 秒窗口。
+- `db_query` 报「列/表/函数不存在」时附上所引用视图的真实列名与最接近的列名建议（模型常把 openGauss `dbe_perf.wait_events` 的
+  `event` 写成 `event_name`），工具描述加 openGauss 常错列名速查。
+- CI 自 08-24 起一直红在 patch 依赖 lint：`bundle-host` / `bundle-runtime` 的 package.json 补齐 patch 引用的 7 个 workspace 依赖
+  （ui-chart / thresholds-pg / task-thresholds / tool-thresholds / tool-chart）；registry、directory-picker 两个单测在迁移有台账后
+  只 DROP 表不会被重建，改为重建 schema（并补 PG15+ 不再默认给的 PUBLIC 权限）。CI 全绿。
 
 ### Changed
 - 默认模型切到 **Kimi K3**（Kimi Code API，OpenAI 兼容；`llm-pi-ai` 新增 `kimi` 路由，模型 `k3` / `k3-256k`；key 放
@@ -62,15 +78,7 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   单语句限制）与 db seam 启动包里的 `default_transaction_read_only=on` 一并拆除；平台账号能做什么，以它在各节点上的
   数据库授权为准，被拒时原样返回数据库错误。多语句文本按 psql 语义返回最后一条的结果。
   og5 实验库同步把 `opendb_ro` 提为 SYSADMIN（WLM 实时视图 `global_statement_complex_runtime` 等 5 个函数只认 SYSADMIN）。
-
-### Fixed
-- Host 滚动更新窗口里加载的页面拿不到任务面板插件包，任务页退化成默认历史列表：就绪探针改探插件包 URL（TCP 端口开了不算就绪）、
-  `maxUnavailable 0`；兜底视图检测到插件包未加载会自动刷新一次并给出「立即刷新」；插件包已加载却没注册面板（初始化异常）
-  时给出明确红条而不是静默退化。
-- 新增 `deploy/k8s/rollout.sh`：构建 → 等用户轮次归零 → 滚动 → 自动验收（含无头 Chrome 任务页检查 `scripts/browser/task-panel-check.mjs`）。
-- 排队区只显示尚未被 Runtime 领走的消息：领走即撤下，不再出现「看得见却删不掉（可能已经开始发送）」的 1 秒窗口。
-- `db_query` 报「列/表/函数不存在」时附上所引用视图的真实列名与最接近的列名建议（模型常把 openGauss `dbe_perf.wait_events` 的
-  `event` 写成 `event_name`），工具描述加 openGauss 常错列名速查。
+- Host 预览阶段固定 1 副本；跨副本状态一律经 `host-fanout`（PG NOTIFY）同步。
 
 ## [0.1.0] - 2026-08-26
 
@@ -96,5 +104,6 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   死信红条）；滚动更新切断轮次（SIGTERM 自接，换 id 重投）；跨副本 resume 写坏日志（Host 只读到最后一个 end-seed）；
   新会话草稿置灰无自救入口（禁用态露出原生工作区选择行）。
 
-[Unreleased]: https://github.com/sqlrush/opendb-dsh/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sqlrush/opendb-dsh/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sqlrush/opendb-dsh/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sqlrush/opendb-dsh/releases/tag/v0.1.0
