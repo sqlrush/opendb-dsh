@@ -5,9 +5,12 @@ import type { QueryResult } from '@opendb-dsh/db';
 import { resolvePlatformAgent } from './agent.ts';
 import { renderTable, clampText } from './render.ts';
 import { buildHint, cteNames, referencedRelations, HINT_CODES, OG_SCHEMA_HINT, TIMEOUT_CODE, timeoutHint } from './schema-hint.ts';
+import { DictionaryGate, formatRelInfo } from './dictionary.ts';
 
 export { resolvePlatformAgent } from './agent.ts';
 export { renderTable, clampText, cell } from './render.ts';
+export { DictionaryGate } from './dictionary.ts';
+export { extractReferences, validateReferences, stripExplain } from './sql-refs.ts';
 
 export const name = 'tool-db';
 export const inject = ['opendbDb', 'opendbRegistry'];
@@ -18,9 +21,13 @@ export const Config = z.object({
   queryTimeoutMs: z.number().step(1).min(1000).default(60000),
   /** 模型可传 timeout_ms 放宽到的上限 */
   maxQueryTimeoutMs: z.number().step(1).min(1000).default(120000),
+  /** 字典门：执行前按目标库真实字典校验引用的表/列（2026-08-29 user 定）；关掉则只保留报错后的列名提示 */
+  dictionaryGate: z.boolean().default(true),
+  /** 字典缓存 TTL（每节点每关系） */
+  dictionaryTtlMs: z.number().step(1).min(1000).default(10 * 60_000),
 });
 
-interface ToolDeps { db: any; registry: any; maxRows: number; maxContentBytes: number; queryTimeoutMs: number; maxQueryTimeoutMs: number }
+interface ToolDeps { db: any; registry: any; maxRows: number; maxContentBytes: number; queryTimeoutMs: number; maxQueryTimeoutMs: number; gate: DictionaryGate; gateEnabled: boolean }
 
 export class ToolInputError extends Error {}
 
@@ -53,6 +60,8 @@ const TEXT_OUTPUT = {
   render: (_args: unknown, value: any) => [{ type: 'text', text: value.content }],
 } as const;
 
+const NODE_PARAM = { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' } as const;
+
 function defineDbNodesTool(deps: ToolDeps) {
   return defineTool({
     name: 'db_nodes',
@@ -70,12 +79,15 @@ function defineDbNodesTool(deps: ToolDeps) {
 }
 
 function defineDbQueryTool(deps: ToolDeps) {
+  const gateLine = deps.gateEnabled
+    ? '执行前会按目标库的真实数据字典校验 SQL 引用的表/列：有不存在的表/列时不执行，直接返回该关系的真实列与"哪些关系有这一列"（把它当字典用，按它改写后重试）。不确定列名先用 db_describe / db_find_columns 查字典，不要凭 PostgreSQL 的印象猜。'
+    : '';
   return defineTool({
     name: 'db_query',
-    description: `在当前 agent 绑定的数据库节点上以平台账号执行 SQL（诊断查询、EXPLAIN、SHOW 等）。平台不做语句过滤：能执行什么完全由该节点上平台账号的数据库权限决定，被拒时会原样返回数据库的错误。语句超时默认 ${Math.round(deps.queryTimeoutMs / 1000)}s（可传 timeout_ms 放宽到 ${Math.round(deps.maxQueryTimeoutMs / 1000)}s）；大表整表聚合优先用 pg_class.reltuples / TABLESAMPLE / 累计统计视图。${OG_SCHEMA_HINT}`,
+    description: `在当前 agent 绑定的数据库节点上以平台账号执行 SQL（诊断查询、EXPLAIN、SHOW 等）。平台不做语句过滤：能执行什么完全由该节点上平台账号的数据库权限决定，被拒时会原样返回数据库的错误。${gateLine}语句超时默认 ${Math.round(deps.queryTimeoutMs / 1000)}s（可传 timeout_ms 放宽到 ${Math.round(deps.maxQueryTimeoutMs / 1000)}s）；大表整表聚合优先用 pg_class.reltuples / TABLESAMPLE / 累计统计视图。${OG_SCHEMA_HINT}`,
     parameters: {
       sql: { type: 'string', required: true, description: 'SQL 语句（多条以分号分隔时只返回最后一条的结果）。' },
-      node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
+      node: NODE_PARAM,
       max_rows: { type: 'integer', description: `返回行数上限（默认/上限 ${deps.maxRows}）。` },
       timeout_ms: { type: 'integer', description: `本条语句的超时毫秒数（默认 ${deps.queryTimeoutMs}，上限 ${deps.maxQueryTimeoutMs}）。` },
     },
@@ -86,6 +98,11 @@ function defineDbQueryTool(deps: ToolDeps) {
       if (sql === '') throw new ToolInputError('SQL 为空');
       const wanted = Number(args.timeout_ms);
       const timeoutMs = Math.min(Number.isFinite(wanted) && wanted >= 1000 ? Math.floor(wanted) : deps.queryTimeoutMs, deps.maxQueryTimeoutMs);
+      // 字典门：引用了不存在的表/列 → 不执行，直接返回字典单（fail-open：解析不了或目录查不到都放行）
+      if (deps.gateEnabled) {
+        const v = await deps.gate.validate(node, sql);
+        if (!v.ok) throw new Error(v.report);
+      }
       try {
         const r = await deps.db.query(node, sql, { maxRows: Math.min(Number(args.max_rows ?? deps.maxRows), deps.maxRows), timeoutMs });
         return { content: formatResult(node, sql, r, deps.maxContentBytes) };
@@ -93,33 +110,17 @@ function defineDbQueryTool(deps: ToolDeps) {
         const err = cause as { code?: string; message?: string };
         // 语句超时：说明是平台的线、值是多少、怎么绕（2026-08-28）
         if (String(err?.code ?? '') === TIMEOUT_CODE && /statement timeout/i.test(String(err?.message ?? ''))) throw new Error(timeoutHint(timeoutMs, deps.maxQueryTimeoutMs));
-        // 列/表/函数不存在：把 SQL 引用的关系的真实列名查出来附在错误里，模型一次改对（2026-08-26 event_name 事故）
+        // 列/表/函数不存在（字典门没拦到的：方言解析不了、限定名归属不清等）：把引用关系的真实列名附在错误里
         if (!HINT_CODES.has(String(err?.code ?? ''))) throw cause;
         const cache = new Map<string, readonly string[] | undefined>();
-        const lookup = async (rel: string): Promise<readonly string[] | undefined> => {
-          const [schema, table] = rel.includes('.') ? rel.split('.', 2) : ['', rel];
-          try {
-            const q = schema !== ''
-              ? await deps.db.query(node, `SELECT column_name FROM information_schema.columns WHERE table_schema = '${schema.replace(/'/g, "''")}' AND table_name = '${table.replace(/'/g, "''")}' ORDER BY ordinal_position`, { maxRows: 200 })
-              : await deps.db.query(node, `SELECT column_name FROM information_schema.columns WHERE table_name = '${table.replace(/'/g, "''")}' AND table_schema NOT IN ('pg_catalog','information_schema') ORDER BY ordinal_position`, { maxRows: 200 });
-            return q.rows.length > 0 ? q.rows.map((row: any) => String(row.column_name)) : undefined;
-          } catch { return undefined; }
-        };
-        // 表不存在时再找同名表在哪个 schema（模型常把 snapshot.snapshot 写成 dbe_perf.snapshot）
         const elsewhere = new Map<string, readonly string[] | undefined>();
-        const whereElse = async (rel: string): Promise<readonly string[] | undefined> => {
-          const table = (rel.includes('.') ? rel.split('.', 2)[1] : rel).replace(/'/g, "''");
-          try {
-            // 排除 openGauss 内部 schema（db4ai 里也有一张 snapshot，指过去只会误导）
-            const q = await deps.db.query(node, `SELECT table_schema FROM information_schema.tables WHERE table_name = '${table}' AND table_schema NOT IN ('pg_catalog','information_schema','db4ai','dbe_pldeveloper','cstore','pg_toast') ORDER BY table_schema`, { maxRows: 8 });
-            return q.rows.length > 0 ? q.rows.map((row: any) => String(row.table_schema)) : undefined;
-          } catch { return undefined; }
-        };
-        // buildHint 是同步的：先把所有引用关系的列查好再拼
         for (const rel of referencedRelations(sql, cteNames(sql))) {
-          const cols = await lookup(rel);
+          const cols = await deps.gate.columnsFor(node, rel);
           cache.set(rel, cols);
-          if (cols === undefined) elsewhere.set(rel, await whereElse(rel));
+          if (cols === undefined) {
+            const table = rel.includes('.') ? rel.split('.', 2)[1] : rel;
+            try { elsewhere.set(rel, await deps.gate.sameNameIn(node, table)); } catch { elsewhere.set(rel, undefined); }
+          }
         }
         const hint = buildHint(sql, err, (rel) => cache.get(rel), (rel) => elsewhere.get(rel));
         throw new Error(`${String(err?.message ?? cause)}${hint}`);
@@ -128,13 +129,57 @@ function defineDbQueryTool(deps: ToolDeps) {
   } as any);
 }
 
+function defineDbDescribeTool(deps: ToolDeps) {
+  return defineTool({
+    name: 'db_describe',
+    description: '查数据字典：某张表/视图的真实列与类型（schema 可省，按 pg_catalog / public / dbe_perf / snapshot 顺序找；找不到时给出同名关系所在的 schema 与名字相近的关系）。写 SQL 前不确定列名就先查它，不要猜。',
+    parameters: {
+      relation: { type: 'string', required: true, description: '表/视图名，可带 schema，如 pg_stat_activity、dbe_perf.wait_events、snapshot.snap_summary_statement。' },
+      node: NODE_PARAM,
+    },
+    output: TEXT_OUTPUT,
+    async execute(args: any, exec: any) {
+      const { node } = await pickNode(deps.registry, exec, args.node);
+      const ref = String(args.relation ?? '').trim().replace(/^"|"$/g, '');
+      if (ref === '') throw new ToolInputError('relation 为空');
+      const d = await deps.gate.describe(node, ref);
+      if (d.info !== undefined) return { content: clampText(`-- ${node.name} 数据字典\n${formatRelInfo(d.info)}`, deps.maxContentBytes) };
+      const lines = [`关系 ${ref} 在 ${node.name} 上不存在（或无权访问）`];
+      if (d.elsewhere.length > 0) lines.push(`同名关系在 schema：${d.elsewhere.join(' / ')}（写全名，如 ${d.elsewhere[0]}.${ref.includes('.') ? ref.split('.', 2)[1] : ref}）`);
+      if (d.similar.length > 0) lines.push(`名字相近的关系：${d.similar.join(', ')}`);
+      lines.push('也可用 db_find_columns 按列名反查它在哪张视图里。');
+      return { content: lines.join('\n') };
+    },
+  } as any);
+}
+
+function defineDbFindColumnsTool(deps: ToolDeps) {
+  return defineTool({
+    name: 'db_find_columns',
+    description: '按列名关键词反查哪些表/视图有这一列（如 wait_event → pg_thread_wait_status / dbe_perf.thread_wait_status …）。想找某个指标却不知道它在哪张视图时用它，比猜列名快。',
+    parameters: {
+      keyword: { type: 'string', required: true, description: '列名关键词（子串匹配，不区分大小写），如 wait_event、spill、blks_hit。' },
+      node: NODE_PARAM,
+    },
+    output: TEXT_OUTPUT,
+    async execute(args: any, exec: any) {
+      const { node } = await pickNode(deps.registry, exec, args.node);
+      const kw = String(args.keyword ?? '').trim();
+      if (kw === '') throw new ToolInputError('keyword 为空');
+      const hits = await deps.gate.findColumns(node, kw);
+      if (hits.length === 0) return { content: `${node.name} 上没有列名含 "${kw}" 的表/视图（已排除系统内部 schema）。换个关键词，或用 db_describe 看某张视图的全部列。` };
+      const byRel = new Map<string, string[]>();
+      for (const h of hits) byRel.set(h.rel, [...(byRel.get(h.rel) ?? []), `${h.column} ${h.type}`]);
+      return { content: clampText(`-- ${node.name} 列名含 "${kw}" 的关系（${byRel.size} 个）\n${[...byRel.entries()].map(([rel, cols]) => `${rel}: ${cols.join(', ')}`).join('\n')}`, deps.maxContentBytes) };
+    },
+  } as any);
+}
+
 function defineDbOverviewTool(deps: ToolDeps) {
   return defineTool({
     name: 'db_overview',
     description: '获取节点健康总览：版本、会话、Top SQL、等待事件、锁、库大小、复制状态（按引擎方言取自监控视图）。',
-    parameters: {
-      node: { type: 'string', description: '目标节点名称；agent 只绑定一个节点时可省略。' },
-    },
+    parameters: { node: NODE_PARAM },
     output: TEXT_OUTPUT,
     async execute(args: any, exec: any) {
       const { node } = await pickNode(deps.registry, exec, args.node);
@@ -154,19 +199,24 @@ function defineDbOverviewTool(deps: ToolDeps) {
  * Registered wherever a tools registry exists; scoping: a call may only touch
  * nodes bound to the platform agent the session belongs to.
  */
-export function apply(ctx: Context, config: { maxRows?: number; maxContentBytes?: number; queryTimeoutMs?: number; maxQueryTimeoutMs?: number } = {}): void {
+export function apply(ctx: Context, config: { maxRows?: number; maxContentBytes?: number; queryTimeoutMs?: number; maxQueryTimeoutMs?: number; dictionaryGate?: boolean; dictionaryTtlMs?: number } = {}): void {
   const anyCtx = ctx as any;
   anyCtx.inject(['tools'], (c: any) => {
+    const db = anyCtx.opendbDb;
     const deps: ToolDeps = {
-      db: anyCtx.opendbDb,
+      db,
       registry: anyCtx.opendbRegistry,
       maxRows: config.maxRows ?? 200,
       maxContentBytes: config.maxContentBytes ?? 20000,
       queryTimeoutMs: config.queryTimeoutMs ?? 60000,
       maxQueryTimeoutMs: config.maxQueryTimeoutMs ?? 120000,
+      gate: new DictionaryGate((node, sql, opts) => db.query(node, sql, opts), { ttlMs: config.dictionaryTtlMs ?? 10 * 60_000 }),
+      gateEnabled: config.dictionaryGate ?? true,
     };
     c.effect(() => c.tools.register(defineDbNodesTool(deps)), 'tool-db.db_nodes');
     c.effect(() => c.tools.register(defineDbQueryTool(deps)), 'tool-db.db_query');
+    c.effect(() => c.tools.register(defineDbDescribeTool(deps)), 'tool-db.db_describe');
+    c.effect(() => c.tools.register(defineDbFindColumnsTool(deps)), 'tool-db.db_find_columns');
     c.effect(() => c.tools.register(defineDbOverviewTool(deps)), 'tool-db.db_overview');
   });
 }

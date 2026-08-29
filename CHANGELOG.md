@@ -7,6 +7,15 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+- **`db_query` 字典门**（user 2026-08-29："补提示词补不完的，让模型先确认字典再写 SQL"）：执行前把 SQL 解析成 AST，按作用域抽出引用的
+  表/列，对照目标库真实字典（`pg_class/pg_attribute`，含 `pg_catalog` 视图；按节点缓存 10 分钟）校验——有不存在的表/列时**不执行**，
+  直接返回字典单：该关系的真实列与类型、最接近的列名、全库反查"哪些关系有这一列"（`wait_event` → `pg_thread_wait_status` /
+  `dbe_perf.thread_wait_status`）、同名关系所在 schema。SQL 正确时只多一次本地解析（≈1 ms）。方言解析不了、列归属不清、目录不可读
+  一律放行（fail-open），数据库自己的错误照旧原样返回。新增 `db_describe(relation)`（查一张表/视图的字典）与 `db_find_columns(keyword)`
+  （按列名反查关系）两个工具。起因：模型按 PG 印象在 openGauss 的 `pg_stat_activity` 上查 `wait_event`（openGauss 只有 `waiting`），
+  连错三次。
+
 ## [0.2.0] - 2026-08-29
 
 四个任务报表里的两个（Top SQL、WDR）按 user 定稿的设计稿重做：数字全部由采集器按确定性口径产出并存档，面板直读，模型只写解读；

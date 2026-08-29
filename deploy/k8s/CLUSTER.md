@@ -930,3 +930,18 @@ run.error（余额不足 / 鉴权 / 限流 / 其他），不再催交；cron 任
 ③ `scripts/ci/check-patch-wiring.sh` 早已红（bundle-host 缺 ui-chart/thresholds-pg/task-thresholds，bundle-runtime 缺
 thresholds-pg/task-thresholds/tool-thresholds/tool-chart 的 workspace 依赖——profiles/*/package.json 有、bundle 没有），
 push 前补齐；以后新增插件包按 CLAUDE.md"三处缺一不可"之外再加第四处：bundle-*/package.json。
+
+## db_query 字典门（2026-08-29，user："补提示词补不完的，让模型先确认字典再写 SQL"）
+
+**起因**：WDR 深挖会话里模型连错三次——在 `dbe_perf.wait_events` 上查 `status`，在 `pg_stat_activity` / `dbe_perf.session_stat_activity`
+上查 `wait_event`（PG 9.6 的列，openGauss 只有布尔 `waiting`；实时等待事件在 `pg_thread_wait_status` / `dbe_perf.thread_wait_status`，
+历史在 `dbe_perf.local_active_session`）。08-26 加的报错提示也没兜住：它按 `information_schema.columns` 取列，openGauss 里不收 pg_catalog 视图。
+
+**机制（`packages/tool-db`）**：`sql-refs.ts` 用 `pgsql-ast-parser` 把 SQL 解析成 AST，按作用域抽引用的关系与列（CTE / FROM 子查询 / 函数表
+的列不可知 → 放行；FROM 派生表与 CTE 体不继承外层作用域；表达式子查询继承，相关子查询的外层别名能解析；SELECT 别名不当列）；
+`dictionary.ts` 的 `DictionaryGate` 走 `pg_class / pg_namespace / pg_attribute` 解析关系（无 schema 按 pg_catalog → public → dbe_perf → snapshot
+再兜底其它，排除 db4ai 等内部 schema），按节点 + 关系缓存 10 分钟（LRU 500）；校验不过 → **不执行**，返回字典单（真实列与类型、
+最接近列名、全库 `attname ILIKE` 反查含该列的关系、同名关系所在 schema）。解析不了 / 目录不可读 / 归属不清一律 fail-open。
+新工具 `db_describe` / `db_find_columns`。实测：解析 0.2–0.6 ms/条，目录查询 0.5–1 ms，反查 10 ms（只在失败路径）。
+**坑**：`node --experimental-strip-types` 不支持构造参数属性（`constructor(private x)`），单测直跑 .ts 会炸——类字段显式声明。
+验收 `scripts/e2e-db-dictionary-gate.mjs`；单测 `packages/tool-db/test/{sql-refs,dictionary}.test.ts`（拿事故里的三条 SQL 做用例）。
