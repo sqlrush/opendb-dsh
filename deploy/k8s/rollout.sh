@@ -22,7 +22,8 @@ fail=0; note() { echo "  ✖ $1"; fail=1; }
 if [ $DO_BUILD -eq 1 ]; then
   echo "## 构建镜像"; bash deploy/k8s/build-image.sh > /tmp/build-image.log 2>&1 || { grep -E "error TS|ERR_" /tmp/build-image.log | head -5; echo "构建失败（/tmp/build-image.log）"; exit 1; }
 fi
-if [ $DO_HELM -eq 1 ]; then echo "## helm upgrade"; helm upgrade opendb-dsh deploy/charts/opendb-dsh -n $NS | grep -E "STATUS|REVISION"; fi
+# --reuse-values：保住 release 里 --set 注入的 lab 值（auth.htpasswd 等）；chart 新增默认值不会合并进来，代码里都要有兜底
+if [ $DO_HELM -eq 1 ]; then echo "## helm upgrade"; helm upgrade opendb-dsh deploy/charts/opendb-dsh -n $NS --reuse-values | grep -E "STATUS|REVISION"; fi
 
 echo "## 等运行中的用户轮次归零（最多 8 分钟）"
 for i in $(seq 1 96); do n=$(pq "SELECT count(*) FROM dsh_threads WHERE status = 'running'"); [ "$n" = "0" ] && break; sleep 5; done

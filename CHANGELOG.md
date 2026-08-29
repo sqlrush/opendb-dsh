@@ -45,6 +45,8 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   不再出现一次 LLM 调用挂 55 分钟。
 
 ### Changed
+- 默认模型切到 **Kimi K3**（Kimi Code API，OpenAI 兼容；`llm-pi-ai` 新增 `kimi` 路由，模型 `k3` / `k3-256k`；key 放
+  `opendb-dsh-llm` Secret 的 `OPENDB_KIMI_API_KEY`）；DeepSeek 路由保留，模型选择器可切回。
 - **数据库权限只由数据库控制**（user 2026-08-27 定）：平台插件不再过滤 SQL——`db_query` 的只读门（语句白名单 / 危险函数表 /
   单语句限制）与 db seam 启动包里的 `default_transaction_read_only=on` 一并拆除；平台账号能做什么，以它在各节点上的
   数据库授权为准，被拒时原样返回数据库错误。多语句文本按 psql 语义返回最后一条的结果。

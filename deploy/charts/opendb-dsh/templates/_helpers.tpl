@@ -61,6 +61,13 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 - name: DEEPSEEK_BASE_URL
   value: {{ .Values.llm.deepseekBaseUrl | quote }}
 {{- end }}
+{{- /* Kimi K3（2026-08-29）：key 与 DeepSeek 同放 llm.existingSecret（键 OPENDB_KIMI_API_KEY，optional：没配也不拦启动） */}}
+- name: OPENDB_KIMI_API_KEY
+  valueFrom: { secretKeyRef: { name: {{ .Values.llm.existingSecret }}, key: OPENDB_KIMI_API_KEY, optional: true } }
+{{- if .Values.llm.kimiBaseUrl }}
+- name: OPENDB_KIMI_BASE_URL
+  value: {{ .Values.llm.kimiBaseUrl | quote }}
+{{- end }}
 - name: DSH_TELEMETRY_DISABLED
   value: "1"
 - name: DSH_PERMISSION_MODE

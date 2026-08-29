@@ -156,13 +156,29 @@
 # ── 默认模型（user 2026-08-22：v4-flash → v4-pro）───────────────────────────
 - id: agent-default-model
   config:
-    provider: deepseek-official
-    model: deepseek-v4-pro
+    # 2026-08-29 user：DeepSeek 余额用完，换 Kimi K3 为默认（与 bundle-host 同形）
+    provider: kimi
+    model: k3
 # ── 本机推理：mac 宿主 Ollama + Qwen3.8-27B（user 2026-08-24：仅作为可选模型）──
 # Runtime 才是真正发起模型调用的一侧，路由必须在这里也声明一份（与 bundle-host 保持同形）。
 - id: llm-pi-ai
   config:
     providers:
+      # ── Kimi K3（Kimi Code API，OpenAI 兼容，实测支持 function calling，返回 reasoning_content；maxTokens 给足）──
+      kimi:
+        displayName: Kimi K3
+        api: openai-completions
+        baseURL: !!js process.env.OPENDB_KIMI_BASE_URL ?? 'https://api.kimi.com/coding/v1'
+        apiKeyEnv: OPENDB_KIMI_API_KEY
+        models:
+          - id: k3
+            name: Kimi K3
+            contextWindow: 131072
+            maxTokens: 32768
+          - id: k3-256k
+            name: Kimi K3 256K
+            contextWindow: 262144
+            maxTokens: 32768
       mac-ollama:
         displayName: 本机 M5 Max
         api: openai-completions
