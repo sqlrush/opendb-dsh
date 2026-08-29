@@ -4,6 +4,17 @@ import { isDue } from './cron.ts';
 import type { TaskType, TaskRecord, TaskRunRecord, TaskBuildContext, ReportMode } from './types.ts';
 
 const REMINDER_MARK = '等待补交报告（已催交）';
+const MODEL_ERROR_PREFIX = '模型调用失败';
+/** 模型侧错误 → 用户能看懂的一句话（余额不足是最常见的一种，2026-08-29 DeepSeek 余额 -0.35 元时所有任务连续失败） */
+export function describeModelError(error: { code?: string; status?: number; message?: string }): string {
+  const code = String(error.code ?? '');
+  const status = Number(error.status ?? 0);
+  const msg = String(error.message ?? '').slice(0, 120);
+  if (code === 'QUOTA' || status === 402 || /insufficient balance/i.test(msg)) return `${MODEL_ERROR_PREFIX}：模型服务余额不足（${status || 402} ${msg || 'Insufficient Balance'}）——充值后任务自动恢复，或点「立即运行」`;
+  if (status === 401 || status === 403 || /api key|unauthorized/i.test(msg)) return `${MODEL_ERROR_PREFIX}：模型服务鉴权失败（${status} ${msg}）——检查 API Key`;
+  if (status === 429) return `${MODEL_ERROR_PREFIX}：模型服务限流（429 ${msg}）——稍后自动重试`;
+  return `${MODEL_ERROR_PREFIX}：${code || 'ERROR'} ${status || ''} ${msg}`.replace(/\s+/g, ' ').trim();
+}
 const ENGINE_LEADER_LOCK = 7_204_211_031;   // P3 多 Host 副本引擎 leader 锁（advisory key 段 7204211xxx）
 
 export interface EngineDeps {
@@ -188,12 +199,23 @@ export class TaskEngine {
   private async fireDue(now: Date): Promise<void> {
     const r = await this.d.pool.query(
       // 归档的任务不再按 cron 触发（2026-08-27：一个归档的 */10 任务在无人可见的情况下跑了 3 小时）
-      `SELECT * FROM dsh_tasks t WHERE t.tenant_id = $1 AND t.enabled AND t.cron IS NOT NULL
+      `SELECT t.*,
+              (SELECT r.error FROM dsh_task_runs r WHERE r.task_id = t.id ORDER BY r.fired_at DESC LIMIT 1) AS last_error,
+              (SELECT r.finished_at FROM dsh_task_runs r WHERE r.task_id = t.id ORDER BY r.fired_at DESC LIMIT 1) AS last_finished
+         FROM dsh_tasks t WHERE t.tenant_id = $1 AND t.enabled AND t.cron IS NOT NULL
          AND NOT EXISTS (SELECT 1 FROM opendb_archived_tasks a WHERE a.task_id = t.id)`, [this.d.tenant]);
     for (const raw of r.rows) {
       const task = taskRow(raw);
       try {
         if (!isDue(task.cron!, task.lastFiredAt, now, this.d.tzOffsetMinutes)) continue;
+        // 上一次因模型服务失败（余额不足/鉴权/限流）而失败的任务：30 分钟内不再按 cron 开新会话（每 5 分钟开一个只会失败的会话没意义），
+        // 30 分钟后自动重试一次；user 充值后想立刻恢复就点「立即运行」
+        const lastErr = typeof raw.last_error === 'string' ? raw.last_error : '';
+        const lastFinished = raw.last_finished ? new Date(raw.last_finished).getTime() : 0;
+        if (lastErr.startsWith(MODEL_ERROR_PREFIX) && now.getTime() - lastFinished < 30 * 60_000) {
+          if (now.getTime() - lastFinished < 60_000) process.stderr.write(`[tasks] "${task.name}" skipped: model service failing (${lastErr.slice(0, 60)}); retry in 30min\n`);
+          continue;
+        }
         const claimed = await this.d.pool.query(
           `UPDATE dsh_tasks SET last_fired_at = $3, updated_at = now()
            WHERE id = $1 AND coalesce(last_fired_at, 'epoch'::timestamptz) = coalesce($2, 'epoch'::timestamptz)
@@ -279,6 +301,16 @@ export class TaskEngine {
               WHERE e.session_id = r.session_id AND e.type IN ('turn/start', 'turn/end'))`,
     );
     for (const raw of r.rows) {
+      // 2026-08-29：模型调用本身失败（402 余额不足 / 鉴权 / 上游故障）——催交只会再失败一次，直接把真实原因写进 run
+      //（之前一律显示"未提交报告（已催交一次）"，user 以为是平台 bug）
+      const modelErr = await this.lastTurnError(raw.session_id);
+      if (modelErr !== undefined) {
+        await this.d.pool.query(
+          `UPDATE dsh_task_runs SET status = 'failed', error = $2, finished_at = now() WHERE id = $1 AND status = 'running'`,
+          [raw.id, modelErr]);
+        process.stderr.write(`[tasks] run ${raw.id} failed on model error: ${modelErr}\n`);
+        continue;
+      }
       const mode: ReportMode = this.d.types.get(raw.type)?.report ?? 'required';
       if (mode !== 'required') {
         await this.d.pool.query(
@@ -304,6 +336,16 @@ export class TaskEngine {
           [raw.id]);
       }
     }
+  }
+
+  /** 会话最后一个 turn/end 若是 error 结束，返回给用户看的一句原因；否则 undefined */
+  private async lastTurnError(sessionId: string): Promise<string | undefined> {
+    const r = await this.d.pool.query(
+      `SELECT data->'reason' AS reason FROM dsh_session_events WHERE session_id = $1 AND type = 'turn/end' ORDER BY seq DESC LIMIT 1`,
+      [sessionId]);
+    const reason = r.rows[0]?.reason as { kind?: string; error?: { code?: string; status?: number; message?: string } } | undefined;
+    if (reason?.kind !== 'error') return undefined;
+    return describeModelError(reason.error ?? {});
   }
 
   // 审批签收链路已整体下线（2026-08-21 user 决策：平台聚焦模型分析+只读展示，不做变更操作类功能；

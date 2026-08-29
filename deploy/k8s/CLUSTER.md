@@ -891,3 +891,9 @@ NotReady→Ready，OrbStack 整机抖动），14:00:55 `void heartbeat()` 的 re
 （平台的线 + 值 + reltuples / TABLESAMPLE / 累计视图替代 + 上限）。e2e `scripts/e2e-db-query-timeout.mjs`：60s 下 17.9s 成功返回
 mn/mx/cnt；`timeout_ms=2000` 返回说明性提示。顺带：同名表 schema 提示排除 db4ai 等内部 schema（db4ai 里也有一张 snapshot）；
 任务面板「已加载未注册」红条先自动刷新一次（user 在两次连续发布窗口里加载页面撞到过，无头 Chrome 复查健康面板正常）。
+
+**2026-08-29 01:10 起所有任务连续 failed「未提交报告（已催交一次）」**：不是平台 bug——会话里每个 turn/end 都是
+`{"kind":"error","error":{"code":"QUOTA","status":402,"message":"Insufficient Balance"}}`，DeepSeek 余额 −0.35 元（`/user/balance`
+`is_available:false`）。平台改进：engine 结算时先看会话最后 turn/end 的 reason，是 error 就把 `describeModelError()` 的原因直接写进
+run.error（余额不足 / 鉴权 / 限流 / 其他），不再催交；cron 任务上一次因模型失败的 30 分钟内不再开新会话，30 分钟后自动重试，
+「立即运行」不受限。user 充值后任务自动恢复。
