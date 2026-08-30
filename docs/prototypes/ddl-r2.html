@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>表结构变更追溯 · DDL R2 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C; --ph:#ADB2B8;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC;
+    --add:#2E9E5B; --add-soft:#E6F6EC; --del:#D64545; --del-soft:#FDECEC; --mod:#C9862D; --mod-soft:#FFF4DE;
+    --trunk:#0F1115; --l1:#4176E6; --l2:#8B6BE0; --l3:#2FA79A; --l4:#E0963F; --l5:#D9607A; --l6:#7A8AA6;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  .num{font-variant-numeric:tabular-nums}.mono{font-family:var(--mono)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  .topbar{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 24px;font-size:14px}
+  .topbar b{font-weight:600}.topbar .dim{color:var(--dim)}.topbar .ret{margin-left:auto;border:1px solid var(--line);border-radius:10px;padding:4px 12px;color:var(--sub)}
+  .page{max-width:1180px;margin:0 auto;padding:20px 24px 80px}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title h1{font-size:20px;font-weight:600;margin:0}.title .meta{font-size:13.5px;color:var(--dim)}.title .meta b{color:var(--warn);font-weight:500}
+  .title .btns{margin-left:auto;display:flex;gap:8px}.btn{border:1px solid var(--line);border-radius:10px;padding:5px 12px;font-size:14px;color:var(--ink);background:#fff}.btn.danger{color:var(--crit)}
+  .tabs{display:flex;gap:22px;margin:12px 0 22px;border-bottom:1px solid var(--line);font-size:14px}.tabs span{padding:6px 0 8px;color:var(--sub)}.tabs span.on{color:var(--blue);border-bottom:2px solid var(--blue)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 20px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);min-width:0}
+  h2{font-size:18px;font-weight:600;margin:30px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}h2 .hint{font-size:13.5px;color:var(--dim);font-weight:400}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;border-radius:6px;padding:2px 10px;font-weight:500}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.notice{background:var(--notice-soft);color:var(--notice)}.chip.grey{background:var(--fill);color:var(--sub)}
+  .key{font:600 12px var(--mono);background:var(--fill);border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:var(--sub);white-space:nowrap}
+  .src{font-size:11px;border-radius:4px;padding:0 6px;background:var(--fill2);color:var(--sub);white-space:nowrap}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+  .band{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}.band .worst{font-size:18px;font-weight:600;color:var(--warn)}
+  .picker{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--dim);margin-bottom:14px;flex-wrap:wrap}
+  .picker .w{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:3px 10px;color:var(--ink);background:#fff}
+  .stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}.stat{background:var(--fill);border-radius:8px;padding:11px 13px;min-width:0}
+  .stat .l{font-size:12.5px;color:var(--dim);white-space:nowrap}.stat .v{font-size:21px;font-weight:600;line-height:1.3;margin-top:2px;white-space:nowrap}.stat .d{font-size:12px;color:var(--dim)}
+  /* 演进图 */
+  .graphwrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:0}
+  .graph{overflow:auto;padding:6px 0 4px}
+  .legend{display:flex;gap:16px;font-size:12.5px;color:var(--sub);margin-top:8px;flex-wrap:wrap;align-items:center}
+  .side{border-left:1px solid var(--line);padding-left:20px;min-height:360px;font-size:13.5px}
+  .side .t{font-size:13px;color:var(--dim);margin-bottom:6px}.side h3{font-size:15px;font-weight:600;margin:0 0 6px}
+  .side .kv{display:grid;grid-template-columns:72px minmax(0,1fr);gap:4px 10px;font-size:13px;margin:8px 0}.side .kv .l{color:var(--dim)}
+  .code{font:12.5px/1.7 var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--ink);background:var(--fill);border-radius:8px;padding:10px 12px;margin:6px 0 10px}
+  .link{font-size:12.5px;color:var(--blue);white-space:nowrap;cursor:pointer}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+  .lane-label{font-size:12px;fill:var(--sub)}.lane-sub{font-size:10.5px;fill:var(--dim)}
+  .seg{cursor:pointer}.seg:hover{stroke-width:9;opacity:.9}.seg.sel{stroke-width:9}
+  .node{cursor:pointer}.node:hover circle{stroke-width:3}
+  .tip{position:fixed;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);padding:8px 12px;font-size:12.5px;line-height:1.55;max-width:360px;display:none;z-index:9}
+  /* 版本比较 */
+  .cmpbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13.5px}
+  .cmpbar select{font:inherit;font-size:13.5px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:#fff;color:var(--ink);max-width:420px}
+  .cmpbar .swap{border:1px solid var(--line);border-radius:8px;padding:3px 9px;color:var(--sub);cursor:pointer;background:#fff}
+  .quick{display:flex;gap:6px;flex-wrap:wrap;font-size:12.5px;margin-top:10px;align-items:center;color:var(--dim)}
+  .quick span{border:1px solid var(--line);border-radius:6px;padding:1px 10px;color:var(--sub);cursor:pointer}.quick span.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .summary{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0 6px;font-size:13.5px;color:var(--sub)}.summary b{color:var(--ink)}
+  .summary .add{color:var(--add)}.summary .del{color:var(--del)}.summary .mod{color:var(--mod)}
+  .diffcard{border:1px solid var(--line);border-radius:8px;margin-top:10px;overflow:hidden}
+  .diffcard .h{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--fill);font-size:13.5px;cursor:pointer}
+  .diffcard .h .n{font-family:var(--mono);font-weight:600}.diffcard .h .cnt{font-family:var(--mono);font-size:12px}.diffcard .h .cnt .a{color:var(--add)}.diffcard .h .cnt .d{color:var(--del)}.diffcard .h .cnt .m{color:var(--mod)}
+  .diffcard .h .tag{margin-left:auto}
+  .diff{font:12.5px/1.65 var(--mono);border-top:1px solid var(--line)}
+  .diff .r{display:grid;grid-template-columns:22px minmax(0,1fr);padding:0 12px 0 10px;white-space:pre-wrap;word-break:break-all}
+  .diff .r.add{background:var(--add-soft)}.diff .r.del{background:var(--del-soft)}.diff .r.mod{background:var(--mod-soft)}.diff .r .s{color:var(--dim)}
+  .diff .r.add .s{color:var(--add)}.diff .r.del .s{color:var(--del)}.diff .r.mod .s{color:var(--mod)}
+  .diff .sec{padding:2px 12px;color:var(--dim);font-size:11.5px;background:#fff;border-top:1px dashed var(--line)}
+  .newlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:12.5px}.newlist span{border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-family:var(--mono)}
+  /* 时间轴 / 发现 */
+  .day{margin-top:14px}.day .d{font-size:13px;color:var(--dim);margin-bottom:4px}
+  .ev{display:grid;grid-template-columns:52px 10px 64px minmax(0,1fr) 150px;gap:10px;align-items:start;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px}
+  .ev .tm{font-family:var(--mono);font-size:12.5px;color:var(--sub)}.ev .dot{width:8px;height:8px;border-radius:4px;margin-top:8px}.ev .who{font-size:12.5px;color:var(--sub)}.ev .what .m{font-size:12.5px;color:var(--dim);font-family:var(--mono)}
+  .find{display:grid;grid-template-columns:8px 110px minmax(0,1fr) 190px 110px;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--line);font-size:14px}.find:first-child{border-top:none}.find .dot{width:8px;height:8px;border-radius:4px;margin-top:9px}.find .m{font-size:12.5px;color:var(--dim)}
+  .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+  .pri .p{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:start;font-size:15px;margin-bottom:8px}.pri .n{font:600 13px var(--mono);background:var(--fill2);border-radius:6px;text-align:center;padding:2px 0;margin-top:4px}
+  .strip{display:flex;gap:3px;align-items:flex-end;height:26px}.strip i{flex:1;max-width:16px;height:100%;border-radius:3px;background:var(--ok)}.strip i.w{background:var(--warn)}.strip i.sel{outline:2px solid var(--ink);outline-offset:1px}
+  .notes{font-size:13.5px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:8px 14px;margin-top:16px}
+  .foot{margin-top:40px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:12px}
+  @media (max-width:1000px){.stats{grid-template-columns:repeat(3,1fr)}.graphwrap,.two{grid-template-columns:1fr}.side{border-left:none;padding-left:0}}
+</style>
+</head>
+<body>
+<div class="ribbon">表结构变更追溯 R2 设计稿（静态原型，可交互）· 数据全部来自 og5 真实字典：pg_object 的建表/改表时间与创建者、三代 gsbench schema 的真实列与索引、平台字典快照观察到的 3 条变更、审计里的 4 条账号 DDL · 交互：点演进图的线段 / 节点、切换版本比较</div>
+<div class="topbar"><b>任务</b><span class="dim">agent：og-lab</span><span class="ret">返回会话</span></div>
+<div class="page">
+  <div class="title">
+    <h1>og5-schema-history</h1>
+    <span class="meta">任务 · 每天 10:00 · 启用 · 最近 <b>warn</b> · 调整窗口或关注对象，在会话里说一句即可</span>
+    <span class="btns"><span class="btn">▶ 立即运行</span><span class="btn">⏸ 暂停</span><span class="btn danger">删除</span></span>
+  </div>
+  <div class="tabs"><span class="on">报告</span><span>历史</span><span>配置</span></div>
+
+  <!-- ① 状态带 -->
+  <div class="band">
+    <span class="worst">变更态势：告警</span>
+    <span class="chip ok">✓ 时间 / 操作者 / 结构差异全部来自字典直读 · 规则由脚本判定 · 模型只做解读</span>
+    <span style="font-size:13.5px;color:var(--dim)">og5 · 采集 08-30 10:00 · 三源：pg_object（建/改时间、创建者）· 平台字典快照（列/索引签名，10 分钟粒度）· 审计 pg_query_audit（DDL 原文与执行者）</span>
+  </div>
+  <div class="picker">
+    回溯窗口 <span class="w"><b>35 天</b> · 07-27 → 08-30</span>
+    关注 <span class="w">全部 schema（6 个）· 表 140 · 索引 186 · 视图 1</span>
+    <span>换窗口或只看某个 schema / 表，在会话里说一句（"看下 gsbench_v4 这一个月谁动过"）</span>
+  </div>
+
+  <!-- ② 摘要卡 -->
+  <div class="stats">
+    <div class="stat"><div class="l">变更事件</div><div class="v num">14</div><div class="d">10 次结构 · 4 次账号权限</div></div>
+    <div class="stat"><div class="l">涉及对象</div><div class="v num">88</div><div class="d">表 85 · 索引 2 · 视图 1</div></div>
+    <div class="stat"><div class="l">操作者</div><div class="v num">2</div><div class="d">gaussdb 10 · omm 4 · 未归因 0</div></div>
+    <div class="stat"><div class="l">破坏性变更</div><div class="v num" style="color:var(--warn)">1</div><div class="d">DROP TABLE public.w3_dict_probe</div></div>
+    <div class="stat"><div class="l">业务时段变更</div><div class="v num" style="color:var(--notice)">6</div><div class="d">09:00–20:00 内执行</div></div>
+    <div class="stat"><div class="l">schema 代际</div><div class="v num">3</div><div class="d">gsbench → v4 → e2e_100g</div></div>
+  </div>
+
+  <!-- ③ 演进图 -->
+  <h2>结构演进图 <span class="hint">主干 = 库级结构版本（每次 DDL 批次记一个版本 v1…v10）· 分支 = 各 schema 的生命线（从建立分出，删除处封口）· 点节点看那次变更，<b>点线段看该生命时段里表结构变了什么</b></span></h2>
+  <div class="card">
+    <div class="graphwrap">
+      <div class="graph"><svg id="g" viewBox="0 0 800 380" preserveAspectRatio="xMinYMin meet" style="width:100%;height:auto;display:block"></svg>
+        <div class="legend">
+          <span><i class="sw" style="background:var(--trunk)"></i> 主干版本</span>
+          <span><i class="sw" style="background:var(--add)"></i> 新建</span><span><i class="sw" style="background:var(--mod)"></i> 修改（列 / 索引 / 授权）</span><span><i class="sw" style="background:var(--del)"></i> 删除</span><span><i class="sw" style="background:var(--l6)"></i> 账号 / 权限</span>
+          <span style="margin-left:auto">线段 = 该 schema 在两次变更之间的生命时段，点击查看时段内结构差异</span>
+        </div>
+      </div>
+      <div class="side" id="side"></div>
+    </div>
+  </div>
+  <div class="tip" id="tip"></div>
+
+  <!-- ④ 版本比较 -->
+  <h2>版本比较 <span class="hint">GitHub compare 式：任选两个结构版本（主干版本 / 某代 schema），逐对象给出列与索引的差异 · 只列有变化的对象</span></h2>
+  <div class="card">
+    <div class="cmpbar">
+      <span style="color:var(--dim)">base</span><select id="base"></select>
+      <span class="swap" id="swap" title="交换">⇄</span>
+      <span style="color:var(--dim)">compare</span><select id="cmp"></select>
+      <span class="link" style="margin-left:auto">在会话里深挖 →</span>
+    </div>
+    <div class="quick" id="quick">常用对比：</div>
+    <div class="summary" id="summary"></div>
+    <div id="diffs"></div>
+  </div>
+
+  <!-- ⑤ 变更时间轴 -->
+  <h2>变更时间轴 <span class="hint">什么时间 · 由哪个用户 · 做过什么变更 · 按日分组（新→旧）· 来源芯片可追溯</span></h2>
+  <div class="card" id="timeline"></div>
+
+  <!-- ⑥ 规范扫描 -->
+  <h2>规范扫描 <span class="hint">DDLR 规则脚本判定 · 级别不可被解读下调 · 每条可直接深挖</span></h2>
+  <div class="card" style="padding:4px 20px">
+    <div class="find"><i class="dot" style="background:var(--warn)"></i><span class="key">DDLR01</span><div>表被删除：public.w3_dict_probe（含索引 w3_dict_probe_pkey）<div class="m">08-18 16:30 · 来源：平台字典快照（该对象 08-18 首次入库后 6 分钟内消失）· 未在审计中找到 DROP 原文（当时审计权限尚未授予）</div></div><div class="m">实测 <b style="color:var(--warn)">1 张</b> · 阈值 &gt; 0</div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--notice)"></i><span class="key">DDLR04</span><div>业务时段（09:00–20:00）内的结构变更 6 次<div class="m">08-26 14:31 建 vacuum_hold_targets + 改 plan_data/meta_journal/meta_plan_cache · 08-26 14:52 改 vacuum_hold_targets · 08-27 09:16 改视图 qa_1234.customer_order_summary · 08-24 09:33 批量授权 51 表 · 07-29 13:46 / 14:47 改 v4.meta_* / plan_data</div></div><div class="m">实测 <b style="color:var(--notice)">6 次</b> · 阈值 ≥ 1</div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--notice)"></i><span class="key">DDLR05</span><div>同一对象 24h 内反复变更：gsbench_e2e_20260801_100g.vacuum_hold_targets（14:31 建、14:52 改）<div class="m">建表后 21 分钟即修改（新增索引 / 改列）——常见于"先建表再补索引"的脚本，确认是否计划内</div></div><div class="m">实测 <b style="color:var(--notice)">2 次 / 21 分钟</b> · 阈值 ≥ 3 / 24h（降为关注）</div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--notice)"></i><span class="key">DDLR06</span><div>账号权限提升：opendb_ro 08-21 授 AUDITADMIN、08-27 授 SYSADMIN（执行者 omm）<div class="m">平台账号权限变更（user 08-27 定：权限由数据库控制）——记录在案，不判违规</div></div><div class="m">实测 <b style="color:var(--notice)">2 次</b> · 阈值 ≥ 1</div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">DDLR00</span><div>无 DROP SCHEMA</div><div class="m">实测 0 · 阈值 &gt; 0</div><span></span></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">DDLR02 / 03</span><div>无 TRUNCATE、无 DROP COLUMN / CONSTRAINT</div><div class="m">实测 0 · 阈值 &gt; 0</div><span></span></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">DDLR90</span><div>全部变更均已归因到操作者（pg_object.creator + 审计 username）</div><div class="m">未归因 0</div><span></span></div>
+  </div>
+
+  <!-- ⑦ 故事线 / 优先级 -->
+  <h2>变更故事线与处置优先级 <span class="hint">模型解读 · 引用的对象与时间均有出处</span></h2>
+  <div class="two">
+    <div class="card" style="background:var(--fill);border:none"><div style="font-size:13.5px;color:var(--dim);font-weight:500;margin-bottom:4px">变更故事线</div><div style="font-size:15px;color:var(--sub)">这 35 天里 og5 的结构变化是三代基准库的演进：07-28 建第一代 <span class="key">gsbench</span>（17 表，单列主键、无分布键）；07-29 建 <span class="key">gsbench_v4</span>（33 表：所有事实/明细表加 dist_key 并改为 (dist_key, id) 复合主键，新增 ddl_global_*、dist_*、network_ingress、sort_data 等 16 张场景表，当天下午两次调整 plan_data 索引与 meta_* 缓存表）；08-02 建 <span class="key">gsbench_e2e_20260801_100g</span>（在 v4 基础上把 plan_data 的 shape_bad 索引换成 shape_good + 补 index_drop 索引，lookup 索引移到 pg_default 表空间）。之后是三次运维动作：08-18 平台探针表 w3_dict_probe 建后即删（DDLR01，属平台自检）；08-24 09:33 对 gsbench / e2e 两个 schema 的 51 张表批量授权（对应 08-23 补授只读账号读权）；08-26 14:31 e2e 新增 vacuum_hold_targets 并微调 plan_data 索引，21 分钟后再改一次。账号面 4 次变更都是 omm 对平台账号 opendb_ro 的授权演进（MONADMIN → 只读 → AUDITADMIN → SYSADMIN）。没有业务表被删或被截断。</div></div>
+    <div class="card"><div style="font-size:13.5px;color:var(--dim);font-weight:500;margin-bottom:4px">处置优先级</div>
+      <div class="pri">
+        <div class="p"><span class="n">P1</span><div>确认 08-26 14:31 / 14:52 的 e2e 变更是否计划内（业务时段 + 21 分钟内二改）；若是压测脚本，建议脚本改在窗口外执行 <span class="key">DDLR04</span> <span class="key">DDLR05</span></div></div>
+        <div class="p"><span class="n">P2</span><div>三代 schema 并存共 85 张表、约 240 GB：gsbench（v1）已 30 天无访问，评估归档或 DROP（需走审批 / 备份） <span class="key">gsbench</span></div></div>
+        <div class="p"><span class="n">P3</span><div>w3_dict_probe 的建删属平台自检，建议把 public 下的探针对象加入规则白名单，避免每次都报 DDLR01 <span class="key">DDLR01</span></div></div>
+      </div></div>
+  </div>
+
+  <!-- ⑧ 历史 -->
+  <h2>检查历史 <span class="hint">一格一次运行 · 点格子查看当次报告</span></h2>
+  <div class="card"><div class="strip"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="w"></i><i></i><i></i><i class="w sel"></i></div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin-top:6px"><span>08-20</span><span>最新 ▲</span></div></div>
+  <div class="notes">📋 采集说明：结构版本 = 每个 DDL 批次（同一分钟内同一操作者的变更合并）记一版，版本内容 = 当时全部对象的列与索引签名（平台字典快照每 10 分钟一版，快照之间的精确时刻取 pg_object.ctime/mtime）· 审计 pg_query_audit 提供 DDL 原文与执行账号，当前只有账号类 DDL 落在审计里（业务表 DDL 由 gaussdb 超级账号在本地执行，审计策略未覆盖 —— 可让 DBA 打开 audit_system_object）· 08-18 前的变更因平台字典尚未开始观测，列级差异以当前结构回推</div>
+  <div class="foot">设计稿 DDL R2 · 2026-08-30 · 对象、列、索引、时间、创建者均取自 og5 真实字典（pg_object / information_schema / pg_indexes / opendb_dict_changes / pg_query_audit）· 交互在实现时接通：线段 / 节点点击、版本选择、深挖建会话</div>
+</div>
+
+<script>
+// ───────── 真实数据（og5，2026-08-30 探针）─────────
+const T = (s) => new Date('2026-' + s.replace(' ', 'T') + ':00+08:00').getTime();
+const COL = { add: getComputedStyle(document.documentElement).getPropertyValue('--add').trim(), mod: getComputedStyle(document.documentElement).getPropertyValue('--mod').trim(), del: getComputedStyle(document.documentElement).getPropertyValue('--del').trim(), user: getComputedStyle(document.documentElement).getPropertyValue('--l6').trim(), ink: '#0F1115' };
+// 主干版本：每个 DDL 批次一版
+const VERSIONS = [
+  { v: 'v1', t: '07-28 16:58', who: 'gaussdb', lane: 'gsbench', kind: 'add', label: '建 schema gsbench：17 表 · 17 索引', objs: 17 },
+  { v: 'v2', t: '07-29 11:46', who: 'gaussdb', lane: 'gsbench_v4', kind: 'add', label: '建 schema gsbench_v4：33 表 · 41 索引', objs: 33 },
+  { v: 'v3', t: '07-29 13:46', who: 'gaussdb', lane: 'gsbench_v4', kind: 'mod', label: '改 v4.meta_journal / meta_plan_cache', objs: 2 },
+  { v: 'v4', t: '07-29 14:47', who: 'gaussdb', lane: 'gsbench_v4', kind: 'mod', label: '改 v4.plan_data（索引形态）', objs: 1 },
+  { v: 'v5', t: '08-02 00:14', who: 'gaussdb', lane: 'gsbench_e2e_20260801_100g', kind: 'add', label: '建 schema gsbench_e2e_20260801_100g：33 表 · 41 索引', objs: 33 },
+  { v: 'v6', t: '08-18 16:30', who: '平台', lane: 'public', kind: 'del', label: 'DROP TABLE public.w3_dict_probe（含 pkey）', objs: 2 },
+  { v: 'v7', t: '08-24 09:33', who: 'gaussdb', lane: 'gsbench', kind: 'mod', label: '批量授权：gsbench 17 表 + e2e 34 表（mtime 同步刷新）', objs: 51, also: ['gsbench_e2e_20260801_100g'] },
+  { v: 'v8', t: '08-26 14:31', who: 'gaussdb', lane: 'gsbench_e2e_20260801_100g', kind: 'add', label: '建 e2e.vacuum_hold_targets + pkey；改 plan_data / meta_journal / meta_plan_cache', objs: 4 },
+  { v: 'v9', t: '08-26 14:52', who: 'gaussdb', lane: 'gsbench_e2e_20260801_100g', kind: 'mod', label: '改 e2e.vacuum_hold_targets', objs: 1 },
+  { v: 'v10', t: '08-27 09:16', who: 'gaussdb', lane: 'qa_1234', kind: 'mod', label: '改视图 qa_1234.customer_order_summary（定义签名变化）', objs: 1 },
+];
+const USER_EVENTS = [
+  { t: '08-18 14:57', who: 'omm', sql: "CREATE USER opendb_ro WITH MONADMIN PASSWORD '********';" },
+  { t: '08-18 14:59', who: 'omm', sql: 'ALTER USER opendb_ro SET default_transaction_read_only = on;' },
+  { t: '08-21 21:50', who: 'omm', sql: 'ALTER USER opendb_ro AUDITADMIN;' },
+  { t: '08-27 17:14', who: 'omm', sql: 'ALTER USER opendb_ro SYSADMIN;' },
+];
+// 分支（schema 生命线）
+const LANES = [
+  { id: 'gsbench', color: 'var(--l1)', born: '07-28 16:58', tables: 17, note: '第一代：单列主键、无 dist_key' },
+  { id: 'gsbench_v4', color: 'var(--l2)', born: '07-29 11:46', tables: 33, note: '第二代：dist_key + 复合主键 + 16 张场景表' },
+  { id: 'gsbench_e2e_20260801_100g', color: 'var(--l3)', born: '08-02 00:14', tables: 34, note: '第三代（当前压测库）· 已展开有变化的 4 表，其余 30 表无变化（折叠）' },
+  // 展开后的表级生命线（同 schema 内有变化的表各一条，细线；实现时点 schema 名切换展开/折叠）
+  { id: '  └ plan_data', color: 'var(--l3)', born: '08-02 00:14', tables: 0, note: '13 列 · 8 索引', sub: true, events: [{ t: '08-24 09:33', kind: 'mod', label: '授权（mtime 刷新，签名未变）', who: 'gaussdb' }, { t: '08-26 14:31', kind: 'mod', label: '索引调整（签名未变的 mtime 刷新）', who: 'gaussdb' }] },
+  { id: '  └ meta_journal', color: 'var(--l3)', born: '08-02 00:14', tables: 0, note: '16 列', sub: true, events: [{ t: '08-24 09:33', kind: 'mod', label: '授权', who: 'gaussdb' }, { t: '08-26 14:31', kind: 'mod', label: '修改（mtime）', who: 'gaussdb' }] },
+  { id: '  └ vacuum_hold_targets', color: 'var(--l3)', born: '08-26 14:31', tables: 0, note: '5 列 · pkey(dist_key,id)', sub: true, events: [{ t: '08-26 14:52', kind: 'mod', label: '建表 21 分钟后修改', who: 'gaussdb' }] },
+  { id: 'public', color: 'var(--l4)', born: '08-18 16:24', died: '08-18 16:30', tables: 1, note: '平台探针表，建后即删' },
+  { id: 'qa_1234', color: 'var(--l5)', born: null, tables: 0, note: '视图 customer_order_summary（08-18 前已存在）' },
+  { id: '账号 / 权限', color: 'var(--l6)', born: null, tables: 0, note: 'opendb_ro 权限演进', user: true },
+];
+// 三代 schema 的真实列与索引（只列有差异的对象；"!"=NOT NULL）
+const S = {
+  gsbench: {
+    fact_sales: { cols: 'id:bigint!,sale_date:date!,customer_id:bigint!,product_id:integer!,store_id:integer!,amount:numeric(18,2)!,quantity:integer!,payload:varchar(256)', idx: { fact_sales_product_idx: '(product_id)' } },
+    customers: { cols: 'id:bigint!,region_id:integer!,name:varchar(96),payload:varchar(256)', idx: { customers_pkey: 'PRIMARY KEY (id)' } },
+    orders: { cols: 'id:bigint!,customer_id:bigint!,status:integer!,amount:numeric(18,2)!,created_at:timestamp!', idx: { orders_pkey: 'PRIMARY KEY (id)' } },
+    order_items: { cols: 'id:bigint!,order_id:bigint!,product_id:bigint!,quantity:integer!,amount:numeric(18,2)!', idx: { order_items_pkey: 'PRIMARY KEY (id)' } },
+    accounts: { cols: 'id:bigint!,customer_id:bigint!,balance:numeric(18,2)!,payload:varchar(256),updated_at:timestamp!', idx: { accounts_pkey: 'PRIMARY KEY (id)' } },
+    meta_batches: { cols: 'table_name:varchar(128)!,high_water:bigint!,dataset_version:varchar(32)!,updated_at:timestamp!', idx: { meta_batches_pkey: 'PRIMARY KEY (table_name)' } },
+    plan_data: { cols: 'id:bigint!,lookup_key:bigint!,skew_key:integer!,stats_target_key:integer!,stats_ndistinct_key:bigint!,stats_corr_a:integer!,stats_corr_b:integer!,index_unusable_key:bigint!,index_drop_key:bigint!,index_shape_lead:integer!,index_shape_tail:bigint!,payload:varchar(512)', idx: { plan_data_pkey: 'PRIMARY KEY (id)', plan_data_lookup_idx: '(lookup_key)', plan_index_drop_idx: '(index_drop_key)', plan_index_shape_good_idx: '(index_shape_lead, index_shape_tail)', plan_index_unusable_idx: '(index_unusable_key)', plan_stats_corr_idx: '(stats_corr_a, stats_corr_b)', plan_stats_ndistinct_idx: '(stats_ndistinct_key)', plan_stats_target_idx: '(stats_target_key)' } },
+    vacuum_targets: { cols: 'id:bigint!,group_id:integer!,version:bigint!,payload:varchar(1024),updated_at:timestamp!', idx: { vacuum_targets_pkey: 'PRIMARY KEY (id)', vacuum_targets_group_idx: '(group_id)' } },
+    lock_targets: { cols: 'id:bigint!,value:bigint!,payload:varchar(256)', idx: { lock_targets_pkey: 'PRIMARY KEY (id)' } },
+  },
+  gsbench_v4: {
+    fact_sales: { cols: 'dist_key:bigint!,id:bigint!,sale_date:date!,customer_id:bigint!,product_id:integer!,store_id:integer!,amount:numeric(18,2)!,quantity:integer!,payload:varchar(256)', idx: { fact_sales_pkey: 'PRIMARY KEY (dist_key, id)', fact_sales_product_idx: '(product_id, dist_key, id)', fact_sales_customer_idx: '(customer_id, dist_key, id)' } },
+    customers: { cols: 'dist_key:bigint!,id:bigint!,region_id:integer!,name:varchar(96),payload:varchar(256)', idx: { customers_pkey: 'PRIMARY KEY (dist_key, id)' } },
+    orders: { cols: 'dist_key:bigint!,id:bigint!,customer_id:bigint!,status:integer!,amount:numeric(18,2)!,created_at:timestamp!', idx: { orders_pkey: 'PRIMARY KEY (dist_key, id)', orders_customer_idx: '(customer_id, dist_key, id)' } },
+    order_items: { cols: 'dist_key:bigint!,id:bigint!,order_id:bigint!,product_id:integer!,quantity:integer!,amount:numeric(18,2)!', idx: { order_items_pkey: 'PRIMARY KEY (dist_key, id)', order_items_order_idx: '(order_id, dist_key, id)' } },
+    accounts: { cols: 'dist_key:bigint!,id:bigint!,customer_id:bigint!,balance:numeric(18,2)!,payload:varchar(256),updated_at:timestamp!', idx: { accounts_pkey: 'PRIMARY KEY (dist_key, id)', accounts_customer_idx: '(customer_id, dist_key, id)' } },
+    meta_batches: { cols: 'table_name:varchar(128)!,high_water:bigint!,target_rows:bigint!,estimated_row_bytes:bigint!,dataset_version:varchar(32)!,updated_at:timestamp!', idx: { meta_batches_pkey: 'PRIMARY KEY (table_name)' } },
+    plan_data: { cols: 'dist_key:bigint!,id:bigint!,lookup_key:bigint!,skew_key:integer!,stats_target_key:integer!,stats_ndistinct_key:bigint!,stats_corr_a:integer!,stats_corr_b:integer!,index_unusable_key:bigint!,index_drop_key:bigint!,index_shape_lead:integer!,index_shape_tail:bigint!,payload:varchar(512)', idx: { plan_data_pkey: 'PRIMARY KEY (dist_key, id)', plan_data_lookup_idx: '(lookup_key, dist_key, id)', plan_index_shape_bad_idx: '(index_shape_tail, index_shape_lead)', plan_index_unusable_idx: '(index_unusable_key, dist_key, id)', plan_stats_corr_idx: '(stats_corr_a, stats_corr_b, dist_key, id)', plan_stats_ndistinct_idx: '(stats_ndistinct_key, dist_key, id)', plan_stats_target_idx: '(stats_target_key, dist_key, id)' } },
+    vacuum_targets: { cols: 'dist_key:bigint!,id:bigint!,group_id:integer!,version:bigint!,payload:varchar(1024),updated_at:timestamp!', idx: { vacuum_targets_pkey: 'PRIMARY KEY (dist_key, id)', vacuum_targets_group_idx: '(group_id, dist_key, id)' } },
+    lock_targets: { cols: 'dist_key:bigint!,id:bigint!,value:bigint!,payload:varchar(256)', idx: { lock_targets_pkey: 'PRIMARY KEY (dist_key, id)' } },
+    sort_data: { cols: 'dist_key:bigint!,id:bigint!,group_id:integer!,sort_key:bigint!,payload:varchar(512)', idx: { sort_data_pkey: 'PRIMARY KEY (dist_key, id)', sort_data_sort_idx: '(sort_key, dist_key, id)' } },
+    network_ingress: { cols: 'run_id:varchar(96)!,dist_key:bigint!,seq:bigint!,payload:varchar(1024)!,created_at:timestamp!', idx: { network_ingress_pkey: 'PRIMARY KEY (dist_key, run_id, seq)' } },
+    ddl_global_1: { cols: 'id:bigint!,value:bigint!,payload:varchar(256)', idx: {} }, ddl_global_2: { cols: 'id:bigint!,value:bigint!,payload:varchar(256)', idx: {} }, ddl_global_3: { cols: 'id:bigint!,value:bigint!,payload:varchar(256)', idx: {} }, ddl_global_4: { cols: 'id:bigint!,value:bigint!,payload:varchar(256)', idx: {} },
+    dist_join_data: { cols: 'dist_key:bigint!,id:bigint!,join_key:bigint!,group_id:integer!,payload:varchar(256)', idx: {} }, dist_lock_targets: { cols: 'dist_key:bigint!,id:bigint!,value:bigint!,payload:varchar(256)', idx: {} }, dist_small_hash: { cols: 'dist_key:bigint!,id:bigint!,hash_key:bigint!,group_id:integer!,payload:varchar(256)', idx: {} }, dist_txn_targets: { cols: 'dist_key:bigint!,id:bigint!,value:bigint!,payload:varchar(256)', idx: {} },
+    cluster_skew_data: { cols: 'skew_key:integer!,id:bigint!,payload:varchar(256)', idx: {} }, global_cache_targets: { cols: 'id:bigint!,value:bigint!,payload:varchar(256)', idx: {} }, hardparse_targets: { cols: 'id:bigint!,group_id:integer!,value:bigint!,payload:varchar(256)', idx: {} }, lock_mode_targets: { cols: 'id:bigint!,value:bigint!,payload:varchar(256)', idx: {} },
+    replication_targets: { cols: 'dist_key:bigint!,id:bigint!,version:bigint!,payload:varchar(256),updated_at:timestamp!', idx: {} }, replication_conflict_targets: { cols: 'dist_key:bigint!,id:bigint!,version:bigint!,payload:varchar(256),updated_at:timestamp!', idx: {} },
+  },
+};
+// e2e 第三代 = v4 为基础 + plan_data 索引改法 + vacuum_hold_targets（08-26）
+S.gsbench_e2e_20260801_100g = JSON.parse(JSON.stringify(S.gsbench_v4));
+S.gsbench_e2e_20260801_100g.plan_data.idx = { plan_data_pkey: 'PRIMARY KEY (dist_key, id)', plan_data_lookup_idx: '(lookup_key, dist_key) TABLESPACE pg_default', plan_index_drop_idx: '(index_drop_key, dist_key, id)', plan_index_shape_good_idx: '(index_shape_lead, index_shape_tail, dist_key, id)', plan_index_unusable_idx: '(index_unusable_key, dist_key, id)', plan_stats_corr_idx: '(stats_corr_a, stats_corr_b, dist_key, id)', plan_stats_ndistinct_idx: '(stats_ndistinct_key, dist_key, id)', plan_stats_target_idx: '(stats_target_key, dist_key, id)' };
+const E2E_0802 = JSON.parse(JSON.stringify(S.gsbench_e2e_20260801_100g));
+S.gsbench_e2e_20260801_100g.vacuum_hold_targets = { cols: 'dist_key:bigint!,id:bigint!,version:bigint!,payload:varchar(2048),updated_at:timestamp!', idx: { vacuum_hold_targets_pkey: 'PRIMARY KEY (dist_key, id)' } };
+// 可比较的结构版本
+const SNAPS = [
+  { id: 'v1', label: 'v1 · 07-28 16:58 · gsbench（第一代，17 表）', tables: S.gsbench },
+  { id: 'v2', label: 'v2 · 07-29 11:46 · gsbench_v4（第二代，33 表）', tables: S.gsbench_v4 },
+  { id: 'v5', label: 'v5 · 08-02 00:14 · gsbench_e2e_20260801_100g（第三代，33 表）', tables: E2E_0802 },
+  { id: 'v9', label: 'v9 · 08-26 14:52 · gsbench_e2e_20260801_100g（当前，34 表）', tables: S.gsbench_e2e_20260801_100g },
+];
+
+// ───────── 演进图 ─────────
+const svg = document.getElementById('g'); const NS = 'http://www.w3.org/2000/svg';
+const el = (t, a, txt) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); if (txt !== undefined) e.textContent = txt; return e; };
+const W = 800, L = 210, R = 20, TOP = 34, LANE_H = 44, t0 = T('07-27 00:00'), t1 = T('08-30 12:00');
+const x = (ts) => L + (Math.max(t0, Math.min(t1, ts)) - t0) / (t1 - t0) * (W - L - R);
+const tip = document.getElementById('tip'); const side = document.getElementById('side');
+const showTip = (e, html) => { tip.innerHTML = html; tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px'; };
+const hideTip = () => { tip.style.display = 'none'; };
+// 日期刻度
+const ticks = ['07-28', '08-02', '08-07', '08-12', '08-17', '08-22', '08-27'];
+ticks.forEach((d) => { const xx = x(T(d + ' 00:00')); svg.appendChild(el('line', { x1: xx, x2: xx, y1: TOP - 6, y2: TOP + LANE_H * (LANES.length + 1), stroke: '#EEF0F3' })); svg.appendChild(el('text', { x: xx, y: TOP - 12, 'text-anchor': 'middle', 'font-size': 10.5, fill: '#81858C' }, d)); });
+// 主干
+const trunkY = TOP + 10;
+svg.appendChild(el('text', { x: 8, y: trunkY + 4, class: 'lane-label', 'font-weight': 600, fill: '#0F1115' }, '主干 · 库级结构版本'));
+svg.appendChild(el('line', { x1: x(t0), x2: W - R, y1: trunkY, y2: trunkY, stroke: '#0F1115', 'stroke-width': 3, 'stroke-linecap': 'round' }));
+const kindColor = (k) => (k === 'add' ? COL.add : k === 'del' ? COL.del : k === 'user' ? COL.user : COL.mod);
+VERSIONS.forEach((v, i) => {
+  const xx = x(T(v.t)); const g = el('g', { class: 'node' });
+  g.appendChild(el('circle', { cx: xx, cy: trunkY, r: 6, fill: '#fff', stroke: kindColor(v.kind), 'stroke-width': 2.5 }));
+  if (i % 2 === 0 || i === VERSIONS.length - 1) g.appendChild(el('text', { x: xx, y: trunkY - 11, 'text-anchor': 'middle', 'font-size': 10, fill: '#61666B', 'font-family': 'JetBrains Mono, Menlo, monospace' }, v.v));
+  g.addEventListener('mousemove', (e) => showTip(e, `<b>${v.v} · ${v.t}</b> · ${v.who}<br>${v.label}`)); g.addEventListener('mouseleave', hideTip);
+  g.addEventListener('click', () => showVersion(v));
+  svg.appendChild(g);
+});
+// 分支
+LANES.forEach((lane, li) => {
+  const y = TOP + LANE_H * (li + 1) + 10;
+  svg.appendChild(el('text', { x: 8, y: y - 4, class: 'lane-label' }, lane.id));
+  svg.appendChild(el('text', { x: 8, y: y + 10, class: 'lane-sub' }, lane.user ? lane.note : `${lane.tables ? lane.tables + ' 表 · ' : ''}${lane.note}`));
+  const evs = lane.user ? USER_EVENTS.map((u) => ({ t: u.t, kind: 'user', label: u.sql, who: u.who })) : lane.sub ? lane.events.map((e) => ({ ...e })) : VERSIONS.filter((v) => v.lane === lane.id || (v.also ?? []).includes(lane.id)).map((v) => ({ ...v }));
+  const xs = lane.born ? x(T(lane.born)) : x(t0); const xe = lane.died ? x(T(lane.died)) : W - R;
+  if (lane.born && !lane.sub) svg.appendChild(el('path', { d: `M ${xs} ${trunkY} C ${xs} ${trunkY + 18}, ${xs} ${y - 18}, ${xs} ${y}`, fill: 'none', stroke: lane.color, 'stroke-width': 2, 'stroke-dasharray': '3 3' }));
+  if (lane.sub) svg.appendChild(el('path', { d: `M ${xs} ${y - LANE_H + 12} L ${xs} ${y}`, fill: 'none', stroke: lane.color, 'stroke-width': 1.2, 'stroke-dasharray': '2 3', opacity: 0.6 }));
+  const points = [{ t: lane.born ? T(lane.born) : t0, x: xs, first: true }, ...evs.map((e) => ({ t: T(e.t), x: x(T(e.t)), ev: e })).sort((a, b) => a.t - b.t), { t: lane.died ? T(lane.died) : t1, x: xe, last: true }];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1]; if (b.x - a.x < 1) continue;
+    const seg = el('line', { class: 'seg', x1: a.x, x2: b.x, y1: y, y2: y, stroke: lane.color, 'stroke-width': lane.sub ? 2.5 : 5, 'stroke-linecap': 'round', 'stroke-dasharray': (!lane.born && i === 0) ? '6 5' : 'none', opacity: lane.sub ? 0.6 : 0.85 });
+    const from = a.first ? (lane.born ? '建立 ' + lane.born : '窗口起 07-27（此前已存在）') : a.ev.t, to = b.last ? (lane.died ? '删除 ' + lane.died : '至今') : b.ev.t;
+    seg.addEventListener('mousemove', (e) => showTip(e, `<b>${lane.id}</b> 生命时段<br>${from} → ${to}<br><span style="color:#4176E6">点击查看该时段内的表结构变化</span>`)); seg.addEventListener('mouseleave', hideTip);
+    seg.addEventListener('click', () => { document.querySelectorAll('.seg.sel').forEach((s) => s.classList.remove('sel')); seg.classList.add('sel'); showSegment(lane, a, b); });
+    svg.appendChild(seg);
+  }
+  points.forEach((p) => {
+    if (!p.ev) return; const g = el('g', { class: 'node' });
+    g.appendChild(el('circle', { cx: p.x, cy: y, r: 5.5, fill: kindColor(p.ev.kind), stroke: '#fff', 'stroke-width': 2 }));
+    g.addEventListener('mousemove', (e) => showTip(e, `<b>${p.ev.v ? p.ev.v + ' · ' : ''}${p.ev.t}</b> · ${p.ev.who}<br>${p.ev.label}`)); g.addEventListener('mouseleave', hideTip);
+    g.addEventListener('click', () => (p.ev.v ? showVersion(p.ev) : showUser(p.ev)));
+    svg.appendChild(g);
+  });
+  if (lane.died) { const xd = xe; svg.appendChild(el('path', { d: `M ${xd - 5} ${y - 5} L ${xd + 5} ${y + 5} M ${xd + 5} ${y - 5} L ${xd - 5} ${y + 5}`, stroke: COL.del, 'stroke-width': 2.5 })); }
+  else if (!lane.user) svg.appendChild(el('path', { d: `M ${xe - 8} ${y - 5} L ${xe} ${y} L ${xe - 8} ${y + 5}`, fill: 'none', stroke: lane.color, 'stroke-width': 2 }));
+});
+svg.setAttribute('viewBox', `0 0 ${W} ${TOP + LANE_H * (LANES.length + 1) + 6}`);
+
+// ───────── 右侧面板 ─────────
+function showVersion(v) {
+  side.innerHTML = `<div class="t">主干版本</div><h3>${v.v} · ${v.label}</h3>
+  <div class="kv"><span class="l">时间</span><span>2026-${v.t}（CST）</span><span class="l">操作者</span><span>${v.who}</span><span class="l">对象数</span><span>${v.objs}</span><span class="l">来源</span><span><span class="src">pg_object</span> ${v.v === 'v6' || v.v === 'v8' || v.v === 'v9' || v.v === 'v10' ? '<span class="src">平台字典</span>' : ''} ${v.kind === 'user' ? '<span class="src">审计</span>' : ''}</span></div>
+  ${v.v === 'v8' ? '<div class="code">-- 平台字典 08-26 14:33 观察到（快照 10 分钟粒度）\n+ table gsbench_e2e_20260801_100g.vacuum_hold_targets\n+ index vacuum_hold_targets_pkey PRIMARY KEY (dist_key, id)\n~ plan_data / meta_journal / meta_plan_cache（mtime 刷新，签名未变 → 索引/授权类修改）</div>' : ''}
+  ${v.v === 'v6' ? '<div class="code">-- 平台字典 08-18 16:30 观察到\n- table public.w3_dict_probe (id bigint, note text)\n- index public.w3_dict_probe_pkey\n-- 审计中无 DROP 原文（当时尚未授 AUDITADMIN）</div>' : ''}
+  ${v.v === 'v7' ? '<div class="code">-- pg_object.mtime 同一分钟刷新 51 张表，列/索引签名未变 → 判定为授权类变更\n-- 对应 08-23 用例：GRANT USAGE ON SCHEMA gsbench, gsbench_e2e_20260801_100g TO opendb_ro;\n--                  GRANT SELECT ON ALL TABLES IN SCHEMA … TO opendb_ro;</div>' : ''}
+  <div style="display:flex;gap:14px;justify-content:flex-end"><span class="link">与上一版比较 →</span><span class="link">在会话里深挖 →</span></div>`;
+}
+function showUser(e) {
+  side.innerHTML = `<div class="t">账号 / 权限变更</div><h3>${e.t} · ${e.who}</h3><div class="code">${e.label}</div><div class="kv"><span class="l">来源</span><span><span class="src">审计 pg_query_audit</span> type=ddl_user · result=ok</span></div><div style="display:flex;gap:14px;justify-content:flex-end"><span class="link">在会话里深挖 →</span></div>`;
+}
+function showSegment(lane, a, b) {
+  const from = a.first ? (lane.born ? lane.born : '07-27（窗口起）') : a.ev.t, to = b.last ? (lane.died ? lane.died : '至今') : b.ev.t;
+  let body = '';
+  if (lane.user) body = `<div style="color:var(--dim)">账号线不承载表结构；该时段 opendb_ro 权限：${a.first ? '（尚未创建）' : a.ev.label.replace(/;$/, '')}</div>`;
+  else if (lane.id === 'gsbench_e2e_20260801_100g' && a.first) body = diffHtml(E2E_0802, E2E_0802, true) + `<div style="color:var(--sub)">该时段 33 表结构不变；08-24 09:33 批量授权刷新了 34 张表的 mtime（列/索引签名未变）。</div>`;
+  else if (lane.id === 'gsbench_e2e_20260801_100g' && a.ev && a.ev.v === 'v7') body = `<div style="color:var(--sub);margin-bottom:6px">v7 → v8：结构不变（授权后到新建 vacuum_hold_targets 之前）</div>`;
+  else if (lane.id === 'gsbench_e2e_20260801_100g' && a.ev && (a.ev.v === 'v8' || a.ev.v === 'v9')) body = diffHtml(E2E_0802, S.gsbench_e2e_20260801_100g) + `<div style="color:var(--sub)">${a.ev.v === 'v8' ? 'v8 → v9：vacuum_hold_targets 建表 21 分钟后再次修改（mtime 14:52，签名未变 → 索引/授权）' : 'v9 → 至今：无进一步结构变化'}</div>`;
+  else if (lane.id === 'gsbench_v4') body = a.first ? `<div style="color:var(--sub)">v2 → v3：建表后 2 小时内修改 meta_journal / meta_plan_cache（缓存表，签名不变 → 索引/授权类）。</div>` : a.ev.v === 'v3' ? `<div style="color:var(--sub)">v3 → v4：plan_data 索引调整——当前形态为 plan_index_shape_bad_idx (index_shape_tail, index_shape_lead)，无 index_drop / shape_good 索引（与第三代对比见下方版本比较）。</div>` : `<div style="color:var(--sub)">v4 → 至今：33 表结构无变化（08-24 批量授权未覆盖 v4）。</div>`;
+  else if (lane.id === 'gsbench') body = a.first ? `<div style="color:var(--sub)">v1 → v7：17 表结构无变化；08-24 09:33 批量授权刷新 mtime。</div>` : `<div style="color:var(--sub)">v7 → 至今：无变化。此代 30 天无访问，见处置 P2。</div>`;
+  else if (lane.id === 'public') body = `<div class="code">+ table public.w3_dict_probe (id bigint, note text)   -- 16:24 建\n- table public.w3_dict_probe                          -- 16:30 删\n- index public.w3_dict_probe_pkey</div><div style="color:var(--sub)">生命周期 6 分钟：平台字典自检探针（W3 上线验证），非业务对象。</div>`;
+  else if (lane.sub && lane.id.includes('vacuum_hold_targets')) body = a.first ? `<div class="code">+ TABLE gsbench_e2e_20260801_100g.vacuum_hold_targets\n+ dist_key bigint NOT NULL\n+ id bigint NOT NULL\n+ version bigint NOT NULL\n+ payload varchar(2048)\n+ updated_at timestamp NOT NULL\n+ INDEX vacuum_hold_targets_pkey PRIMARY KEY (dist_key, id)</div><div style="color:var(--sub)">08-26 14:31 建表（平台字典 14:33 观察到）→ 14:52 再次修改。</div>` : `<div style="color:var(--sub)">14:52 之后无变化；14:52 的修改签名未变（索引 / 授权类）。</div>`;
+  else if (lane.sub && lane.id.includes('plan_data')) body = a.first ? `<div style="color:var(--sub)">08-02 建表 → 08-24：结构无变化（13 列、8 索引，见版本比较 v5）。</div>` : a.ev && a.ev.t === '08-24 09:33' ? `<div style="color:var(--sub)">08-24 授权 → 08-26 14:31：结构无变化。</div>` : `<div class="code">~ INDEX plan_data_lookup_idx  (lookup_key, dist_key, id) → (lookup_key, dist_key) TABLESPACE pg_default</div><div style="color:var(--sub)">08-26 14:31 起：lookup 索引重建到 pg_default 表空间（与 v4 代对比可见）。</div>`;
+  else if (lane.sub) body = `<div style="color:var(--sub)">该表在此时段列/索引签名未变，只有 mtime 刷新（授权或重建统计）。</div>`;
+  else body = `<div style="color:var(--sub)">视图 customer_order_summary：08-27 09:16 定义签名变化（d41d8cd9… → e712429e…）；视图定义原文需审计覆盖 DDL 才能取得。</div>`;
+  side.innerHTML = `<div class="t">生命时段 · ${lane.id}</div><h3>${from} → ${to}</h3><div class="kv"><span class="l">对象</span><span>${lane.tables ? lane.tables + ' 表' : lane.user ? '账号 opendb_ro' : '1 视图'}</span><span class="l">时段内事件</span><span>${(b.ev ? 1 : 0) + (a.ev ? 1 : 0)} 个端点变更</span></div>${body}<div style="display:flex;gap:14px;justify-content:flex-end;margin-top:8px"><span class="link">把这段设为版本比较 →</span><span class="link">在会话里深挖 →</span></div>`;
+}
+side.innerHTML = `<div class="t">点左侧线段或节点</div><h3>og5 · 35 天结构演进</h3><div style="color:var(--sub);font-size:13.5px">三代 gsbench schema 并存（85 表 · 约 240 GB）。<br>主干 10 个版本、账号面 4 次变更。<br>点 <b>线段</b>：看该 schema 在这段生命周期里列 / 索引怎么变；点 <b>节点</b>：看那一次变更的原文与来源。</div><div class="code" style="margin-top:10px">v1 07-28 建 gsbench（17 表）
+v2 07-29 建 gsbench_v4（33 表）
+v5 08-02 建 gsbench_e2e_20260801_100g
+v6 08-18 DROP public.w3_dict_probe
+v7 08-24 批量授权 51 表
+v8 08-26 建 e2e.vacuum_hold_targets
+v10 08-27 改视图 qa_1234.customer_order_summary</div>`;
+
+// ───────── 版本比较（GitHub compare）─────────
+// 按逗号拆列，但 numeric(18,2) 括号里的逗号不拆
+const parseCols = (s) => s.split(/,(?![^(]*\))/).map((c) => { const i = c.indexOf(':'); const name = c.slice(0, i), rest = c.slice(i + 1); return { name, type: rest.replace('!', ''), nn: rest.endsWith('!') }; });
+function diffTables(A, B) {
+  const names = [...new Set([...Object.keys(A), ...Object.keys(B)])].sort();
+  const out = [];
+  for (const n of names) {
+    const a = A[n], b = B[n];
+    if (!a) { out.push({ name: n, kind: 'add', rows: [...parseCols(b.cols).map((c) => ({ k: 'add', t: `${c.name} ${c.type}${c.nn ? ' NOT NULL' : ''}` })), ...Object.entries(b.idx).map(([i, d]) => ({ k: 'add', t: `INDEX ${i} ${d}` }))] }); continue; }
+    if (!b) { out.push({ name: n, kind: 'del', rows: [...parseCols(a.cols).map((c) => ({ k: 'del', t: `${c.name} ${c.type}${c.nn ? ' NOT NULL' : ''}` }))] }); continue; }
+    const ca = parseCols(a.cols), cb = parseCols(b.cols); const rows = [];
+    const byA = new Map(ca.map((c) => [c.name, c])), byB = new Map(cb.map((c) => [c.name, c]));
+    for (const c of cb) { const o = byA.get(c.name); if (!o) rows.push({ k: 'add', t: `${c.name} ${c.type}${c.nn ? ' NOT NULL' : ''}` }); else if (o.type !== c.type || o.nn !== c.nn) rows.push({ k: 'mod', t: `${c.name} ${o.type}${o.nn ? ' NOT NULL' : ''} → ${c.type}${c.nn ? ' NOT NULL' : ''}` }); else rows.push({ k: 'same', t: `${c.name} ${c.type}${c.nn ? ' NOT NULL' : ''}` }); }
+    for (const c of ca) if (!byB.has(c.name)) rows.push({ k: 'del', t: `${c.name} ${c.type}${c.nn ? ' NOT NULL' : ''}` });
+    const irows = []; const ia = a.idx, ib = b.idx;
+    for (const [i, d] of Object.entries(ib)) { if (!(i in ia)) irows.push({ k: 'add', t: `INDEX ${i} ${d}` }); else if (ia[i] !== d) irows.push({ k: 'mod', t: `INDEX ${i} ${ia[i]} → ${d}` }); else irows.push({ k: 'same', t: `INDEX ${i} ${d}` }); }
+    for (const i of Object.keys(ia)) if (!(i in ib)) irows.push({ k: 'del', t: `INDEX ${i} ${ia[i]}` });
+    const changed = [...rows, ...irows].some((r) => r.k !== 'same');
+    if (changed) out.push({ name: n, kind: 'mod', rows, irows });
+  }
+  return out;
+}
+function diffHtml(A, B, silent) {
+  const d = diffTables(A, B);
+  if (d.length === 0) return silent ? '' : '<div style="color:var(--dim)">两个版本结构一致。</div>';
+  return d.map((t) => `<div class="code">${t.kind === 'add' ? '+ TABLE ' : t.kind === 'del' ? '- TABLE ' : '~ TABLE '}${t.name}\n${[...(t.rows || []), ...(t.irows || [])].filter((r) => r.k !== 'same').map((r) => (r.k === 'add' ? '+ ' : r.k === 'del' ? '- ' : '~ ') + r.t).join('\n')}</div>`).join('');
+}
+const baseSel = document.getElementById('base'), cmpSel = document.getElementById('cmp');
+SNAPS.forEach((s) => { baseSel.appendChild(new Option(s.label, s.id)); cmpSel.appendChild(new Option(s.label, s.id)); });
+baseSel.value = 'v1'; cmpSel.value = 'v2';
+const QUICK = [['v1', 'v2', '第一代 → 第二代'], ['v2', 'v5', '第二代 → 第三代'], ['v5', 'v9', '第三代 08-02 → 当前'], ['v1', 'v9', '第一代 → 当前']];
+const quick = document.getElementById('quick');
+QUICK.forEach(([a, b, l]) => { const s = document.createElement('span'); s.textContent = l; s.onclick = () => { baseSel.value = a; cmpSel.value = b; render(); }; quick.appendChild(s); });
+document.getElementById('swap').onclick = () => { const t = baseSel.value; baseSel.value = cmpSel.value; cmpSel.value = t; render(); };
+baseSel.onchange = render; cmpSel.onchange = render;
+function render() {
+  const A = SNAPS.find((s) => s.id === baseSel.value), B = SNAPS.find((s) => s.id === cmpSel.value);
+  quick.querySelectorAll('span').forEach((s, i) => s.classList.toggle('on', QUICK[i][0] === A.id && QUICK[i][1] === B.id));
+  const d = diffTables(A.tables, B.tables);
+  const nAdd = d.filter((t) => t.kind === 'add').length, nDel = d.filter((t) => t.kind === 'del').length, nMod = d.filter((t) => t.kind === 'mod').length;
+  const cols = d.flatMap((t) => t.rows || []), idxs = d.flatMap((t) => t.irows || []);
+  const cnt = (arr, k) => arr.filter((r) => r.k === k).length;
+  document.getElementById('summary').innerHTML = `<span><b>${A.id}</b> → <b>${B.id}</b></span><span>对象：<b class="add">+${nAdd} 新建</b> · <b class="mod">~${nMod} 修改</b> · <b class="del">−${nDel} 删除</b>（比较范围：两版共 ${new Set([...Object.keys(A.tables), ...Object.keys(B.tables)]).size} 个有记录的表）</span><span>列：<b class="add">+${cnt(cols, 'add')}</b> <b class="del">−${cnt(cols, 'del')}</b> <b class="mod">~${cnt(cols, 'mod')}</b></span><span>索引：<b class="add">+${cnt(idxs, 'add')}</b> <b class="del">−${cnt(idxs, 'del')}</b> <b class="mod">~${cnt(idxs, 'mod')}</b></span><span style="margin-left:auto;color:var(--dim)">▣ 只看有变化的对象（已开）</span>`;
+  const host = document.getElementById('diffs'); host.innerHTML = '';
+  const mods = d.filter((t) => t.kind === 'mod'), adds = d.filter((t) => t.kind === 'add'), dels = d.filter((t) => t.kind === 'del');
+  for (const t of mods) {
+    const rows = [...t.rows, ...t.irows]; const a = rows.filter((r) => r.k === 'add').length, dd = rows.filter((r) => r.k === 'del').length, m = rows.filter((r) => r.k === 'mod').length;
+    const card = document.createElement('div'); card.className = 'diffcard';
+    card.innerHTML = `<div class="h"><span class="n">${t.name}</span><span class="cnt"><span class="a">+${a}</span> <span class="d">−${dd}</span> <span class="m">~${m}</span></span><span class="tag chip notice" style="font-size:12px;padding:0 8px">修改</span><span class="link" style="margin-left:10px">查看两版完整结构</span></div>
+    <div class="diff"><div class="sec">列</div>${t.rows.map((r) => `<div class="r ${r.k === 'same' ? '' : r.k}"><span class="s">${r.k === 'add' ? '+' : r.k === 'del' ? '−' : r.k === 'mod' ? '~' : ' '}</span><span>${r.t}</span></div>`).join('')}<div class="sec">索引 / 约束</div>${t.irows.map((r) => `<div class="r ${r.k === 'same' ? '' : r.k}"><span class="s">${r.k === 'add' ? '+' : r.k === 'del' ? '−' : r.k === 'mod' ? '~' : ' '}</span><span>${r.t}</span></div>`).join('')}</div>`;
+    card.querySelector('.h').onclick = (e) => { if (e.target.classList.contains('link')) return; const body = card.querySelector('.diff'); body.style.display = body.style.display === 'none' ? '' : 'none'; };
+    host.appendChild(card);
+  }
+  if (adds.length) { const w = document.createElement('div'); w.className = 'diffcard'; w.innerHTML = `<div class="h"><span class="n">新建表 ${adds.length} 张</span><span class="tag chip ok" style="font-size:12px;padding:0 8px">新建</span></div><div class="diff" style="padding:8px 14px"><div class="newlist">${adds.map((t) => `<span>${t.name} <span style="color:var(--dim)">${parseCols(B.tables[t.name].cols).length} 列</span></span>`).join('')}</div></div>`; host.appendChild(w); }
+  if (dels.length) { const w = document.createElement('div'); w.className = 'diffcard'; w.innerHTML = `<div class="h"><span class="n">删除表 ${dels.length} 张</span><span class="tag chip warn" style="font-size:12px;padding:0 8px">删除</span></div><div class="diff" style="padding:8px 14px"><div class="newlist">${dels.map((t) => `<span>${t.name}</span>`).join('')}</div></div>`; host.appendChild(w); }
+  if (d.length === 0) host.innerHTML = '<div style="color:var(--dim);font-size:13.5px;margin-top:8px">两个版本的表结构完全一致。</div>';
+}
+render();
+
+// ───────── 时间轴（按日）─────────
+const TL = [
+  ...VERSIONS.map((v) => ({ t: v.t, who: v.who, kind: v.kind, what: v.label, src: v.v === 'v6' || v.v === 'v8' || v.v === 'v9' || v.v === 'v10' ? ['字典', 'pg_object'] : ['pg_object'] })),
+  ...USER_EVENTS.map((u) => ({ t: u.t, who: u.who, kind: 'user', what: u.sql, src: ['审计'] })),
+].sort((a, b) => T(b.t) - T(a.t));
+const byDay = new Map(); TL.forEach((e) => { const d = e.t.slice(0, 5); byDay.set(d, [...(byDay.get(d) || []), e]); });
+document.getElementById('timeline').innerHTML = [...byDay.entries()].map(([d, evs]) => `<div class="day"><div class="d">2026-${d} · ${evs.length} 条</div>${evs.map((e) => `<div class="ev"><span class="tm">${e.t.slice(6)}</span><i class="dot" style="background:${kindColor(e.kind)}"></i><span class="who">${e.who}</span><div class="what">${e.what}${e.kind === 'user' ? '' : ''}</div><div>${e.src.map((s) => `<span class="src">${s}</span>`).join(' ')} <span class="link" style="margin-left:6px">深挖 →</span></div></div>`).join('')}</div>`).join('');
+</script>
+</body>
+</html>
