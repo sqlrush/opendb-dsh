@@ -1,5 +1,6 @@
 // db_query 语句超时改造的验收（2026-08-28 user：15s 撞上 3,355 万行整表聚合 → 默认 60s + timeout_ms + 说明性报错）：
-//   ① 模型原样执行 SELECT count(*) … FROM fact_sales（约 27s）：60s 默认线下成功；
+//   ① 模型原样执行 SELECT count(*) … FROM fact_sales：60s 默认线下成功（原用 gsbench_e2e_20260801_100g.fact_sales 1.1 亿行约 27s，
+//      2026-08-30 压测 schema 清理后改为事故本尊 gsbench.fact_sales 3,355 万行）；
 //   ② 再让它对同一条传 timeout_ms=2000：工具返回必须是「平台语句超时（2s）…pg_class.reltuples…timeout_ms」的说明，而不是裸的 canceling statement。
 //   OPENDB_HOST_PORT=18080 node scripts/e2e-db-query-timeout.mjs   （mac 上跑）
 import { execSync } from 'node:child_process';
@@ -17,7 +18,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sh = (cmd) => { let last; for (let i = 0; i < 4; i++) { try { return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PATH: `${process.env.PATH}:/opt/homebrew/bin` } }).trim(); } catch (e) { last = e; execSync('sleep 6'); } } throw last; };
 const psql = (sql) => sh(`kubectl -n opendb-dsh exec pod/opendb-dsh-postgres-0 -- psql -U dsh -d dsh -Atc "${sql.replace(/"/g, '\\"')}"`);
 
-const SQL = 'SELECT min(sale_date) AS mn, max(sale_date) AS mx, count(*) AS cnt FROM gsbench_e2e_20260801_100g.fact_sales';
+const SQL = 'SELECT min(sale_date) AS mn, max(sale_date) AS mx, count(*) AS cnt FROM gsbench.fact_sales';
 const PROMPT = `这是平台验收，请严格照做、不要向我提问、不要改写 SQL：\n① 用 db_query 在 og5 上原样执行：${SQL}\n② 再用 db_query 原样执行同一条，但参数 timeout_ms 传 2000。\n然后把两次工具返回的原文各贴一段给我。`;
 
 const workspaceId = psql("SELECT global->'workspaceIds'->>0 FROM dsh_kv_units WHERE unit = 'workspace'");
