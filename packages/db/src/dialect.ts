@@ -35,15 +35,18 @@ export const BASELINE_METRICS: readonly DialectQuery[] = [
 /** Data-dictionary snapshot set that works on both PostgreSQL and openGauss. */
 export const BASELINE_DICTIONARY: readonly DialectQuery[] = [
   {
+    // definition = 签名所依据的原文（表：列清单 name:type:notnull；索引：indexdef；视图：定义），
+    // 2026-08-30 表结构变更追溯 R2：字典存下定义，变更记录才能给出列/索引级 diff，而不只是签名变了
     key: 'tables', title: '表(列签名)',
     sql: `SELECT 'table' AS kind, n.nspname AS sch, c.relname AS name,
-       md5(string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull::text, ',' ORDER BY a.attnum)) AS signature
+       md5(string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull::text, ',' ORDER BY a.attnum)) AS signature,
+       string_agg(a.attname || ':' || format_type(a.atttypid, a.atttypmod) || ':' || a.attnotnull::text, ',' ORDER BY a.attnum) AS definition
        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
        WHERE c.relkind = 'r' AND ${NOT_SYS} GROUP BY 2, 3`,
   },
-  { key: 'indexes', title: '索引', sql: `SELECT 'index' AS kind, schemaname AS sch, indexname AS name, md5(coalesce(indexdef, '')) AS signature FROM pg_indexes WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
-  { key: 'views', title: '视图', sql: `SELECT 'view' AS kind, schemaname AS sch, viewname AS name, md5(coalesce(definition, '')) AS signature FROM pg_views WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
+  { key: 'indexes', title: '索引', sql: `SELECT 'index' AS kind, schemaname AS sch, indexname AS name, md5(coalesce(indexdef, '')) AS signature, coalesce(indexdef, '') AS definition FROM pg_indexes WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
+  { key: 'views', title: '视图', sql: `SELECT 'view' AS kind, schemaname AS sch, viewname AS name, md5(coalesce(definition, '')) AS signature, left(coalesce(definition, ''), 4000) AS definition FROM pg_views WHERE schemaname NOT LIKE 'pg_%' AND schemaname NOT IN (${SYS_SCHEMAS})` },
   {
     key: 'functions', title: '函数',
     sql: `SELECT 'function' AS kind, n.nspname AS sch, p.proname AS name, md5(coalesce(p.prosrc, '')) AS signature

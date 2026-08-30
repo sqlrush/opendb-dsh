@@ -126,8 +126,29 @@ export default class CollectorService extends Service {
     }
   }
 
+  /** 立即做一次字典快照（全部节点或指定节点）；表结构变更追溯的验收脚本用它把 DDL 步骤立刻记进字典，不必等 10 分钟周期 */
+  async snapshotDictionaryNow(nodeName?: string): Promise<{ nodes: number; ok: number; failed: number }> {
+    const out = { nodes: 0, ok: 0, failed: 0 };
+    let nodes: any[] = [];
+    try { nodes = await this.registry.listNodes(); } catch { return out; }
+    for (const node of nodes) {
+      if (nodeName !== undefined && node.name !== nodeName) continue;
+      out.nodes += 1;
+      try { await this.scrapeDictionary(node); out.ok += 1; } catch (cause) { out.failed += 1; process.stderr.write(`[collector] dict-now ${node.name} failed: ${String((cause as Error).message ?? cause)}\n`); }
+    }
+    this.lastDictAt = Date.now();
+    return out;
+  }
+
   private startHealthServer(): void {
-    this.server = createServer((_req, res) => {
+    this.server = createServer((req, res) => {
+      // POST /dict-snapshot[?node=<name>]：立即快照（本地端口，仅集群内可达）
+      if (req.method === 'POST' && (req.url ?? '').startsWith('/dict-snapshot')) {
+        const node = new URL(req.url ?? '/', 'http://localhost').searchParams.get('node') ?? undefined;
+        this.snapshotDictionaryNow(node).then((r) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(r)); })
+          .catch((cause) => { res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: String((cause as Error).message ?? cause) })); });
+        return;
+      }
       const body = JSON.stringify({ role: 'collector', lastRound: this.lastRound ?? null });
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(body);

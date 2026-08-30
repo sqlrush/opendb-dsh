@@ -8,6 +8,15 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ## [Unreleased]
 
 ### Added
+- **表结构变更追溯（DDL 报告重构 R2，user 2026-08-30 定稿 `docs/prototypes/ddl-r2.html`）**：平台字典除签名外存下定义原文
+  （表 = 列清单 name:type:notnull，索引 = indexdef，视图 = 定义；migration 018，升级后首次快照回填不记变更），变更记录同时存旧/新定义；
+  `ddl_collect` 采集前先做一次字典快照，再把字典变更（含定义）、openGauss `pg_object`（建/改时间、创建者）、审计 DDL 原文合成
+  **结构历史**：主干版本（相邻一分钟内的 DDL 批次记一版）、schema 与表的生命线（建立分出 / 删除封口、索引事件挂到所属表）、
+  每个对象的定义时间线（从当前定义倒推）；整包存档 `opendb_task_collects`。面板：摘要卡 → **结构演进图**（主干 + 分支线，
+  点线段看该生命时段里列/索引怎么变、点节点看那次变更原文与来源、schema 可展开表级子线）→ **版本比较**（GitHub compare 式：
+  任选两版逐对象 +/−/~ diff，含窗口起点与当前）→ 按日时间轴 → 规范扫描（含通过项、逐条深挖）→ 故事线/优先级。规则 DDLR 与阈值不变。
+  报告 schema 只装解读（situation / versionNotes / findings / rootCause / priorities）。collector 健康端口新增 `POST /dict-snapshot`
+  （立即快照，验收脚本用）。测试 schema `scripts/lab/ddl-lab`（og5 上五个版本的 DDL 演进）+ e2e `scripts/e2e-ddl.mjs`。
 - **`db_query` 字典门**（user 2026-08-29："补提示词补不完的，让模型先确认字典再写 SQL"）：执行前把 SQL 解析成 AST，按作用域抽出引用的
   表/列，对照目标库真实字典（`pg_class/pg_attribute`，含 `pg_catalog` 视图；按节点缓存 10 分钟）校验——有不存在的表/列时**不执行**，
   直接返回字典单：该关系的真实列与类型、最接近的列名、全库反查"哪些关系有这一列"（`wait_event` → `pg_thread_wait_status` /

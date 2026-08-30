@@ -945,3 +945,27 @@ push 前补齐；以后新增插件包按 CLAUDE.md"三处缺一不可"之外再
 新工具 `db_describe` / `db_find_columns`。实测：解析 0.2–0.6 ms/条，目录查询 0.5–1 ms，反查 10 ms（只在失败路径）。
 **坑**：`node --experimental-strip-types` 不支持构造参数属性（`constructor(private x)`），单测直跑 .ts 会炸——类字段显式声明。
 验收 `scripts/e2e-db-dictionary-gate.mjs`；单测 `packages/tool-db/test/{sql-refs,dictionary}.test.ts`（拿事故里的三条 SQL 做用例）。
+
+## 表结构变更追溯 R2（2026-08-30，user 定稿设计稿后开发）
+
+**起因（user）**："把功能和 UI 重新优化下……要有类似 GitHub 多版本比较功能，也有类似主干分支这类线条 UI 表达，并且可以和线条进行
+交互，得到线条代表的生命时间段的表结构变化"。设计稿 `docs/prototypes/ddl-r2.html`（og5 三代 gsbench schema 真实字典），user 通过后编码。
+
+**数据链（三源 → 结构历史 → 存档直读）**
+- 字典层：`db/dialect.ts` 的字典查询多返回一列 `definition`（表 = `name:type:notnull` 列清单，索引 = indexdef，视图 = 定义前 4000 字），
+  `dictionary-pg` 在 `opendb_dict_objects.definition` 与 `opendb_dict_changes.old_definition/new_definition` 存下（migration 018）；
+  升级后首次快照对签名未变但缺定义的对象只回填、不记变更（`definitionBackfills`）。
+- 采集：`ddl_collect` **先做一次字典快照**（同 collector 的取法）再读变更，报告反映采集时刻；`pg_object`（建/改时间、创建者）补字典
+  未观测到的事件；审计 `pg_query_audit` 提供 DDL 原文与执行账号（按对象名 ±15 分钟吸附）。
+- 结构历史 `task-ddl/src/history.ts`（纯函数，客户端复用）：事件 → 主干版本（相邻 ≤ 60 s 的事件一批；批内操作者取第一个有归因的，
+  归因冲突才拆；账号类单独成批；删表 = del、建表 = add、只动列/索引 = mod）→ 分支（schema 泳道：born = 首次建表且此前无对象；
+  died = 全部对象删除；子线 = 有变化的表/视图，索引事件按 `pg_indexes.tablename` 挂到表）→ 各对象定义时间线（从当前定义倒推，
+  `defUnknown` 的事件给 undefined）；`stateAt` / `compareVersions` / `diffDefinition`（列按名对齐，`numeric(18,2)` 里的逗号不拆）。
+  **版本的结构取 `until`（批次最后一个事件之后）**，不是 `time`——审计时间会把批内首个事件提前几秒，按 time 取会漏掉同批后续变更。
+- collector 健康端口加 `POST /dict-snapshot[?node=]`：立即快照，`scripts/lab/ddl-lab-build.sh` 每步 DDL 后调用一次，五个版本几分钟内建好。
+
+**测试 schema**：`scripts/lab/ddl-lab/v1..v5.sql`（建 4 表 → 加列加索引 → 改类型/换索引/中途建表 → 删列/加列/DROP TABLE → 视图/再改），
+覆盖 add/mod/del、索引挂表、子线封口、DDLR01/04/05。验收 `scripts/e2e-ddl.mjs`（建 ddl 任务只看 ddl_lab → runNow → 存档结构 → 面板）。
+
+**已知边界**：08-18（字典开始观测）之前的列级差异只能按当前结构回推；业务表 DDL 原文需 og 审计 `audit_system_object` 覆盖 table/index
+（当前只有账号类进审计）；`pg_object.mtime` 刷新但签名未变的事件（授权、统计）显示为"仅时间戳"。
