@@ -8,6 +8,7 @@
 import { extractReferences, validateReferences } from './sql-refs.ts';
 import type { RelInfo, Problem } from './sql-refs.ts';
 import { closestColumn } from './schema-hint.ts';
+import { TYPE_EQUIVALENTS, FUNCTION_EQUIVALENTS } from './equivalents.ts';
 
 type QueryFn = (node: any, sql: string, opts: { maxRows: number }) => Promise<{ rows: any[] }>;
 export interface GateOptions { ttlMs?: number; maxEntries?: number; searchPath?: readonly string[] }
@@ -90,6 +91,40 @@ ORDER BY CASE WHEN a.attname = '${q(kw)}' THEN 0 ELSE 1 END, ${this.schemaRank()
     return r.rows.map((row) => ({ rel: String(row.rel), column: String(row.col), type: String(row.type) }));
   }
 
+  /** 类型是否存在（pg_type.typname；按节点缓存）——regnamespace 这类 PG 9.5+ 类型 openGauss 没有 */
+  async hasType(node: any, name: string): Promise<boolean> {
+    const key = `${nodeKey(node)}|type|${name}`;
+    const hit = this.cache.get(key);
+    if (hit !== undefined && Date.now() - hit.at < this.ttlMs) return hit.info !== undefined;
+    const r = await this.query(node, `SELECT 1 AS ok FROM pg_type WHERE typname = '${q(name)}' LIMIT 1`, { maxRows: 1 });
+    const exists = r.rows.length > 0;
+    this.remember(key, exists ? { schema: 'pg_catalog', name, kind: 'type', columns: [] } : undefined);
+    return exists;
+  }
+  /** 函数是否存在（pg_proc.proname；按节点缓存） */
+  async hasFunction(node: any, name: string): Promise<boolean> {
+    const key = `${nodeKey(node)}|func|${name}`;
+    const hit = this.cache.get(key);
+    if (hit !== undefined && Date.now() - hit.at < this.ttlMs) return hit.info !== undefined;
+    const r = await this.query(node, `SELECT 1 AS ok FROM pg_proc WHERE proname = '${q(name)}' LIMIT 1`, { maxRows: 1 });
+    const exists = r.rows.length > 0;
+    this.remember(key, exists ? { schema: 'pg_catalog', name, kind: 'function', columns: [] } : undefined);
+    return exists;
+  }
+  /** 名字相近的类型 / 函数（对象不存在时给候选） */
+  async similarTypes(node: any, name: string): Promise<string[]> {
+    const core = name.startsWith('reg') ? 'reg' : name.slice(0, Math.max(3, Math.floor(name.length / 2)));
+    // 只看 pg_catalog：用户表的行类型也叫 typname（gsbench.regions 命中过 reg%），且多 schema 会重复
+    const r = await this.query(node, `SELECT DISTINCT typname FROM pg_type WHERE typname LIKE '${q(core)}%' AND typname NOT LIKE '\\_%' AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'pg_catalog') ORDER BY typname LIMIT 12`, { maxRows: 12 });
+    return r.rows.map((row) => String(row.typname));
+  }
+  async similarFunctions(node: any, name: string): Promise<string[]> {
+    const core = name.replace(/^pg_/, '').replace(/_(lsn|wal|xlog|location|name|diff)$/, '');
+    if (core.length < 3) return [];
+    const r = await this.query(node, `SELECT DISTINCT proname FROM pg_proc WHERE proname ILIKE '%${q(core)}%' ORDER BY proname LIMIT 12`, { maxRows: 12 });
+    return r.rows.map((row) => String(row.proname));
+  }
+
   /** db_describe：一张关系的字典；找不到时给同名/近名候选 */
   async describe(node: any, ref: string): Promise<{ info?: RelInfo; elsewhere: string[]; similar: string[] }> {
     const [schema, name] = ref.includes('.') ? ref.split('.', 2) : [undefined, ref];
@@ -111,11 +146,17 @@ ORDER BY CASE WHEN a.attname = '${q(kw)}' THEN 0 ELSE 1 END, ${this.schemaRank()
     const wanted = new Map<string, { schema?: string; name: string }>();
     for (const s of ex.scopes) for (const r of s.relations) wanted.set(`${r.schema ?? ''}|${r.name}`, { schema: r.schema, name: r.name });
     const resolved = new Map<string, RelInfo | undefined | null>();
+    const types = new Map<string, boolean>(); const funcs = new Map<string, boolean>();
     try {
-      await Promise.all([...wanted.entries()].map(async ([k, r]) => { resolved.set(k, await this.resolve(node, r.schema, r.name)); }));
+      await Promise.all([
+        ...[...wanted.entries()].map(async ([k, r]) => { resolved.set(k, await this.resolve(node, r.schema, r.name)); }),
+        ...ex.types.map(async (t) => { types.set(t, await this.hasType(node, t)); }),
+        ...ex.functions.map(async (f) => { funcs.set(f, await this.hasFunction(node, f)); }),
+      ]);
     } catch { return { ok: true }; }
     // map 里 undefined = 目录确认不存在；不在 map 里 = 没查到（不可知 → null 放行）
-    const problems = validateReferences(ex, (schema, name) => { const k = `${schema ?? ''}|${name}`; return resolved.has(k) ? resolved.get(k) : null; });
+    const problems = validateReferences(ex, (schema, name) => { const k = `${schema ?? ''}|${name}`; return resolved.has(k) ? resolved.get(k) : null; },
+      { hasType: (t) => (types.has(t) ? types.get(t)! : null), hasFunction: (f) => (funcs.has(f) ? funcs.get(f)! : null) });
     if (problems.length === 0) return { ok: true };
     return { ok: false, problems, report: await this.report(node, problems) };
   }
@@ -134,6 +175,18 @@ ORDER BY CASE WHEN a.attname = '${q(kw)}' THEN 0 ELSE 1 END, ${this.schemaRank()
         let elsewhere: string[] = []; let similar: string[] = [];
         try { elsewhere = await this.sameNameIn(node, p.name); similar = await this.similarRelations(node, p.name); } catch { /* 候选查不到就只报不存在 */ }
         lines.push(`关系 ${full} 不存在${elsewhere.length > 0 ? `——同名关系在 schema ${elsewhere.join(' / ')}，应写 ${elsewhere.map((s) => `${s}.${p.name}`).join(' 或 ')}` : similar.length > 0 ? `；名字相近的关系：${similar.join(', ')}` : ''}`);
+        continue;
+      }
+      if (p.kind === 'type') {
+        let similar: string[] = [];
+        try { similar = await this.similarTypes(node, p.name); } catch { /* 候选查不到就只报不存在 */ }
+        lines.push(`目标库没有类型 ${p.name}${TYPE_EQUIVALENTS[p.name] !== undefined ? `——${TYPE_EQUIVALENTS[p.name]}` : ''}${similar.length > 0 ? `；pg_type 里名字相近的类型：${similar.join(', ')}` : ''}`);
+        continue;
+      }
+      if (p.kind === 'function') {
+        let similar: string[] = [];
+        try { similar = await this.similarFunctions(node, p.name); } catch { /* 同上 */ }
+        lines.push(`目标库没有函数 ${p.name}${FUNCTION_EQUIVALENTS[p.name] !== undefined ? `——${FUNCTION_EQUIVALENTS[p.name]}` : ''}${similar.length > 0 ? `；pg_proc 里名字相近的函数：${similar.join(', ')}` : '；用 db_find_columns / 视图现成列做算术，或改用 PG 通用函数'}`);
         continue;
       }
       const owner = p.candidates.length === 1 ? `${p.candidates[0].schema}.${p.candidates[0].name}` : p.candidates.map((c) => `${c.schema}.${c.name}`).join(' / ');

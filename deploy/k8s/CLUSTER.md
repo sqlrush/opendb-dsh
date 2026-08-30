@@ -946,6 +946,15 @@ push 前补齐；以后新增插件包按 CLAUDE.md"三处缺一不可"之外再
 **坑**：`node --experimental-strip-types` 不支持构造参数属性（`constructor(private x)`），单测直跑 .ts 会炸——类字段显式声明。
 验收 `scripts/e2e-db-dictionary-gate.mjs`；单测 `packages/tool-db/test/{sql-refs,dictionary}.test.ts`（拿事故里的三条 SQL 做用例）。
 
+**08-30 补漏（user："字典校验未通过…这个报错什么原因" / "type regnamespace does not exist 还有这个报错"）**：
+- **系统列误拦**：DDL 深挖里 `JOIN pg_namespace n ON n.oid = c.relnamespace` 被拦成"pg_namespace 没有列 n.oid"——`oid/ctid/xmin/xmax/cmin/cmax/
+  tableoid/xc_node_id` 在 `pg_attribute` 里 attnum < 0，字典门只取 attnum > 0。修法：`sql-refs.ts` 的 `SYSTEM_COLUMNS` 对任何基表视为存在。
+- **类型/函数缺口**：`'x'::regnamespace` 不是列错误，门放行后由数据库报 42704（PG 9.5+ 的 regnamespace / regrole / regcollation / jsonpath
+  openGauss 都没有；函数同理：pg_current_wal_lsn → pg_current_xlog_location、pg_blocking_pids → pg_thread_wait_status.block_sessionid）。
+  修法：AST 里抽 `::type` / `CAST` 与函数调用，标准类型（`STANDARD_TYPES`）与语法级构造（`GRAMMAR_FUNCTIONS`：coalesce/extract/nvl…）不核对，
+  其余查 `pg_type.typname` / `pg_proc.proname`（同缓存），**目录确认不存在才拦**（不可知放行），字典单给 `equivalents.ts` 的 openGauss 等价写法
+  + `reg%` / 名字相近的候选；漏网到数据库的 42704 / 42883 由 `schema-hint.ts` 用同一张等价表补提示。验收 `scripts/e2e-db-gate-types.mjs`。
+
 ## 表结构变更追溯 R2（2026-08-30，user 定稿设计稿后开发）
 
 **起因（user）**："把功能和 UI 重新优化下……要有类似 GitHub 多版本比较功能，也有类似主干分支这类线条 UI 表达，并且可以和线条进行

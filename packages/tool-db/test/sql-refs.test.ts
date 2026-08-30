@@ -76,3 +76,22 @@ test('UNION / UPDATE：各分支与目标表都校验', () => {
   const up = problems(`UPDATE gsbench.fact_sales SET amount = 1, bogus = 2 WHERE id = 3`);
   assert.deepEqual(up.map((x) => (x.kind === 'column' ? x.name : '')), ['bogus']);
 });
+
+test('系统列（oid/ctid/xmin…）对任何基表视为存在：目录连接不再被误拦（2026-08-30 pg_namespace.oid 事故）', () => {
+  const dictCat: RelInfo[] = [rel('pg_catalog', 'pg_class', ['relname', 'relnamespace', 'relkind']), rel('pg_catalog', 'pg_namespace', ['nspname', 'nspowner'])];
+  const look: Lookup = (schema, name) => dictCat.find((d) => d.name === name && (schema === undefined || d.schema === schema));
+  assert.deepEqual(validateReferences(extractReferences(`SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'ddl_lab' AND c.xmin IS NOT NULL`), look), []);
+  assert.deepEqual(validateReferences(extractReferences(`SELECT c.relname, c.nosuch FROM pg_class c`), look).map((p) => (p.kind === 'column' ? p.name : '')), ['nosuch']);
+});
+
+test('类型与函数：抽出 ::type / CAST 与函数调用，标准类型和语法级函数不核对，目录确认不存在才报', () => {
+  const ex = extractReferences(`SELECT 'ddl_lab'::regnamespace, CAST(x AS integer), y::int[], z::character varying(10), w::regclass, coalesce(a, b), pg_current_wal_lsn(), count(*), left(t, 2) FROM pg_stat_activity`);
+  assert.deepEqual(ex.types, ['regnamespace'], '标准类型与 regclass 不核对');
+  assert.deepEqual(ex.functions.sort(), ['count', 'left', 'pg_current_wal_lsn'], 'coalesce 是语法级构造');
+  const hasType = (n: string) => (n === 'regnamespace' ? false : null);
+  const hasFunction = (n: string) => (n === 'pg_current_wal_lsn' ? false : n === 'count' || n === 'left' ? true : null);
+  const problems = validateReferences(ex, () => null, { hasType, hasFunction });
+  assert.deepEqual(problems.map((p) => `${p.kind}:${p.name}`), ['type:regnamespace', 'function:pg_current_wal_lsn']);
+  // 目录不可知（null）一律放行
+  assert.deepEqual(validateReferences(ex, () => null, { hasType: () => null, hasFunction: () => null }), []);
+});

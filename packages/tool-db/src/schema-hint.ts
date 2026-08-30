@@ -5,8 +5,18 @@
  * 的**真实列名**查出来附在错误里，并给出最接近的列名建议，让模型一次改对。纯函数部分可单测。
  */
 
-/** PG 错误码：42703 列不存在 / 42P01 表不存在 / 42883 函数不存在 */
-export const HINT_CODES = new Set(['42703', '42P01', '42883']);
+import { TYPE_EQUIVALENTS, FUNCTION_EQUIVALENTS } from './equivalents.ts';
+
+/** PG 错误码：42703 列不存在 / 42P01 表不存在 / 42883 函数不存在 / 42704 类型等对象不存在 */
+export const HINT_CODES = new Set(['42703', '42P01', '42883', '42704']);
+
+/** 从 42704 / 42883 报错文本里取出不存在的类型名 / 函数名 */
+export function missingType(message: string): string | undefined {
+  return /type "([^"]+)" does not exist/i.exec(message)?.[1]?.toLowerCase();
+}
+export function missingFunction(message: string): string | undefined {
+  return /function ([\w.]+)\(/i.exec(message)?.[1]?.split('.').pop()?.toLowerCase();
+}
 
 /** 从 SQL 里抽出 FROM / JOIN 后面的关系名（schema.table 或 table；跳过子查询与 CTE 名） */
 export function referencedRelations(sql: string, cteNames: ReadonlySet<string> = new Set()): string[] {
@@ -102,7 +112,14 @@ export function buildHint(
     const suggest = missing !== undefined ? closestColumn(missing, cols) : undefined;
     lines.push(`${rel} 的实际列：${cols.join(', ')}${suggest !== undefined ? `——你写的 "${missing}" 应为 "${suggest}"` : ''}`);
   }
-  if (code === '42883') lines.push('该函数在 openGauss 中不存在：优先用视图现成列做算术，或改用 PG 通用函数');
+  if (code === '42883') {
+    const fn = missingFunction(String(error.message ?? ''));
+    lines.push(fn !== undefined && FUNCTION_EQUIVALENTS[fn] !== undefined ? `函数 ${fn}：${FUNCTION_EQUIVALENTS[fn]}` : '该函数在 openGauss 中不存在：优先用视图现成列做算术，或改用 PG 通用函数');
+  }
+  if (code === '42704') {
+    const ty = missingType(String(error.message ?? ''));
+    lines.push(ty !== undefined ? (TYPE_EQUIVALENTS[ty] !== undefined ? `类型 ${ty}：${TYPE_EQUIVALENTS[ty]}` : `类型 ${ty} 在 openGauss 中不存在（PG 9.5+ 才有的类型 og 大多没有）：改用目录表连接或通用类型`) : '该对象/类型在 openGauss 中不存在');
+  }
   if (lines.length === 0) return '';
   return `\n提示（openGauss dbe_perf 视图列名与 PostgreSQL 不同，请按下面的实际列改写后重试）：\n- ${lines.join('\n- ')}`;
 }

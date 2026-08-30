@@ -17,6 +17,9 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   任选两版逐对象 +/−/~ diff，含窗口起点与当前）→ 按日时间轴 → 规范扫描（含通过项、逐条深挖）→ 故事线/优先级。规则 DDLR 与阈值不变。
   报告 schema 只装解读（situation / versionNotes / findings / rootCause / priorities）。collector 健康端口新增 `POST /dict-snapshot`
   （立即快照，验收脚本用）。测试 schema `scripts/lab/ddl-lab`（og5 上五个版本的 DDL 演进）+ e2e `scripts/e2e-ddl.mjs`。
+- 字典门扩到**类型与函数**：`::type` / `CAST(… AS type)` 的类型名对照 `pg_type`、函数名对照 `pg_proc`（标准类型与 coalesce 等语法级构造
+  不核对，目录不可知放行），不存在时不执行并附 openGauss 等价写法（`regnamespace` → JOIN pg_namespace、`pg_current_wal_lsn` →
+  `pg_current_xlog_location` …，`equivalents.ts` 小表，只在确认缺失时附带）；报错兜底新增 42704（类型不存在）并给同样的等价写法。
 - **`db_query` 字典门**（user 2026-08-29："补提示词补不完的，让模型先确认字典再写 SQL"）：执行前把 SQL 解析成 AST，按作用域抽出引用的
   表/列，对照目标库真实字典（`pg_class/pg_attribute`，含 `pg_catalog` 视图；按节点缓存 10 分钟）校验——有不存在的表/列时**不执行**，
   直接返回字典单：该关系的真实列与类型、最接近的列名、全库反查"哪些关系有这一列"（`wait_event` → `pg_thread_wait_status` /
@@ -60,6 +63,9 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   12 条规则；user 2026-08-27：规范与优化方案没关系）。规则引擎保留给规则总览 / 阈值配置；`sqlreview_collect` 传 `rules=true` 可临时附带。
 
 ### Fixed
+- 字典门误拦系统列：`pg_namespace.oid` / `pg_class.oid` 等系统列在 `pg_attribute` 里 attnum < 0，按 `attnum > 0` 取列时被当成不存在，
+  一条合法的 `JOIN pg_namespace n ON n.oid = c.relnamespace` 被拦下不执行（2026-08-30 两个会话各撞两次，模型随后改用 og 没有的
+  `::regnamespace`）。现在 `oid / ctid / xmin / xmax / cmin / cmax / tableoid / xc_node_id` 对任何基表视为存在。
 - 任务运行遇到模型调用失败（如 DeepSeek 402 余额不足）时，运行记录直接写明真实原因（「模型调用失败：模型服务余额不足…充值后自动恢复」），
   不再显示误导性的「未提交报告（已催交一次）」；该任务 30 分钟内不再按 cron 开新会话（避免每 5 分钟开一个只会失败的会话），
   30 分钟后自动重试，或点「立即运行」。

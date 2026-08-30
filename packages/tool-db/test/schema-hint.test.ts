@@ -39,3 +39,10 @@ test('buildHint：42703 附真实列 + 建议；表不存在写明；非目标�
   assert.match(wrongSchema, /关系 dbe_perf\.snapshot 不存在——同名表\/视图在 schema snapshot：应写 snapshot\.snapshot/);
   assert.equal(buildHint(sql, { code: '57014', message: 'canceled' }, () => WAIT_EVENTS), '');
 });
+
+test('42704 类型不存在 / 42883 函数不存在：附 openGauss 等价写法', () => {
+  const h1 = buildHint(`SELECT 'x'::regnamespace`, { code: '42704', message: 'type "regnamespace" does not exist' }, () => undefined);
+  assert.match(h1, /类型 regnamespace：openGauss 没有 regnamespace：改为 JOIN pg_namespace/);
+  const h2 = buildHint('SELECT pg_current_wal_lsn()', { code: '42883', message: 'function pg_current_wal_lsn() does not exist' }, () => undefined);
+  assert.match(h2, /pg_current_xlog_location/);
+});

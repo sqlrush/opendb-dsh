@@ -72,3 +72,24 @@ test('describe / findColumns / columnsFor', async () => {
   assert.deepEqual(await gate.columnsFor(node, 'pg_stat_activity'), ['pid', 'state', 'waiting', 'query', 'sessionid']);
   assert.equal(await gate.columnsFor(node, 'dbe_perf.nothing'), undefined);
 });
+
+test('validate：regnamespace 不存在 → 不执行，给等价写法与 pg_type 候选；目录连接的 n.oid 放行', async () => {
+  const calls: string[] = [];
+  const base = fakeQuery(calls);
+  const query = async (node: any, sql: string) => {
+    if (/FROM pg_type WHERE typname = 'regnamespace'/.test(sql)) return { rows: [] };
+    if (/FROM pg_type WHERE typname = /.test(sql)) return { rows: [{ ok: 1 }] };
+    if (/FROM pg_type WHERE typname LIKE 'reg%'/.test(sql)) return { rows: [{ typname: 'regclass' }, { typname: 'regproc' }, { typname: 'regtype' }] };
+    if (/FROM pg_proc WHERE proname = /.test(sql)) return { rows: [{ ok: 1 }] };
+    return base(node, sql);
+  };
+  const gate = new DictionaryGate(query);
+  const v = await gate.validate(node, `SELECT c.relname FROM pg_class c WHERE c.relnamespace = 'ddl_lab'::regnamespace`);
+  assert.equal(v.ok, false);
+  if (v.ok) return;
+  assert.match(v.report, /目标库没有类型 regnamespace——openGauss 没有 regnamespace：改为 JOIN pg_namespace n ON n\.oid = c\.relnamespace/);
+  assert.match(v.report, /pg_type 里名字相近的类型：regclass, regproc, regtype/);
+  // 同一目录连接写法通过（pg_class 在假目录里没有 → 关系不可知 → 放行；这里只验证不因 oid 报错）
+  const ok = await gate.validate(node, `SELECT pid FROM pg_stat_activity s WHERE s.oid IS NOT NULL`);
+  assert.deepEqual(ok, { ok: true });
+});
