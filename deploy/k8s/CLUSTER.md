@@ -1009,3 +1009,34 @@ gsbench / gsbench_v4 的对象 → **只删 schema，不动表空间**（文件�
 
 未做、待 user 定：`gsbench` 25 GB / `gsbench_v4` 11 GB；`statement_history` 16 GB（`track_stmt_stat_level` 改 `OFF,L0` 才根治，或截断）；
 pg_log 5–7 月文件与两个 core 文件约 5 GB。
+
+## 空间清理第二轮 + registry GC 事故（2026-08-31，user：「压测历史数据 / 不需要的容器版本全部删掉，需要的保留，不要影响测试」）
+
+**og5**：`gsbench_v4` 11 GB（近 7 天 statement_history 无语句、无会话、仓库测试不引用）→ `DROP SCHEMA` 被 auto 分类器拦，SQL 留在
+mac `/tmp/og5-drop-v4.sql`（`bash /tmp/og5-as-omm.sh /tmp/og5-drop-v4.sql`）待 user 执行；pg_log 4.3 GB → 删 30 天前的 269 个文件
+3.96 GB → 592 MB；两个 7 月 core（`core-gaussdb-1-2026_07_23/07_29…lz4`，1.04 GB）删；数据目录 63 → 59 GB。
+**保留及原因**：`gsbench`（`scripts/e2e-db-query-timeout.mjs` 打 `gsbench.fact_sales`）、`snapshot`（任务 og5-wdr-1922-1923 指定快照）、
+`statement_history` 16 GB（og 自身 7 天滚动，Top SQL 数据源）、pg_xlog 8.3 GB（`checkpoint_segments=256` 决定，不可手删）。
+
+**mac docker**：buildx 构建缓存 141.6 GB → `docker builder prune -f --filter until=24h` 释放 **129.6 GB**，留 12 GB（当前 dev 的层，
+下次构建仍快）；22 个匿名悬空卷约 5.3 GB 删除（具名悬空卷 `codexgo-*` / `bibimao-mvp_platform_sessions` / `config-kimi.yaml` 未动）；
+其它停止容器全是 user 其它项目（`dm8` 5.86 GB、`og-pri`/`og-std` 各 2.8 GB、bibimao / stockapp / airush …）**未动**，要删 user 自己定。
+**k3s 节点** containerd 2.3–7.5 GB/节点、opendb-dsh 镜像 269 MB，没有可观收益，未动。
+
+**registry GC 事故（我造成，已恢复）**：本地 registry（容器 `opendb-registry`，卷 `7b0e1815…`）23.1 GB，`opendb-dsh` 下 453 个历史 dev
+清单、标签 `p0/dev/v0.1.0/v0.2.0`。删掉 `_manifests/tags/p0` 后跑 `registry garbage-collect --delete-untagged=true` →
+**带标签的镜像内容也被清空**（存储 23.1 GB → 7 MB；三个标签 manifest 404；pull 报 in-toto 描述符 not found）。
+原因：buildx 默认推 **OCI image index**（平台清单 + provenance 证明清单），registry:2 的 GC 不沿 index 标记子清单，
+把平台清单当"无标签"删掉（distribution 已知缺陷）。影响面：三个 Deployment 都是 `imagePullPolicy: Always`，期间任何
+host/runtime pod 重启都会 ErrImagePull；运行中的 pod 不受影响（cp/w1/w2 有本地缓存）。
+恢复：HEAD 与最后一次滚动（f314253）的运行时代码相同 → `deploy/k8s/build-image.sh` 重建并推送 dev（10:51 完成，
+k8s-w3 `crictl pull` 实拉成功，顺带预热了此前没有镜像的 w3）；`v0.2.0` / `v0.1.0` 从 git tag 建 worktree 重建（mac `/tmp/rebuild-rel.sh`：
+`git worktree add --detach` → `pnpm install --frozen-lockfile` → `pnpm -r build` → `docker build/push` 同名标签），版本号来自各自 package.json；
+v0.2.0 10:56、v0.1.0 10:57 完成，三个标签 manifest 均 200，registry 回到约 0.6 GB（只剩三个有效镜像的层）。
+
+**规则（新增）**：
+1. `build-image.sh` 改为 `--provenance=false --sbom=false`，只推纯 v2 manifest（本次已改）；
+2. registry 回收前**先备份卷**：`docker run --rm -v 7b0e1815…:/from -v /tmp:/to alpine tar czf /to/registry-$(date +%F).tgz -C /from .`；
+   回收只在没有构建进行时做，做完 `docker restart opendb-registry`，再 `docker pull` dev 与全部发布标签验证；
+3. 纯 manifest 之后 `--delete-untagged` 语义才正确，但不以"应该没问题"为准，以 pull 验证为准；
+4. 不可逆时的兜底 = 从源码重建（上面的恢复路径），镜像不是唯一副本，源码 + lockfile 才是。

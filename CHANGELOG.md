@@ -28,6 +28,12 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   （按列名反查关系）两个工具。起因：模型按 PG 印象在 openGauss 的 `pg_stat_activity` 上查 `wait_event`（openGauss 只有 `waiting`），
   连错三次。
 
+### Changed
+- 镜像构建 `deploy/k8s/build-image.sh` 改推**纯 v2 manifest**（`--provenance=false --sbom=false`）。起因：buildx 默认推 OCI image index
+  （平台清单 + provenance 证明清单），registry:2 的 `garbage-collect --delete-untagged` 不沿 index 标记子清单，2026-08-31 回收本地
+  registry 历史 dev 层时把带标签镜像一并清空（dev / v0.1.0 / v0.2.0 已从源码与 git tag 重建推回，运行中 pod 未受影响）。
+  经过与回收规则见 `deploy/k8s/CLUSTER.md`「空间清理第二轮 + registry GC 事故」。
+
 ## [0.2.0] - 2026-08-29
 
 四个任务报表里的两个（Top SQL、WDR）按 user 定稿的设计稿重做：数字全部由采集器按确定性口径产出并存档，面板直读，模型只写解读；

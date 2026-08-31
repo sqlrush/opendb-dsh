@@ -4,6 +4,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 pnpm -r --filter './packages/*' build
-docker build --platform linux/arm64 -q -t localhost:5050/opendb-dsh:dev -f deploy/docker/dsh.Dockerfile .
+docker build --platform linux/arm64 --provenance=false --sbom=false -q -t localhost:5050/opendb-dsh:dev -f deploy/docker/dsh.Dockerfile .
 docker push -q localhost:5050/opendb-dsh:dev
 echo "image built & pushed: localhost:5050/opendb-dsh:dev"
