@@ -155,6 +155,7 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | W6·扩缩 ✅ | KEDA ScaledObject（postgresql scaler 查队列深度，扩 2→5 缩回实测；runtime-worker maxConcurrent=2 防信号失真）；独立 og k8s 集群 950 节点验收通过（20 真 og-lite+930 别名，og-k8s VM） |
 | W6·收口 ✅ | CI 门（.github/workflows/ci.yml：build+patch lint+dump-config PENDING 零容忍+PG 单测）；ui-node-monitor 拆包 ✅（registerNodePanel 桥）；UI 视觉第一轮 ✅（Sparkline 渐变/Empty 空态/数据库页 950 节点适配/侧栏限量/表格 hover）——后续微调随 user 反馈 |
 | P2 W1（事件驱动） | **alert-ddl** · **task-incident**（双半边） |
+| 容量与增长报告（2026-08-31，user 通过 `docs/prototypes/capacity-r1.html` 后开发）✅ | **task-capacity**（TaskType `capacity` + 面板 + 纯函数判定 CAP_*）· **tool-capacity-collect**（`capacity_collect`：大小/增速/非表占用/vacuum·analyze 新鲜度，采样表 `opendb_capacity_samples` migration 019）· chart-kit Line 扩灰带/事件标线/断线/虚线 |
 | P2 W2（常驻监控+技能） | **task-monitor-dashboard**（双半边：runMode:'service' 首个实践）· **skill-pg** |
 | P2 W3（知识与检索）✅ | knowledge-pg · tool-knowledge（实际交付名，代 knowledge-ingest）· ui-memory / ui-knowledge（双半边）· session-query-pg |
 | P2 W4（平台面收尾） | **connection-auth**（简版）· **agent-presets-pg** · **storage-redis**（可选） |

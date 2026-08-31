@@ -8,6 +8,16 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ## [Unreleased]
 
 ### Added
+- **容量与增长报告（新任务类型 `capacity`，user 2026-08-31 通过 `docs/prototypes/capacity-r1.html` 后开发）**：回答现在多大、涨多快、
+  还能撑多久、空间花在哪。采集器 `capacity_collect`（tool-capacity-collect）一次采齐库 / 表空间 / schema / Top 表大小、死元组与 analyze
+  新鲜度、非表占用（WAL、全量 SQL 追踪 statement_history、WDR 快照、pg_log、pg_audit、core）及决定它们大小的 GUC；采样写
+  `opendb_capacity_samples`（migration 019）算增速回归（检测清理悬崖只用其后的段）、满盘估算、对象级 24h 增量与采集空窗，首次运行从
+  健康采集存档回填库大小序列；字典建/删批次做趋势图事件标注；判定 CAP_*（磁盘 / 增速 / 非表占用 / 系统表膨胀 / 从未 analyze / 死元组 /
+  WAL / WDR 保留 / 日志保留 / 采集空窗，阈值可配）由脚本给出；整包存档面板直读，模型只写解读。面板（task-capacity）：摘要 8 卡 →
+  增长趋势（chart-kit Line 新增灰带 / 事件标线 / 断线 / 虚线外推）→ 数据目录与库内构成（点行筛选）→ Top 对象 → 非表占用与保留策略
+  → Vacuum 与统计信息 → 发现（深挖）→ 解读与优先级 → 检查历史。**两处如实降级**：主机磁盘容量 openGauss 视图不暴露 →
+  标"未接入"、不外推满盘；`pg_ls_dir` / `pg_stat_file` 只允许初始账号（omm，SYSADMIN 也不行）→ WAL 改按 checkpoint_segments
+  给上限估算、pg_log 说明"只轮转不清理"、非表占用注明不含 WAL/日志，判定不因此误报。验收 `scripts/e2e-capacity.mjs`（og5 20/20）。
 - **表结构变更追溯（DDL 报告重构 R2，user 2026-08-30 定稿 `docs/prototypes/ddl-r2.html`）**：平台字典除签名外存下定义原文
   （表 = 列清单 name:type:notnull，索引 = indexdef，视图 = 定义；migration 018，升级后首次快照回填不记变更），变更记录同时存旧/新定义；
   `ddl_collect` 采集前先做一次字典快照，再把字典变更（含定义）、openGauss `pg_object`（建/改时间、创建者）、审计 DDL 原文合成

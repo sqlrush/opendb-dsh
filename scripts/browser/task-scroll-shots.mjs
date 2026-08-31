@@ -26,7 +26,7 @@ await sleep(5000);
 // 找主区的滚动容器：含「逐条分析」或「报告」文字的最深元素往上找第一个 overflow 可滚的祖先
 const info = await p.evaluate(() => {
   // 锚点文字按面板各取一个（Top SQL 报表 / 健康报告 / WDR 窗口报告）；找不到锚点就只能截首屏
-  const anchor = [...document.querySelectorAll('div,span')].find((x) => x.children.length === 0 && /逐条分析|Top SQL 资源占比|总体：|窗口态势：|变更态势：/.test(x.textContent || ''));
+  const anchor = [...document.querySelectorAll('div,span')].find((x) => x.children.length === 0 && /逐条分析|Top SQL 资源占比|总体：|窗口态势：|变更态势：|容量态势：/.test(x.textContent || ''));
   let el = anchor;
   while (el && el !== document.body) {
     const cs = getComputedStyle(el);

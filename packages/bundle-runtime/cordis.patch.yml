@@ -115,6 +115,11 @@
         connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-ddl-collect
       name: '@opendb-dsh/tool-ddl-collect'
+    - id: tool-capacity-collect
+      name: '@opendb-dsh/tool-capacity-collect'
+      config:
+        # 2026-08-31 容量与增长报告：采样时序 opendb_capacity_samples + 整包存档 opendb_task_collects（首采从健康存档回填库大小）
+        connectionString: !!js process.env.OPENDB_PG_URL
     - id: tool-rules-catalog
       name: '@opendb-dsh/tool-rules-catalog'
     # threshold_list / threshold_set / threshold_reset（阈值配置的会话半边；set/reset 走 ask_user 确认流）
@@ -211,6 +216,8 @@
       name: '@opendb-dsh/task-wdr'
     - id: task-ddl
       name: '@opendb-dsh/task-ddl'
+    - id: task-capacity
+      name: '@opendb-dsh/task-capacity'
     - id: task-rules
       name: '@opendb-dsh/task-rules'
     # 阈值配置任务类型（双侧注册——W4 教训：Runtime 侧也必须加载类型包）

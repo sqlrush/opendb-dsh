@@ -193,6 +193,8 @@
       name: '@opendb-dsh/task-wdr'
     - id: task-ddl
       name: '@opendb-dsh/task-ddl'
+    - id: task-capacity
+      name: '@opendb-dsh/task-capacity'
     - id: task-rules
       name: '@opendb-dsh/task-rules'
     # 阈值配置任务类型（大盘半边；会话半边 threshold_* 工具在 Runtime）

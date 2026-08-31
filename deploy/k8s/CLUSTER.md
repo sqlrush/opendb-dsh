@@ -1040,3 +1040,41 @@ v0.2.0 10:56、v0.1.0 10:57 完成，三个标签 manifest 均 200，registry �
    回收只在没有构建进行时做，做完 `docker restart opendb-registry`，再 `docker pull` dev 与全部发布标签验证；
 3. 纯 manifest 之后 `--delete-untagged` 语义才正确，但不以"应该没问题"为准，以 pull 验证为准；
 4. 不可逆时的兜底 = 从源码重建（上面的恢复路径），镜像不是唯一副本，源码 + lockfile 才是。
+
+## 容量与增长报告 R1（2026-08-31，user 通过设计稿 `docs/prototypes/capacity-r1.html` 后开发）
+
+第五个任务类型 `capacity`，双半边：`task-capacity`（TaskType + 面板 + 纯函数判定）+ `tool-capacity-collect`（采集器工具）。
+回答四问：现在多大、涨多快、还能撑多久、空间花在哪。默认 `0 2 * * *`（user 定），Top 20 对象，观测窗 7 天。
+
+**采集**（一次全采，逐段降级不中断）：库 / 表空间 / schema / Top 50 表（堆·索引·reltuples·死元组·vacuum·analyze）、
+`pg_stat_user_tables` 死元组榜与"从未 analyze 且 reltuples ≥ 100 万"清单、系统占用（`statement_history` 体积与行数、
+`snapshot.snapshot` 快照数与最老快照、复制槽）、文件级（`pg_ls_dir`/`pg_stat_file` 取 WAL 段数、pg_log、pg_audit、core）、
+相关 GUC（checkpoint_segments / track_stmt_* / wdr_* / log_* / autovacuum）。
+
+**时序**：采样写 `opendb_capacity_samples`（migration 019，一次约 79 行：db/dir/tablespace/schema/table/sys）。
+增速 = 观测窗内样本的线性回归斜率；**清理悬崖**（单步跌 >20%）只用悬崖之后的段，悬崖后样本不足则退回悬崖前的段并把置信度压为 low
+（`segment: post-reset | pre-reset`）——08-31 清场当天正是这个分支。满盘天数 = 磁盘可用 ÷ 增速，增速 < 0.1 GB/天或无磁盘数据**不外推**。
+对象级 24h 增量 = 与"≥20 小时前最近一次"的表采样相减（没有就取上一次，窗口按实际小时数如实标注）。
+**首次运行从 `opendb_health_collects` 回填库大小序列**（`jsonb_path_query_first` 取 overview 的 db_bytes，按小时去重）——
+og5 首采即拿到 58 个历史点、73 h 观测窗，趋势图不必等一周。趋势图事件标注来自 `opendb_dict_changes`（同分钟 ≥5 个对象的建/删批次）。
+
+**og5 实证的两个降级（都已如实呈现，不是 bug）**：
+- **文件级采集需初始账号**：openGauss 的 `pg_ls_dir` / `pg_stat_file` 只允许 initial account（omm），**SYSADMIN 也不行**
+  （报错 `must be initial account to get directory listings`）。平台账号 opendb_ro 读不到 WAL / pg_log / pg_audit / core →
+  `filesAvailable=false`：数据目录标"未估"（`dataDirSource='db-only'`）、非表占用只含 statement_history 与 WDR 并注明"不含 WAL/日志"、
+  WAL 卡改按参数给上限（`(3 × checkpoint_segments + 1) × 16 MB`，og5 = 12 GB）、pg_log 卡说明"只轮转不清理"。判定不会因此误报。
+- **主机磁盘容量拿不到**：openGauss 视图不暴露文件系统容量 → CAP_DISK_FREE 恒 ok 并写明"主机侧未接入"，满盘估算只给增速。
+  要补齐得让采集器走主机侧（health 的 os_runtime 也没有 df）。
+
+**判定 CAP_***（十条，级别由脚本产出，模型不得下调；阈值全部接 task-thresholds）：DISK_FREE / GROWTH / NONTABLE_SHARE /
+STMT_HISTORY_BLOAT / STATS_NEVER / DEAD_TUPLES / WAL_SIZE / WDR_RETENTION / LOG_RETENTION / COLLECT_GAP。
+og5 实测 worst=warn：`statement_history` 16 GB 只装 5.7 万行（≈296 KB/行，L2 全量追踪滚动删除后空间不回收）、
+19 张百万行大表从未 analyze（gsbench 7 / gsbench_v4 5 / gaussdb 5 …，最大 fact_sales 3,355 万行）、非表占用 36%。
+
+**面板**：摘要 8 卡 → 增长趋势（chart-kit `Line` 新增 `bands` 灰带 / `markers` 事件标线 / `breakGapMs` 断线 / `dashed` 虚线 /
+`xMin·xMax·yMax`，bytes 轴按 1024 进制取整刻度）→ 容量构成（左数据目录、右库内，点行筛选 Top 对象）→ Top 对象（增量列、
+死元组、vacuum/analyze、深挖）→ 非表占用四卡（每卡写明"谁在决定它的大小"）→ Vacuum 与统计信息 → 发现（含模型解读）→
+解读与优先级 → 检查历史。整个面板包 ErrorBoundary。
+
+**验收**：单测 15 例（`packages/task-capacity/test`，含悬崖两分支与文件级降级）；真机 e2e `scripts/e2e-capacity.mjs` **20/20 PASS**
+（og5，两轮：首采回填 + 第二次的对象级增量）。`scripts/browser/task-scroll-shots.mjs` 的锚点正则补了「容量态势：」，否则截不到首屏以下。

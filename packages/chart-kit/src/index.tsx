@@ -207,7 +207,11 @@ export function Sparkline({ points, width = 120, height = 32, color = PALETTE[0]
 }
 
 // ───────────────────────────────────────────── Line（时间序列）
-export interface Series { name: string; points: [number, number][]; color?: string }
+export interface Series {
+  name: string; points: [number, number][]; color?: string;
+  /** 虚线（外推 / 参考序列） */ dashed?: boolean;
+  /** 逐点画圆（稀疏序列，如首采只有 1–2 点） */ showPoints?: boolean;
+}
 function niceTicks(min: number, max: number, count = 4): number[] {
   if (!(max > min)) return [min];
   const span = max - min; const raw = span / count; const mag = 10 ** Math.floor(Math.log10(raw));
@@ -231,8 +235,16 @@ function useWidth(ref: { current: HTMLDivElement | null }, fallback: number): nu
   return w;
 }
 
-export function Line({ series, unit, thresholds = [], height = 170, width = 720, yMin }: {
-  series: Series[]; unit: Unit; thresholds?: { label: string; value: number; level?: Level }[]; height?: number; width?: number; yMin?: number;
+export function Line({ series, unit, thresholds = [], height = 170, width = 720, yMin, yMax, bands = [], markers = [], breakGapMs, xMin, xMax }: {
+  series: Series[]; unit: Unit; thresholds?: { label: string; value: number; level?: Level }[]; height?: number; width?: number; yMin?: number; yMax?: number;
+  /** 灰带：无采集 / 空窗（2026-08-31 容量报告引入；悬停显示 label） */
+  bands?: { from: number; to: number; label?: string }[];
+  /** 事件竖线（如字典里的建/删批次），level 决定颜色 */
+  markers?: { t: number; label: string; level?: Level }[];
+  /** 相邻两点间隔超过此毫秒数则断线，不跨空窗连线 */
+  breakGapMs?: number;
+  /** 显式时间范围；默认取数据 + 灰带 + 标线的并集 */
+  xMin?: number; xMax?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const measured = useWidth(ref, width);
@@ -241,14 +253,18 @@ export function Line({ series, unit, thresholds = [], height = 170, width = 720,
   if (all.length === 0) return <div style={{ fontSize: 12.5, color: DIM }}>窗口内无数据</div>;
   const pad = { l: 48, r: 12, t: 12, b: 24 };
   const W = measured; const H = height; const iw = W - pad.l - pad.r; const ih = H - pad.t - pad.b;
-  const t0 = Math.min(...all.map((p) => p[0])); const t1 = Math.max(...all.map((p) => p[0]));
+  const ts = [...all.map((p) => p[0]), ...bands.flatMap((b) => [b.from, b.to]), ...markers.map((m) => m.t)];
+  const t0 = xMin ?? Math.min(...ts); const t1 = xMax ?? Math.max(...ts);
   const vs = [...all.map((p) => p[1]), ...thresholds.map((t) => t.value)];
-  let lo = yMin ?? Math.min(...vs); let hi = Math.max(...vs);
+  let lo = yMin ?? Math.min(...vs); let hi = Math.max(...vs, yMax ?? Number.NEGATIVE_INFINITY);
   if (unit === 'ratio') { lo = Math.min(lo, 0); hi = Math.max(hi, Math.min(1, hi * 1.05)); }
+  else if (yMax === undefined && hi > lo) { hi += (hi - lo) * 0.08; }   // 顶部留 8% 余量，最高点不贴边
   if (hi === lo) { hi = lo + 1; }
   const x = (t: number) => pad.l + (t1 > t0 ? ((t - t0) / (t1 - t0)) * iw : iw / 2);
   const y = (v: number) => pad.t + ih - ((v - lo) / (hi - lo)) * ih;
-  const yt = niceTicks(lo, hi); const xt = niceTicks(t0, t1, 5);
+  // bytes 用 1024 进制取"好看"的刻度（50 GB 而不是 46.6 GB）
+  const yScale = unit === 'bytes' ? [1024 ** 4, 1024 ** 3, 1024 ** 2, 1024, 1].find((s) => hi / s >= 1) ?? 1 : 1;
+  const yt = niceTicks(lo / yScale, hi / yScale).map((v) => v * yScale); const xt = niceTicks(t0, t1, 5);
   const onMove = (e: any) => {
     const rect = ref.current?.getBoundingClientRect(); if (!rect) return;
     const px = ((e.clientX - rect.left) / rect.width) * W; const t = t0 + ((px - pad.l) / iw) * (t1 - t0);
@@ -258,6 +274,7 @@ export function Line({ series, unit, thresholds = [], height = 170, width = 720,
   return (
     <div ref={ref} style={{ position: 'relative', width: '100%' }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {bands.map((b, i) => { const a = x(Math.max(t0, b.from)); const w = Math.max(0, x(Math.min(t1, b.to)) - a); return w > 0 ? <rect key={`b${i}`} x={a} y={pad.t} width={w} height={ih} fill="#f1f3f6"><title>{b.label ?? '无数据'}</title></rect> : null; })}
         {yt.map((v) => <g key={`y${v}`}><line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} stroke={LINE} /><text x={pad.l - 6} y={y(v) + 4} fontSize={10.5} textAnchor="end" fill={DIM} fontFamily={MONO}>{fmtValue(v, unit)}</text></g>)}
         {xt.map((t) => <text key={`x${t}`} x={x(t)} y={H - 6} fontSize={10.5} textAnchor="middle" fill={DIM} fontFamily={MONO}>{fmtTime(t, t1 - t0)}</text>)}
         {thresholds.map((th, i) => th.value >= lo && th.value <= hi ? (
@@ -266,9 +283,22 @@ export function Line({ series, unit, thresholds = [], height = 170, width = 720,
         ) : null)}
         {series.map((s, i) => {
           const color = s.color ?? PALETTE[i % PALETTE.length];
-          const d = s.points.map((p, k) => `${k === 0 ? 'M' : 'L'} ${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join(' ');
-          return <path key={s.name} d={d} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" />;
+          let d = ''; let prev: number | undefined;
+          for (const p of s.points) { const brk = prev !== undefined && breakGapMs !== undefined && p[0] - prev > breakGapMs; d += `${prev === undefined || brk ? 'M' : 'L'} ${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)} `; prev = p[0]; }
+          return (
+            <g key={s.name}>
+              <path d={d} fill="none" stroke={color} strokeWidth={1.8} strokeLinejoin="round" strokeDasharray={s.dashed ? '5 4' : undefined} />
+              {s.showPoints ? s.points.map((p, k) => <circle key={k} cx={x(p[0])} cy={y(p[1])} r={3} fill={color} />) : null}
+            </g>
+          );
         })}
+        {markers.map((m, i) => m.t >= t0 && m.t <= t1 ? (
+          <g key={`m${i}`}>
+            <line x1={x(m.t)} x2={x(m.t)} y1={pad.t} y2={pad.t + ih} stroke={SEV[m.level ?? 'critical']} strokeWidth={1.5} />
+            <path d={`M${x(m.t) - 5} ${pad.t - 2} L${x(m.t) + 5} ${pad.t - 2} L${x(m.t)} ${pad.t + 7} Z`} fill={SEV[m.level ?? 'critical']} />
+            <title>{m.label}</title>
+          </g>
+        ) : null)}
         {hover ? <line x1={hover.x} x2={hover.x} y1={pad.t} y2={pad.t + ih} stroke="#9aa0a8" strokeDasharray="3 3" /> : null}
         {hover ? hover.vals.map((v, i) => <circle key={i} cx={hover.x} cy={y(v.v)} r={3.5} fill="#fff" stroke={v.color} strokeWidth={2} />) : null}
       </svg>

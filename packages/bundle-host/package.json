@@ -21,6 +21,7 @@
     "@opendb-dsh/task-wdr": "workspace:*",
     "@opendb-dsh/task-rules": "workspace:*",
     "@opendb-dsh/task-ddl": "workspace:*",
+    "@opendb-dsh/task-capacity": "workspace:*",
     "@opendb-dsh/task-incident": "workspace:*",
     "@opendb-dsh/task-monitor-dashboard": "workspace:*",
     "@opendb-dsh/alert-ddl": "workspace:*",
