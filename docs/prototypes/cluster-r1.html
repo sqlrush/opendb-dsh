@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>k8s 集群状态 · R1 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C; --ph:#ADB2B8;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC;
+    --entry:#7A8AA6; --ctrl:#4176E6; --exec:#8B6BE0; --data:#2FA79A; --ext:#E0963F;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  .num{font-variant-numeric:tabular-nums}.mono{font-family:var(--mono)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  /* ── 布局：侧栏 + 主区 */
+  .app{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:calc(100vh - 31px)}
+  .side{border-right:1px solid var(--line);padding:14px 12px;font-size:14px;background:#fff}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:2px 8px 14px}
+  .brand i{display:inline-block;width:20px;height:20px;border-radius:5px;background:var(--ink);flex:none}
+  .newbtn{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:7px;color:var(--ink);margin-bottom:14px}
+  .sec{font-size:12.5px;color:var(--dim);padding:6px 8px 4px;display:flex;align-items:center;gap:6px}
+  .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;color:var(--ink);cursor:pointer}
+  .row:hover{background:var(--fill)}.row.on{background:var(--fill2);font-weight:500}
+  .row .n{margin-left:auto;font-size:12.5px;color:var(--dim)}
+  .row .dot{width:6px;height:6px;border-radius:3px;background:var(--ok);margin-left:auto;flex:none}
+  .ind{padding-left:22px}
+  .sk{width:15px;height:15px;flex:none}
+  /* ── 主区 */
+  .main{min-width:0;display:flex;flex-direction:column}
+  .top{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 24px;font-size:14px;flex:none}
+  .top b{font-weight:600}.top .dim{color:var(--dim)}
+  .page{padding:18px 24px 40px;min-width:0}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .title h1{font-size:20px;font-weight:600;margin:0}
+  .title .meta{font-size:13.5px;color:var(--dim)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;border-radius:6px;padding:1px 9px;font-weight:500;white-space:nowrap}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.notice{background:var(--notice-soft);color:var(--notice)}.chip.grey{background:var(--fill2);color:var(--sub)}
+  .tabs{display:flex;gap:22px;margin:10px 0 16px;border-bottom:1px solid var(--line);font-size:14px}
+  .tabs span{padding:6px 0 8px;color:var(--sub);cursor:pointer}.tabs span.on{color:var(--blue);border-bottom:2px solid var(--blue);margin-bottom:-1px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+  .stat{background:var(--fill);border-radius:8px;padding:10px 13px;min-width:0}
+  .stat .l{font-size:12.5px;color:var(--dim);white-space:nowrap}
+  .stat .v{font-size:21px;font-weight:600;line-height:1.3;margin-top:1px;white-space:nowrap}
+  .stat .v small{font-size:12.5px;font-weight:500;color:var(--dim);margin-left:4px}
+  .stat .d{font-size:12px;color:var(--dim);line-height:1.45}
+  /* ── 画布 */
+  .canvas{display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:0;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);overflow:hidden}
+  .diagram{position:relative;padding:16px 18px 12px;background:
+      linear-gradient(90deg, rgba(0,0,0,.022) 1px, transparent 1px) 0 0/22px 22px,
+      linear-gradient(rgba(0,0,0,.022) 1px, transparent 1px) 0 0/22px 22px, #FCFCFD;min-width:0}
+  .lane{display:grid;grid-template-columns:78px minmax(0,1fr);gap:12px;align-items:stretch;margin-bottom:34px;position:relative;z-index:1}
+  .lane .lbl{font-size:12px;color:var(--dim);display:flex;flex-direction:column;justify-content:center;gap:3px;text-align:right;padding-right:8px;border-right:2px solid var(--fill2)}
+  .lane .lbl b{font-size:12.5px;color:var(--sub);font-weight:600}
+  .cards{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .pod{position:relative;width:184px;border:1px solid var(--line);border-radius:9px;background:#fff;padding:9px 11px 8px;cursor:pointer;transition:box-shadow .12s,border-color .12s,transform .12s}
+  .pod:hover{border-color:#C7D4F0;box-shadow:0 6px 18px rgba(65,118,230,.10);transform:translateY(-1px)}
+  .pod.sel{border-color:var(--blue);box-shadow:0 0 0 2px rgba(65,118,230,.16)}
+  .pod .hd{display:flex;align-items:center;gap:6px;min-width:0}
+  .pod .ic{width:20px;height:20px;border-radius:5px;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:700}
+  .pod .nm{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pod .st{width:7px;height:7px;border-radius:4px;background:var(--ok);margin-left:auto;flex:none}
+  .pod .role{font-size:12px;color:var(--sub);margin-top:2px;line-height:1.45;min-height:34px}
+  .pod .foot{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11.5px;color:var(--dim)}
+  .pod .node{background:var(--fill2);border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:11px}
+  .bars{display:flex;gap:4px;margin-top:6px;align-items:center}
+  .bar{flex:1;height:4px;border-radius:2px;background:var(--fill2);position:relative;overflow:hidden}
+  .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:2px}
+  .bars span{font-size:10.5px;color:var(--dim);font-family:var(--mono);white-space:nowrap}
+  .rep{position:absolute;top:-7px;right:-7px;background:var(--ink);color:#fff;border-radius:9px;font-size:10.5px;padding:0 6px;line-height:16px;font-weight:600}
+  svg.wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+  /* ── 详情 */
+  .detail{border-left:1px solid var(--line);padding:14px 16px 18px;background:#fff;min-width:0;align-self:start;position:sticky;top:0;max-height:calc(100vh - 56px);overflow:auto}
+  .detail .dh{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+  .detail .dh .ic{width:22px;height:22px;border-radius:6px;flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:700}
+  .detail h3{font-size:15.5px;font-weight:600;margin:0;word-break:break-all}
+  .detail .sub{font-size:12.5px;color:var(--dim);margin-bottom:10px}
+  .dsec{font-size:12px;color:var(--dim);font-weight:600;letter-spacing:.03em;margin:14px 0 6px;display:flex;align-items:center;gap:6px}
+  .dsec::after{content:"";flex:1;height:1px;background:var(--line)}
+  .kv{display:grid;grid-template-columns:82px minmax(0,1fr);gap:3px 10px;font-size:12.5px}
+  .kv .k{color:var(--dim)}.kv .v{font-family:var(--mono);font-size:12px;word-break:break-all}
+  .meter{margin:7px 0}
+  .meter .t{display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:3px}
+  .meter .t b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+  .track{height:7px;border-radius:4px;background:var(--fill2);position:relative;overflow:hidden}
+  .track i{position:absolute;left:0;top:0;bottom:0;border-radius:4px}
+  .track .lim{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--crit)}
+  .live{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12.5px;background:var(--fill);margin-top:6px}
+  .live .r{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+  .live .r b{font-weight:600;font-variant-numeric:tabular-nums}
+  .tag{display:inline-block;font-size:11.5px;border:1px solid var(--line);border-radius:5px;padding:0 6px;color:var(--sub);margin:2px 4px 0 0;font-family:var(--mono)}
+  .link{font-size:12.5px;color:var(--blue);cursor:pointer;white-space:nowrap}
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:8px;color:var(--dim);font-size:13.5px;text-align:center;padding:0 24px}
+  .empty .big{font-size:34px;opacity:.25}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--sub);padding:8px 2px 0;align-items:center}
+  .legend i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+  .legend .ln{display:inline-block;width:16px;border-top:2px solid var(--ctrl);vertical-align:middle;margin-right:5px}
+  .legend .ln.d{border-top-style:dashed;border-color:var(--data)}
+  /* 节点视图 */
+  .nodes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+  .ncard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)}
+  .ncard .nh{display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:600}
+  .ncard .np{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
+  .ncard .np span{font-size:11.5px;border-radius:5px;padding:1px 7px;background:var(--fill);color:var(--sub);cursor:pointer;font-family:var(--mono)}
+  .ncard .np span:hover{background:var(--fill2)}
+  .foot{margin-top:22px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:12px}
+  .notes{font-size:13px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:8px 14px;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="ribbon">设计稿 R1 · 资源 → k8s 集群状态 · 侧栏「资源」升为与「工作区」同级的一级目录 · 架构图里的 pod 可点击（点卡片看右侧详情，再点节点视图里的 pod 名也会选中）· 全部数字为 2026-08-31 15:0x 集群实测</div>
+<div class="app">
+  <!-- ── 侧栏：资源成为与工作区同级的一级目录 ── -->
+  <div class="side">
+    <div class="brand"><i></i>opendb <span style="font-weight:600;letter-spacing:.06em;font-size:12px;background:var(--ink);color:#fff;border-radius:4px;padding:1px 5px">HARNESS</span></div>
+    <div class="newbtn">⊕ 新会话</div>
+    <div class="sec">工作区 <span style="margin-left:auto">⌄</span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h11v7a1.5 1.5 0 0 1-1.5 1.5H5l-2.5 2z" stroke="#4176E6" stroke-width="1.4" stroke-linejoin="round"/></svg>会话<span class="n">10</span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="#4176E6" stroke-width="1.4"/><path d="M5.5 6.5h5M5.5 9.5h3" stroke="#4176E6" stroke-width="1.4" stroke-linecap="round"/></svg>任务<span class="n">4</span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="4.2" rx="5" ry="2" stroke="#4176E6" stroke-width="1.4"/><path d="M3 4.2v7.6c0 1.1 2.2 2 5 2s5-.9 5-2V4.2" stroke="#4176E6" stroke-width="1.4"/></svg>数据库<span class="n">1</span></div>
+    <div class="sec" style="margin-top:10px">资源 <span style="margin-left:auto">⌄</span></div>
+    <div class="row on"><svg class="sk" viewBox="0 0 16 16" fill="none"><path d="M8 1.8 13.5 4.6v5.2L8 12.6 2.5 9.8V4.6z" stroke="#4176E6" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6.4 13.5 4.6M8 6.4 2.5 4.6M8 6.4v6.2" stroke="#4176E6" stroke-width="1.2"/></svg>k8s 集群状态<span class="dot"></span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><path d="M2.5 12.5v-4M6.2 12.5v-7M9.8 12.5v-9M13.5 12.5v-5" stroke="#81858C" stroke-width="1.5" stroke-linecap="round"/></svg>模型用量<span class="n" style="font-size:11.5px">待定</span></div>
+  </div>
+
+  <!-- ── 主区 ── -->
+  <div class="main">
+    <div class="top"><b>资源</b><span class="dim">›</span><span>k8s 集群状态</span><span class="dim" style="margin-left:auto;font-size:13px">30 秒自动刷新 · 15:04:12</span></div>
+    <div class="page">
+      <div class="title">
+        <h1>k8s 集群状态</h1>
+        <span class="chip ok">集群健康</span>
+        <span class="meta">k3s v1.36.3 · 4 节点全 Ready · 命名空间 opendb-dsh · 9 个运行中 Pod（另 1 个一次性 Job 已完成）</span>
+      </div>
+      <div class="tabs"><span class="on" data-tab="arch">架构图</span><span data-tab="node">节点视图</span><span data-tab="event">事件</span></div>
+
+      <div class="stats">
+        <div class="stat"><div class="l">节点</div><div class="v num">4<small>全 Ready</small></div><div class="d">1 control-plane · 3 worker</div></div>
+        <div class="stat"><div class="l">Pod</div><div class="v num">9<small>/ 9 就绪</small></div><div class="d">8 个 Deployment + 1 个 StatefulSet</div></div>
+        <div class="stat"><div class="l">集群 CPU</div><div class="v num">153 m<small>/ 72 核</small></div><div class="d">用量 0.2% · 请求 1.35 核（1.9%）</div></div>
+        <div class="stat"><div class="l">集群内存</div><div class="v num">5.8 GB<small>/ 251 GB</small></div><div class="d">用量 2.3% · 请求 3.9 GB</div></div>
+        <div class="stat"><div class="l">存储卷</div><div class="v num">41 GB<small>5 个 PVC</small></div><div class="d">local-path · 卷所在盘已用 73%</div></div>
+        <div class="stat"><div class="l">重启累计</div><div class="v num" style="color:var(--notice)">22 次</div><div class="d">PG 10 · MinIO 5 · Ollama 5 · 其余 2</div></div>
+      </div>
+
+      <!-- ── 画布：架构图 + 详情 ── -->
+      <div class="canvas">
+        <div class="diagram" id="diagram">
+          <svg class="wires" id="wires"></svg>
+
+          <div class="lane">
+            <div class="lbl"><b>入口</b><span>浏览器 → socat</span></div>
+            <div class="cards">
+              <div class="pod" data-k="browser">
+                <div class="hd"><span class="ic" style="background:var(--entry)">⇢</span><span class="nm">浏览器 / socat</span><span class="st" style="background:var(--entry)"></span></div>
+                <div class="role">mac 上 socat 把 127.0.0.1:18080 转到 k8s-cp:80，Traefik 再进 Host Service。</div>
+                <div class="foot"><span class="node">18080 → 80</span><span>集群外</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane">
+            <div class="lbl"><b>控制面</b><span>会话 / 派发</span></div>
+            <div class="cards">
+              <div class="pod" data-k="host">
+                <div class="hd"><span class="ic" style="background:var(--ctrl)">H</span><span class="nm">host</span><span class="st"></span></div>
+                <div class="role">控制台与 API 网关：WebSocket 会话、任务调度、把用户轮次写进 PG 队列派给 Runtime。</div>
+                <div class="bars"><div class="bar"><i style="width:2%;background:var(--ctrl)"></i></div><span>4m</span><div class="bar"><i style="width:10%;background:var(--ctrl)"></i></div><span>202Mi</span></div>
+                <div class="foot"><span class="node">k8s-w1</span><span>11 连接</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane">
+            <div class="lbl"><b>执行面</b><span>智能体 / 采集</span></div>
+            <div class="cards">
+              <div class="pod" data-k="rt1">
+                <span class="rep">×2</span>
+                <div class="hd"><span class="ic" style="background:var(--exec)">R</span><span class="nm">runtime-default</span><span class="st"></span></div>
+                <div class="role">跑模型轮次与工具：db_query / 各 *_collect / 报告写入，一个 pod 同时最多 2 个轮次。</div>
+                <div class="bars"><div class="bar"><i style="width:1%;background:var(--exec)"></i></div><span>1m</span><div class="bar"><i style="width:5%;background:var(--exec)"></i></div><span>91Mi</span></div>
+                <div class="foot"><span class="node">k8s-cp</span><span>空闲</span></div>
+              </div>
+              <div class="pod" data-k="rt2">
+                <div class="hd"><span class="ic" style="background:var(--exec)">R</span><span class="nm">runtime-default</span><span class="st"></span></div>
+                <div class="role">同上，第二副本。KEDA 按队列深度可扩到 5。</div>
+                <div class="bars"><div class="bar"><i style="width:1%;background:var(--exec)"></i></div><span>2m</span><div class="bar"><i style="width:5%;background:var(--exec)"></i></div><span>102Mi</span></div>
+                <div class="foot"><span class="node">k8s-w2</span><span>空闲</span></div>
+              </div>
+              <div class="pod" data-k="col">
+                <div class="hd"><span class="ic" style="background:var(--exec)">C</span><span class="nm">runtime-collector</span><span class="st"></span></div>
+                <div class="role">无模型的定时采集：字典快照、指标、容量采样，只写 PG，不参与会话。</div>
+                <div class="bars"><div class="bar"><i style="width:1%;background:var(--exec)"></i></div><span>1m</span><div class="bar"><i style="width:7%;background:var(--exec)"></i></div><span>70Mi</span></div>
+                <div class="foot"><span class="node">k8s-cp</span><span>15:02 采集</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane">
+            <div class="lbl"><b>数据面</b><span>状态 / 检索</span></div>
+            <div class="cards">
+              <div class="pod" data-k="pg">
+                <span class="rep">STS</span>
+                <div class="hd"><span class="ic" style="background:var(--data)">P</span><span class="nm">postgres</span><span class="st" style="background:var(--notice)"></span></div>
+                <div class="role">平台唯一事实源：会话日志、队列、任务与采集存档、字典与时序（TimescaleDB）。</div>
+                <div class="bars"><div class="bar"><i style="width:11%;background:var(--data)"></i></div><span>193m</span><div class="bar"><i style="width:35%;background:var(--notice)"></i></div><span>2.2Gi</span></div>
+                <div class="foot"><span class="node">k8s-w2</span><span style="color:var(--notice)">重启 10 次</span></div>
+              </div>
+              <div class="pod" data-k="redis">
+                <div class="hd"><span class="ic" style="background:var(--data)">R</span><span class="nm">redis</span><span class="st"></span></div>
+                <div class="role">低敏域缓存与幂等键；正确性不依赖它（队列与单写者在 PG）。</div>
+                <div class="bars"><div class="bar"><i style="width:6%;background:var(--data)"></i></div><span>3m</span><div class="bar"><i style="width:1%;background:var(--data)"></i></div><span>6Mi</span></div>
+                <div class="foot"><span class="node">k8s-w1</span><span>3 个键</span></div>
+              </div>
+              <div class="pod" data-k="minio">
+                <div class="hd"><span class="ic" style="background:var(--data)">M</span><span class="nm">minio</span><span class="st"></span></div>
+                <div class="role">对象存储：会话附件与大结果溢写（attachment-s3 / spill-s3）。</div>
+                <div class="bars"><div class="bar"><i style="width:2%;background:var(--data)"></i></div><span>3m</span><div class="bar"><i style="width:6%;background:var(--data)"></i></div><span>126Mi</span></div>
+                <div class="foot"><span class="node">k8s-w3</span><span>20Gi 卷</span></div>
+              </div>
+              <div class="pod" data-k="qdrant">
+                <div class="hd"><span class="ic" style="background:var(--data)">Q</span><span class="nm">qdrant</span><span class="st"></span></div>
+                <div class="role">向量库：知识检索的近邻查询（knowledge-vector 判定暂不启用时闲置）。</div>
+                <div class="bars"><div class="bar"><i style="width:2%;background:var(--data)"></i></div><span>2m</span><div class="bar"><i style="width:11%;background:var(--data)"></i></div><span>113Mi</span></div>
+                <div class="foot"><span class="node">k8s-w3</span><span>2Gi 卷</span></div>
+              </div>
+              <div class="pod" data-k="ollama">
+                <div class="hd"><span class="ic" style="background:var(--data)">O</span><span class="nm">ollama</span><span class="st"></span></div>
+                <div class="role">本地嵌入模型 bge-m3：把知识与记忆切片转成向量，不做对话推理。</div>
+                <div class="bars"><div class="bar"><i style="width:1%;background:var(--data)"></i></div><span>1m</span><div class="bar"><i style="width:29%;background:var(--data)"></i></div><span>1.7Gi</span></div>
+                <div class="foot"><span class="node">k8s-w3</span><span>bge-m3 1.2GB</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="lane" style="margin-bottom:2px">
+            <div class="lbl"><b>被管节点</b><span>集群外</span></div>
+            <div class="cards">
+              <div class="pod" data-k="og5">
+                <div class="hd"><span class="ic" style="background:var(--ext)">og</span><span class="nm">og5</span><span class="st"></span></div>
+                <div class="role">openGauss 5.0.3（mac docker）。平台只读连接：巡检 / Top SQL / WDR / DDL / 容量。</div>
+                <div class="foot"><span class="node">192.168.128.1</span><span>只读账号</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="legend">
+            <span><i style="background:var(--ctrl)"></i>控制面</span>
+            <span><i style="background:var(--exec)"></i>执行面</span>
+            <span><i style="background:var(--data)"></i>数据面</span>
+            <span><i style="background:var(--ext)"></i>被管数据库</span>
+            <span><span class="ln"></span>请求 / 派发</span>
+            <span><span class="ln d"></span>读写数据</span>
+            <span style="color:var(--dim)">点任意卡片看详情</span>
+          </div>
+        </div>
+
+        <!-- 详情面板 -->
+        <div class="detail" id="detail"></div>
+      </div>
+
+      <!-- ── 节点视图（tab 切换显示） ── -->
+      <div id="nodeview" style="display:none">
+        <div class="nodes" id="nodes"></div>
+        <div class="notes">节点资源来自 metrics-server（<span class="mono">kubectl top nodes</span>）；每台 18 核 / 62.7 GiB，是 OrbStack 虚拟机的规格。点 pod 名回到架构图并选中它。</div>
+      </div>
+
+      <!-- ── 事件视图（k8s events，只读） ── -->
+      <div id="eventview" style="display:none"></div>
+
+      <div class="notes" id="tip">口径：CPU/内存实时值取 metrics-server，进度条底色为该 pod 的 limit（没有 limit 时按节点容量的 5% 折算，条上会标"无 limit"）；请求/限制取自 Deployment spec；重启次数为容器累计。集群数据经 Host 的只读 ServiceAccount 读 k8s API（RBAC 只给 get/list pods·nodes·events），拿不到时整页降级为"未授权"。</div>
+      <div class="foot">R1 设计稿 · 待 user 评审 · 实现落点：ui-harness 侧栏加「资源」一级分组（与工作区同款小节头）+ platform-status 扩 <span class="mono">/opendb-status</span> 的 cluster 端点（nodes / pods / metrics / events）· 面板独立 client 插件 <span class="mono">ui-cluster</span> · 现有「模型 token 用量」建议作为资源下第二项，去留请 user 定。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── 真实数据（2026-08-31 15:0x 实测：kubectl get/top、pg_stat_activity、metrics.json）
+  const CORE_MS = 1000, NODE_MEM = 62.7 * 1024;   // MiB
+  const POD = {
+    browser: { icon: '⇢', color: 'var(--entry)', title: '浏览器 / socat 转发', kind: '集群外入口', role: '开发机访问入口',
+      desc: 'mac 上 socat 把 127.0.0.1:18080 转发到 k8s-cp 的 80 端口（8080 被 Cloud CLI Proxy 占用，不能用）。集群内由 Traefik 转到 opendb-dsh-host Service:3080。',
+      kv: [['链路', 'localhost:18080 → k8s-cp:80 → svc/opendb-dsh-host:3080'], ['重建', 'CLUSTER.md 的 socat-over-orb 命令']], live: [['当前 WS 连接', '11']] },
+    host: { icon: 'H', color: 'var(--ctrl)', title: 'opendb-dsh-host-688857d99f-k69cm', kind: 'Deployment · 1/1', role: '控制台 · API 网关 · 任务调度',
+      desc: '浏览器的 HTTP 与 WebSocket 都落在这里；持有用户提问直到写进会话日志，再通过 PG 队列把轮次派给 Runtime。预览阶段固定 1 副本（多副本时 WS 与 HTTP 可能落在不同副本，靠 host-fanout 的 PG NOTIFY 兜）。',
+      kv: [['镜像', 'opendb-dsh:dev'], ['Pod IP', '10.42.1.80'], ['节点', 'k8s-w1'], ['Service', 'ClusterIP 10.43.108.188:3080'], ['启动', '15:50:10（3.2 小时前）'], ['重启', '0 次']],
+      res: [['CPU', 4, 200, 0, 'm'], ['内存', 202, 512, 2048, 'Mi']],
+      live: [['WebSocket 连接', '11'], ['本进程 pod', 'k69cm'], ['派发中的轮次', '0'], ['队列待取', '0']],
+      tags: ['ui-harness', 'ui-opendb', 'tasks', 'host-fanout', 'platform-status'] },
+    rt1: { icon: 'R', color: 'var(--exec)', title: 'opendb-dsh-runtime-default-86744c9d46-582fk', kind: 'Deployment · 2/2 副本', role: '智能体执行器',
+      desc: '从 PG 队列 claim 轮次，在 worker thread 里跑模型与工具（db_query、health/sqlreview/wdr/ddl/capacity 各采集器、task_report）。maxConcurrent=2，KEDA 按队列深度可扩到 5。',
+      kv: [['镜像', 'opendb-dsh:dev'], ['Pod IP', '10.42.0.32'], ['节点', 'k8s-cp'], ['启动', '15:50:56'], ['重启', '0 次'], ['profile', 'runtime']],
+      res: [['CPU', 1, 200, 0, 'm'], ['内存', 91, 512, 2048, 'Mi']],
+      live: [['正在执行的轮次', '0 / 2'], ['今日完成轮次', '18'], ['最近一次', '15:04 容量采集'], ['已注册工具', '23']],
+      tags: ['tool-db', 'tool-capacity-collect', 'tool-wdr-collect', 'tool-ddl-collect', 'skill-pg'] },
+    rt2: { icon: 'R', color: 'var(--exec)', title: 'opendb-dsh-runtime-default-86744c9d46-qhqg2', kind: 'Deployment · 2/2 副本', role: '智能体执行器（第二副本）',
+      desc: '与第一副本完全对等，同一 Deployment。两副本分布在 k8s-cp 与 k8s-w2，单节点故障不影响派发。',
+      kv: [['镜像', 'opendb-dsh:dev'], ['Pod IP', '10.42.2.185'], ['节点', 'k8s-w2'], ['启动', '15:50:10'], ['重启', '0 次'], ['profile', 'runtime']],
+      res: [['CPU', 2, 200, 0, 'm'], ['内存', 102, 512, 2048, 'Mi']],
+      live: [['正在执行的轮次', '0 / 2'], ['今日完成轮次', '11'], ['最近一次', '14:56 容量采集'], ['已注册工具', '23']],
+      tags: ['tool-db', 'tool-health-collect', 'tool-sqlreview-collect', 'tool-chart'] },
+    col: { icon: 'C', color: 'var(--exec)', title: 'opendb-dsh-runtime-collector-678b8746d-tx7kt', kind: 'Deployment · 1/1', role: '定时采集器（无模型）',
+      desc: '不参与会话、不调模型：按 cron 采字典快照与指标，暴露 :9090 健康端口（POST /dict-snapshot 可即时快照）。容量报告的历史采样、DDL 追溯的字典变更都靠它持续喂数据。',
+      kv: [['镜像', 'opendb-dsh:dev'], ['Pod IP', '10.42.0.31'], ['节点', 'k8s-cp'], ['启动', '15:50:10'], ['重启', '0 次'], ['profile', 'collector']],
+      res: [['CPU', 1, 100, 0, 'm'], ['内存', 70, 256, 1024, 'Mi']],
+      live: [['最近一次字典快照', '15:02'], ['字典对象数', '258'], ['容量采样行', '374'], ['采集目标', 'og5']],
+      tags: ['collector', 'dictionary-pg', 'metrics-timescale'] },
+    pg: { icon: 'P', color: 'var(--data)', title: 'opendb-dsh-postgres-0', kind: 'StatefulSet · 1/1', role: '平台状态库（PG 16 + TimescaleDB）',
+      desc: '平台唯一事实源：会话日志与队列（单写者 Runtime 分配 seq）、任务与运行记录、四类任务的采集存档、字典与容量时序、阈值与知识。重启 10 次是 8 月中旬 OrbStack 睡眠冻结期间累计的，近两周为 0。',
+      kv: [['镜像', 'timescaledb-ha:pg16'], ['Pod IP', '10.42.2.178'], ['节点', 'k8s-w2'], ['Service', '10.43.144.222:5432'], ['卷', 'data-…-postgres-0 · 10Gi'], ['重启', '10 次（8 月中旬）']],
+      res: [['CPU', 193, 0, 0, 'm'], ['内存', 2225, 0, 0, 'Mi']],
+      live: [['连接数', '27 / 100'], ['库大小 dsh', '26 GB'], ['会话事件行', '6,331,723'], ['用户表', '65'], ['迁移台账', '19 条']],
+      tags: ['session-persistence-pg', 'metrics-timescale', 'dictionary-pg', 'thresholds-pg', 'knowledge-pg'] },
+    redis: { icon: 'R', color: 'var(--data)', title: 'opendb-dsh-redis-6f464848cd-zwpt2', kind: 'Deployment · 1/1', role: '缓存 / 低敏域存储',
+      desc: '只承担缓存与低敏数据路由；队列正确性与单写者语义都在 PG，Redis 挂了不影响会话与任务（设计决策 D 项）。',
+      kv: [['镜像', 'redis:7-alpine'], ['Pod IP', '10.42.1.66'], ['节点', 'k8s-w1'], ['Service', '10.43.15.121:6379'], ['卷', '1Gi'], ['重启', '1 次']],
+      res: [['CPU', 3, 50, 0, 'm'], ['内存', 6, 64, 512, 'Mi']],
+      live: [['键数量', '3'], ['已用内存', '6 MiB'], ['角色', 'master（单实例）']],
+      tags: ['storage-redis'] },
+    minio: { icon: 'M', color: 'var(--data)', title: 'opendb-dsh-minio-76c4f9574b-6l6zh', kind: 'Deployment · 1/1', role: '对象存储（S3 兼容）',
+      desc: '会话附件与大结果溢写：工具输出超阈值时写进对象存储，会话里只留指针，模型按需用 read_spill 取回。',
+      kv: [['镜像', 'minio:latest'], ['Pod IP', '10.42.3.53'], ['节点', 'k8s-w3'], ['Service', '10.43.196.177:9000/9001'], ['卷', '20Gi'], ['重启', '5 次']],
+      res: [['CPU', 3, 0, 0, 'm'], ['内存', 126, 0, 0, 'Mi']],
+      live: [['卷所在盘', '672G / 920G（73%）'], ['初始化 Job', 'minio-init 已完成']],
+      tags: ['attachment-s3', 'spill-s3', 'tool-read-spill'] },
+    qdrant: { icon: 'Q', color: 'var(--data)', title: 'opendb-dsh-qdrant-7bd77f5f6-9rkjz', kind: 'Deployment · 1/1', role: '向量检索',
+      desc: '知识与记忆的向量近邻查询。P3 判定 knowledge-vector 暂不启用，当前处于待命状态（占用极低）。',
+      kv: [['镜像', 'qdrant:v1.12.4'], ['Pod IP', '10.42.3.55'], ['节点', 'k8s-w3'], ['Service', '10.43.30.143:6333'], ['卷', '2Gi'], ['重启', '1 次']],
+      res: [['CPU', 2, 100, 0, 'm'], ['内存', 113, 128, 1024, 'Mi']],
+      live: [['集合数', '0（待命）'], ['状态', 'Ready']],
+      tags: ['knowledge-vector（未启用）'] },
+    ollama: { icon: 'O', color: 'var(--data)', title: 'opendb-dsh-ollama-5dd6ccd5bd-n2lkd', kind: 'Deployment · 1/1', role: '本地嵌入模型',
+      desc: '只跑 bge-m3 嵌入（不做对话推理）：知识入库与记忆切片转向量。内存常驻 1.7 GiB 是模型权重，属正常。',
+      kv: [['镜像', 'ollama:0.6.8'], ['Pod IP', '10.42.3.54'], ['节点', 'k8s-w3'], ['Service', '10.43.149.0:11434'], ['卷', '8Gi 模型盘'], ['重启', '5 次']],
+      res: [['CPU', 1, 500, 0, 'm'], ['内存', 1749, 2048, 6144, 'Mi']],
+      live: [['已加载模型', 'bge-m3:latest · 1.2 GB'], ['最近调用', '知识入库时按需']],
+      tags: ['embeddings-openai-compat', 'memory-ingest'] },
+    og5: { icon: 'og', color: 'var(--ext)', title: 'og5（被管数据库，集群外）', kind: 'mac docker 容器', role: '巡检目标节点',
+      desc: 'openGauss 5.0.3 lite。平台以只读账号 opendb_ro 连接，跑健康检查 / Top SQL / WDR / DDL 追溯 / 容量与增长；权限完全由数据库侧控制，平台不做 SQL 过滤。',
+      kv: [['地址', '192.168.128.1:15432'], ['账号', 'opendb_ro（SYSADMIN + 事务只读）'], ['数据目录', '58 GB'], ['最近采集', '15:04 容量']],
+      live: [['库 postgres', '48.4 GB'], ['最近容量判定', 'warn（2 告警）'], ['字典对象', '258']],
+      tags: ['db-opengauss', 'skill-pg'] },
+  };
+  const NODES = [
+    { name: 'k8s-cp', role: 'control-plane', cpu: 35, mem: 930, pods: ['runtime-default-582fk', 'runtime-collector-tx7kt'], keys: ['rt1', 'col'] },
+    { name: 'k8s-w1', role: 'worker', cpu: 16, mem: 355, pods: ['host-k69cm', 'redis-zwpt2'], keys: ['host', 'redis'] },
+    { name: 'k8s-w2', role: 'worker', cpu: 90, mem: 2599, pods: ['postgres-0', 'runtime-default-qhqg2'], keys: ['pg', 'rt2'] },
+    { name: 'k8s-w3', role: 'worker', cpu: 12, mem: 2088, pods: ['minio-6l6zh', 'ollama-n2lkd', 'qdrant-9rkjz'], keys: ['minio', 'ollama', 'qdrant'] },
+  ];
+
+  // ── 详情面板
+  const detail = document.getElementById('detail');
+  const meter = (label, used, req, lim, unit) => {
+    const cap = lim > 0 ? lim : (unit === 'm' ? 18000 : NODE_MEM);
+    const pct = Math.min(100, used / cap * 100);
+    const reqPct = req > 0 ? Math.min(100, req / cap * 100) : -1;
+    const color = pct >= 85 ? 'var(--crit)' : pct >= 60 ? 'var(--warn)' : 'var(--data)';
+    return `<div class="meter"><div class="t"><span>${label}</span><span><b>${used}${unit}</b> ${lim > 0 ? `/ limit ${lim}${unit}` : '<span style="color:var(--dim)">无 limit（按节点容量折算）</span>'}</span></div>
+      <div class="track"><i style="width:${pct.toFixed(1)}%;background:${color}"></i>${reqPct >= 0 ? `<span class="lim" style="left:${reqPct.toFixed(1)}%;background:var(--blue)"></span>` : ''}</div>
+      <div style="font-size:11.5px;color:var(--dim);margin-top:2px">${req > 0 ? `蓝线 = request ${req}${unit} · ` : ''}用量为 limit 的 ${pct.toFixed(1)}%</div></div>`;
+  };
+  function show(k) {
+    const p = POD[k]; if (!p) return;
+    document.querySelectorAll('.pod').forEach((el) => el.classList.toggle('sel', el.dataset.k === k));
+    detail.innerHTML = `
+      <div class="dh"><span class="ic" style="background:${p.color}">${p.icon}</span><h3>${p.title}</h3></div>
+      <div class="sub">${p.kind} · ${p.role}</div>
+      <div style="font-size:13.5px;color:var(--sub);line-height:1.7">${p.desc}</div>
+      ${p.res ? `<div class="dsec">资源</div>${p.res.map((r) => meter(r[0], r[1], r[2], r[3], r[4])).join('')}` : ''}
+      <div class="dsec">运行信息</div>
+      <div class="live">${(p.live ?? []).map((r) => `<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}</div>
+      <div class="dsec">部署</div>
+      <div class="kv">${(p.kv ?? []).map((r) => `<span class="k">${r[0]}</span><span class="v">${r[1]}</span>`).join('')}</div>
+      ${p.tags ? `<div class="dsec">承载插件</div><div>${p.tags.map((t) => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
+      <div style="margin-top:14px;display:flex;gap:14px;flex-wrap:wrap"><span class="link">查看日志 →</span><span class="link">在会话里问它 →</span></div>`;
+    detail.scrollTop = 0;
+  }
+  const EMPTY = `<div class="empty"><div class="big">◲</div><div>点架构图里的任意一个 Pod<br>看它的角色、资源占用与正在运行的信息</div></div>`;
+  detail.innerHTML = EMPTY;
+  document.querySelectorAll('.pod').forEach((el) => el.addEventListener('click', () => show(el.dataset.k)));
+
+  // ── 连线（按卡片实际位置画，窗口变化重画）
+  function wires() {
+    const svg = document.getElementById('wires'); const box = document.getElementById('diagram').getBoundingClientRect();
+    const at = (k, side) => { const el = document.querySelector(`.pod[data-k="${k}"]`); if (!el) return null; const r = el.getBoundingClientRect();
+      return { x: r.left - box.left + r.width / 2, y: side === 'b' ? r.bottom - box.top : r.top - box.top }; };
+    // 相邻层：贝塞尔直连；跨层（执行面 → 集群外 og5）：从右缘走一条正交总线绕开数据面，不穿过卡片
+    const link = (a, b, dashed, color) => { const p = at(a, 'b'); const q = at(b, 't'); if (!p || !q) return '';
+      const mid = (p.y + q.y) / 2;
+      return `<path d="M${p.x} ${p.y} C ${p.x} ${mid}, ${q.x} ${mid}, ${q.x} ${q.y}" fill="none" stroke="${color}" stroke-width="1.6" opacity=".55"${dashed ? ' stroke-dasharray="5 4"' : ''} marker-end="url(#ah-${color.replace(/[^a-z]/g, '')})"/>`;
+    };
+    const bus = (a, b, color) => { const p = at(a, 'b'); const q = at(b, 't'); if (!p || !q) return '';
+      const x = box.width - 14, r = 9, down = p.y + 16;
+      return `<path d="M${p.x} ${p.y} V${down - r} q0 ${r} ${r} ${r} H${x - r} q${r} 0 ${r} ${r} V${q.y - 18 - r} q0 ${r} -${r} ${r} H${q.x + r} q-${r} 0 -${r} ${r} V${q.y}" fill="none" stroke="${color}" stroke-width="1.6" opacity=".5" stroke-dasharray="5 4" marker-end="url(#ah-${color.replace(/[^a-z]/g, '')})"/>`;
+    };
+    const heads = ['var(--entry)', 'var(--ctrl)', 'var(--data)', 'var(--ext)'].map((c) =>
+      `<marker id="ah-${c.replace(/[^a-z]/g, '')}" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1 L6 4 L0 7 z" fill="${c}" opacity=".75"/></marker>`).join('');
+    svg.innerHTML = `<defs>${heads}</defs>` + [
+      link('browser', 'host', false, 'var(--entry)'),
+      link('host', 'rt1', false, 'var(--ctrl)'), link('host', 'rt2', false, 'var(--ctrl)'), link('host', 'col', false, 'var(--ctrl)'),
+      link('host', 'pg', true, 'var(--data)'),
+      link('rt1', 'pg', true, 'var(--data)'), link('rt2', 'pg', true, 'var(--data)'), link('col', 'pg', true, 'var(--data)'),
+      link('rt1', 'minio', true, 'var(--data)'), link('rt2', 'ollama', true, 'var(--data)'), link('rt1', 'redis', true, 'var(--data)'),
+      bus('col', 'og5', 'var(--ext)'),
+    ].join('');
+  }
+  wires(); window.addEventListener('resize', wires);
+
+  // ── 节点视图
+  document.getElementById('nodes').innerHTML = NODES.map((n) => {
+    const cpuPct = (n.cpu / 18000 * 100), memPct = (n.mem / NODE_MEM * 100);
+    return `<div class="ncard">
+      <div class="nh"><span style="width:9px;height:9px;border-radius:5px;background:var(--ok);display:inline-block"></span>${n.name}
+        <span class="chip grey" style="margin-left:auto">${n.role}</span></div>
+      <div style="font-size:12.5px;color:var(--dim);margin-top:4px">18 核 · 62.7 GiB · k3s v1.36.3 · Ready</div>
+      <div class="meter"><div class="t"><span>CPU</span><span><b>${n.cpu}m</b> / 18 核</span></div><div class="track"><i style="width:${Math.max(cpuPct, 0.6).toFixed(1)}%;background:var(--data)"></i></div></div>
+      <div class="meter"><div class="t"><span>内存</span><span><b>${(n.mem / 1024).toFixed(1)}Gi</b> / 62.7Gi</span></div><div class="track"><i style="width:${memPct.toFixed(1)}%;background:var(--data)"></i></div></div>
+      <div style="font-size:12px;color:var(--dim);margin-top:8px">承载 ${n.pods.length} 个 Pod</div>
+      <div class="np">${n.pods.map((p, i) => `<span data-k="${n.keys[i]}">${p}</span>`).join('')}</div>
+    </div>`;
+  }).join('');
+  document.querySelectorAll('.np span').forEach((el) => el.addEventListener('click', () => { tab('arch'); show(el.dataset.k); wires(); }));
+
+  // ── tab
+  function tab(name) {
+    document.querySelectorAll('.tabs span').forEach((s) => s.classList.toggle('on', s.dataset.tab === name));
+    document.querySelector('.canvas').style.display = name === 'arch' ? 'grid' : 'none';
+    document.getElementById('nodeview').style.display = name === 'node' ? 'block' : 'none';
+    document.getElementById('tip').style.display = name === 'event' ? 'none' : 'block';
+    document.getElementById('eventview').style.display = name === 'event' ? 'block' : 'none';
+  }
+  document.querySelectorAll('.tabs span').forEach((s) => s.addEventListener('click', () => tab(s.dataset.tab)));
+
+  // ── 事件视图（k8s events，只读；形态取自 kubectl get events）
+  const EVENTS = [
+    ['15:50:56', 'ok', 'pod/runtime-default-582fk', 'Started', '容器 runtime 已启动'],
+    ['15:50:12', 'ok', 'pod/runtime-default-582fk', 'Created', '按 Deployment spec 创建容器'],
+    ['15:50:10', 'ok', 'deploy/opendb-dsh-host', 'ScalingReplicaSet', '新 ReplicaSet 扩到 1（滚动更新）'],
+    ['15:50:10', 'ok', 'pod/runtime-collector-tx7kt', 'Pulled', '镜像 opendb-dsh:dev 已在节点上，跳过拉取'],
+    ['15:49:58', 'ok', 'pod/opendb-dsh-host-…（旧）', 'Killing', '滚动更新，停止旧副本'],
+  ];
+  document.getElementById('eventview').innerHTML = `
+    <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)">
+      <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+        <thead><tr>${['时间', '级别', '对象', '原因', '说明'].map((h) => `<th style="text-align:left;font-size:12.5px;color:var(--dim);font-weight:500;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap">${h}</th>`).join('')}</tr></thead>
+        <tbody>${EVENTS.map((r, i) => `<tr><td style="padding:8px 12px;${i ? 'border-top:1px solid var(--line);' : ''}font-family:var(--mono);font-size:12.5px;white-space:nowrap">${r[0]}</td>
+          <td style="padding:8px 12px;${i ? 'border-top:1px solid var(--line);' : ''}"><span class="chip ok">正常</span></td>
+          <td style="padding:8px 12px;${i ? 'border-top:1px solid var(--line);' : ''}font-family:var(--mono);font-size:12.5px">${r[2]}</td>
+          <td style="padding:8px 12px;${i ? 'border-top:1px solid var(--line);' : ''}white-space:nowrap">${r[3]}</td>
+          <td style="padding:8px 12px;${i ? 'border-top:1px solid var(--line);' : ''}color:var(--sub)">${r[4]}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div class="notes">事件取 k8s API 的 events（只读，最近 1 小时倒序）。Warning 级别用橙色徽标并置顶——这一屏回答"刚才集群发生了什么"，与架构图互补：滚动更新、镜像拉取失败、OOMKilled、探针失败都会出现在这里。</div>`;
+</script>
+
+</body>
+</html>
