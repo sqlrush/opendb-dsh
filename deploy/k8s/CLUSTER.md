@@ -1071,9 +1071,12 @@ STMT_HISTORY_BLOAT / STATS_NEVER / DEAD_TUPLES / WAL_SIZE / WDR_RETENTION / LOG_
 og5 实测 worst=warn：`statement_history` 16 GB 只装 5.7 万行（≈296 KB/行，L2 全量追踪滚动删除后空间不回收）、
 19 张百万行大表从未 analyze（gsbench 7 / gsbench_v4 5 / gaussdb 5 …，最大 fact_sales 3,355 万行）、非表占用 36%。
 
-**面板**：摘要 8 卡 → 增长趋势（chart-kit `Line` 新增 `bands` 灰带 / `markers` 事件标线 / `breakGapMs` 断线 / `dashed` 虚线 /
+**面板**：摘要 8 卡 → 增长趋势（范围 7/30/90 天 + **序列 数据库 / 数据目录 / 磁盘已用**——三条都从采样表取，
+`disk` 要等主机侧接入才有值：没有数据的序列按钮仍在、图位直接写明为什么，不做成灰按钮也不悄悄隐藏；chart-kit `Line` 新增
+`bands` 灰带 / `markers` 事件标线 / `breakGapMs` 断线 / `dashed` 虚线 /
 `xMin·xMax·yMax`，bytes 轴按 1024 进制取整刻度）→ 容量构成（左数据目录、右库内，点行筛选 Top 对象）→ Top 对象（增量列、
-死元组、vacuum/analyze、深挖）→ 非表占用四卡（每卡写明"谁在决定它的大小"）→ Vacuum 与统计信息 → 发现（含模型解读）→
+死元组、vacuum/analyze、深挖）→ 非表占用四卡（每卡写明"谁在决定它的大小"）→ Vacuum 与统计信息（"从未 analyze"可展开列全部，
+存档保留前 50 张）→ 发现（含模型解读）→
 解读与优先级 → 检查历史。整个面板包 ErrorBoundary。
 
 **验收**：单测 15 例（`packages/task-capacity/test`，含悬崖两分支与文件级降级）；真机 e2e `scripts/e2e-capacity.mjs` **20/20 PASS**

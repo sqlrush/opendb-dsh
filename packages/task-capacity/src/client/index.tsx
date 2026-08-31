@@ -1,6 +1,7 @@
 /**
  * task-capacity client 面板（R1，2026-08-31 user 通过 docs/prototypes/capacity-r1.html）：
- * 状态带 + 摘要 8 卡 → 增长趋势（chart-kit Line：无采集灰带 / 字典建删批次标线 / 外推虚线，范围可切）→ 容量构成（数据目录 vs 库内，点行筛选）
+ * 状态带 + 摘要 8 卡 → 增长趋势（chart-kit Line：无采集灰带 / 字典建删批次标线 / 外推虚线；范围 7·30·90 天与序列 数据库·数据目录·磁盘已用 可切，
+ * 序列无数据时按钮仍在、图位说明为什么没有）→ 容量构成（数据目录 vs 库内，点行筛选）
  * → Top 对象（增量、死元组、vacuum/analyze、深挖）→ 非表占用与保留策略（WAL / statement_history / pg_log / WDR）→ Vacuum 与统计信息
  * → CAP_* 发现（深挖）→ 解读与处置优先级（模型）→ 检查历史。数字全部来自采集存档 run.collect；模型只贡献解读。
  */
@@ -94,38 +95,60 @@ const bloatLine = (c: any): string => { const f = (c.findings ?? []).find((x: an
 const statsNeverLine = (c: any): string => { const by = c.statsNever?.bySchema ?? {}; const top = Object.entries(by).sort((a: any, b: any) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${k} ${v}`).join(' · '); return top !== '' ? `${top} · 最大 ${fmtInt(c.statsNever?.maxRows ?? 0)} 行` : `reltuples ≥ 100 万且从未 analyze 的表`; };
 
 // ───────────────────────────────────────────── 趋势
+type SeriesKey = 'db' | 'dir' | 'disk';
 function Trend({ c }: { c: any }) {
   const [range, setRange] = useState<number>(7);
-  const pts: { t: number; bytes: number }[] = c.history?.points ?? [];
+  const [sk, setSk] = useState<SeriesKey>('db');
   const now = Date.parse(String(c.collectedAt)) || Date.now();
+  const g = c.summary?.growth ?? {}; const s = c.summary ?? {};
+  // 三条序列：db 恒有；dir 文件级不可读时是"库内合计"；disk 需主机侧采集接入（旧存档没有 series 字段时退回只有 db）
+  const defs: Record<SeriesKey, { points: { t: number; bytes: number }[]; available: boolean; label: string; note: string }> = {
+    db: c.history?.series?.db ?? { points: c.history?.points ?? [], available: true, label: `数据库 ${String(c.db ?? '')}（pg_database_size）`, note: '' },
+    dir: c.history?.series?.dir ?? { points: [], available: false, label: '数据目录', note: '本次采集未产出该序列（存档为旧版）' },
+    disk: c.history?.series?.disk ?? { points: [], available: false, label: '磁盘已用（数据目录所在卷）', note: '本次采集未产出该序列（存档为旧版）' },
+  };
+  const cur = defs[sk];
+  const pts: { t: number; bytes: number }[] = (cur.points ?? []).map((p: any) => ({ t: Number(p.t), bytes: Number(p.bytes) }));
   const inRange = pts.filter((p) => p.t >= now - range * DAY);
   const use = inRange.length >= 1 ? inRange : pts;
-  const g = c.summary?.growth ?? {}; const s = c.summary ?? {};
   const first = use[0]?.t ?? now - range * DAY;
   const bands = [
-    ...(first > now - range * DAY + H ? [{ from: now - range * DAY, to: first, label: `无采集 ${mmddhhmm(now - range * DAY)} → ${mmddhhmm(first)}：容量任务尚未创建` }] : []),
-    ...((c.history?.gaps ?? []) as any[]).map((gp) => ({ from: Number(gp.from), to: Number(gp.to), label: `无采集 ${Math.round((Number(gp.to) - Number(gp.from)) / H)} h：${mmddhhmm(Number(gp.from))} → ${mmddhhmm(Number(gp.to))}` })),
+    ...(use.length > 0 && first > now - range * DAY + H ? [{ from: now - range * DAY, to: first, label: `无采集 ${mmddhhmm(now - range * DAY)} → ${mmddhhmm(first)}：${sk === 'db' ? '容量任务尚未创建' : '该序列自本任务首次运行起采集'}` }] : []),
+    ...(sk === 'db' ? ((c.history?.gaps ?? []) as any[]).map((gp) => ({ from: Number(gp.from), to: Number(gp.to), label: `无采集 ${Math.round((Number(gp.to) - Number(gp.from)) / H)} h：${mmddhhmm(Number(gp.from))} → ${mmddhhmm(Number(gp.to))}` })) : []),
   ];
   const markers = ((c.history?.events ?? []) as any[]).map((e) => ({ t: Number(e.t), label: `${mmddhhmm(Number(e.t))} ${String(e.label)}`, level: (String(e.kind) === 'removed' ? 'critical' : 'ok') as any }));
   const last = use[use.length - 1];
-  const forecast = last !== undefined && use.length >= 2 ? [{ name: '外推', points: [[last.t, last.bytes], [now + range * DAY * 0.12, last.bytes + Number(g.bytesPerDay ?? 0) * (range * 0.12)]] as [number, number][], color: PALETTE[0], dashed: true }] : [];
-  const series = [{ name: `数据库 ${String(c.db ?? '')}（pg_database_size）`, points: use.map((p) => [p.t, p.bytes] as [number, number]), color: PALETTE[0], showPoints: use.length <= 3 }, ...forecast];
+  // 外推只对库序列有意义（增速回归就是按它算的）
+  const forecast = sk === 'db' && last !== undefined && use.length >= 2 ? [{ name: '外推', points: [[last.t, last.bytes], [now + range * DAY * 0.12, last.bytes + Number(g.bytesPerDay ?? 0) * (range * 0.12)]] as [number, number][], color: PALETTE[0], dashed: true }] : [];
+  const series = [{ name: cur.label, points: use.map((p) => [p.t, p.bytes] as [number, number]), color: PALETTE[0], showPoints: use.length <= 3 }, ...forecast];
   const dc = dbChange(c);
+  const pill = (on: boolean, disabled?: boolean): any => ({ border: `1px solid ${on ? T.blue : T.line}`, borderRadius: 8, padding: '2px 10px', color: on ? '#fff' : disabled ? T.dim : T.sub, background: on ? T.blue : '#fff', cursor: 'pointer', opacity: disabled && !on ? 0.6 : 1 });
   return (
     <div style={card}>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 280px', gap: 20 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: T.dim, marginBottom: 8, flexWrap: 'wrap' }}>
-            范围 {[7, 30, 90].map((r) => <span key={r} onClick={() => setRange(r)} style={{ border: `1px solid ${range === r ? T.blue : T.line}`, borderRadius: 8, padding: '2px 10px', color: range === r ? '#fff' : T.sub, background: range === r ? T.blue : '#fff', cursor: 'pointer' }}>{r} 天</span>)}
-            <span style={{ marginLeft: 8 }}>{use.length} 个样本{String(c.history?.source ?? '') === 'health-backfill' ? ' · 首次运行，历史来自健康采集存档回填' : ''}</span>
+            范围 {[7, 30, 90].map((r) => <span key={r} onClick={() => setRange(r)} style={pill(range === r)}>{r} 天</span>)}
+            <span style={{ marginLeft: 6 }}>序列</span>
+            {([['db', '数据库'], ['dir', '数据目录'], ['disk', '磁盘已用']] as [SeriesKey, string][]).map(([k, label]) => (
+              <span key={k} onClick={() => setSk(k)} title={defs[k].note !== '' ? defs[k].note : defs[k].label} style={pill(sk === k, (defs[k].points ?? []).length === 0)}>{label}{(defs[k].points ?? []).length === 0 ? ' ·' : ''}</span>
+            ))}
+            <span style={{ marginLeft: 8 }}>{use.length} 个样本{sk === 'db' && String(c.history?.source ?? '') === 'health-backfill' ? ' · 首次运行，历史来自健康采集存档回填' : ''}</span>
           </div>
-          <Line series={series} unit="bytes" height={230} bands={bands} markers={markers} breakGapMs={24 * H} yMin={0} xMin={now - range * DAY} xMax={now + range * DAY * 0.12} />
+          {use.length === 0 ? (
+            <div style={{ height: 230, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6, background: T.fill, borderRadius: 8, padding: '0 20px' }}>
+              <div style={{ fontSize: 15, color: T.ink }}>这条序列还没有数据</div>
+              <div style={{ fontSize: 13.5, color: T.sub, maxWidth: 620 }}>{cur.note !== '' ? cur.note : '该序列自本任务首次运行起累积，下次采集后即可显示。'}</div>
+            </div>
+          ) : (
+            <Line series={series} unit="bytes" height={230} bands={bands} markers={markers} breakGapMs={24 * H} yMin={0} xMin={now - range * DAY} xMax={now + range * DAY * 0.12} />
+          )}
           <div style={{ display: 'flex', gap: 16, fontSize: 12.5, color: T.sub, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <span><i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#e6e9ee', marginRight: 5, verticalAlign: 'middle' }} />无采集</span>
-            <span><i style={{ display: 'inline-block', width: 14, borderTop: `2px dashed ${PALETTE[0]}`, marginRight: 5, verticalAlign: 'middle' }} />外推</span>
+            {sk === 'db' ? <span><i style={{ display: 'inline-block', width: 14, borderTop: `2px dashed ${PALETTE[0]}`, marginRight: 5, verticalAlign: 'middle' }} />外推</span> : null}
             <span><i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.sev.critical.c, marginRight: 5, verticalAlign: 'middle' }} />删除批次</span>
             <span><i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: T.sev.ok.c, marginRight: 5, verticalAlign: 'middle' }} />新建批次</span>
-            <span style={{ color: T.dim }}>悬停看数值 · 事件来自平台字典的建/删批次</span>
+            <span style={{ color: T.dim }}>悬停看数值 · 事件来自平台字典的建/删批次{cur.note !== '' && use.length > 0 ? ` · ${cur.note}` : ''}</span>
           </div>
         </div>
         <div style={{ borderLeft: `1px solid ${T.line}`, paddingLeft: 20, fontSize: 13.5 }}>
@@ -265,6 +288,7 @@ function SysCards({ c }: { c: any }) {
 
 // ───────────────────────────────────────────── Vacuum / 统计信息
 function VacuumStats({ c }: { c: any }) {
+  const [allStats, setAllStats] = useState(false);
   const dead: any[] = (c.deadTop ?? []).slice(0, 6); const sn = c.statsNever ?? {}; const items: any[] = sn.items ?? [];
   const th: any = { fontSize: 12.5, color: T.dim, fontWeight: 500, textAlign: 'left', padding: '6px 8px', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap' };
   const td: any = { padding: '6px 8px', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap', fontSize: 12.5 };
@@ -285,9 +309,9 @@ function VacuumStats({ c }: { c: any }) {
           <div style={{ fontSize: 14, margin: '4px 0 8px' }}>{by.map(([k, v]) => `${k} ${v} 张`).join('、')} 的表 <span style={{ fontFamily: mono, fontSize: 12.5 }}>last_analyze = never</span>——优化器只有装载时写入的 reltuples，没有列级直方图。</div>
           <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th style={th}>对象</th><th style={{ ...th, textAlign: 'right' }}>reltuples</th><th style={{ ...th, textAlign: 'right' }}>大小</th><th style={th}></th></tr></thead>
-            <tbody>{items.slice(0, 6).map((r) => <tr key={`${r.sch}.${r.name}`}><td style={td}>{obj(`${String(r.sch)}.${String(r.name)}`)}</td><td style={{ ...td, textAlign: 'right', ...tnum }}>{fmtInt(Number(r.reltuples))}</td><td style={{ ...td, textAlign: 'right', ...tnum }}>{fmtBytes(Number(r.total))}</td><td style={td}><DigLink label="深挖" prompt={`节点 ${String(c.node)} 表 ${String(r.sch)}.${String(r.name)}（reltuples ${fmtInt(Number(r.reltuples))}，${fmtBytes(Number(r.total))}）从未 analyze。请核对它在 Top SQL 里的计划（是否全表扫/估算行数偏差），说明 ANALYZE 的预期收益与执行注意点（平台只读，由 DBA 执行）。`} /></td></tr>)}</tbody>
+            <tbody>{(allStats ? items : items.slice(0, 6)).map((r) => <tr key={`${r.sch}.${r.name}`}><td style={td}>{obj(`${String(r.sch)}.${String(r.name)}`)}</td><td style={{ ...td, textAlign: 'right', ...tnum }}>{fmtInt(Number(r.reltuples))}</td><td style={{ ...td, textAlign: 'right', ...tnum }}>{fmtBytes(Number(r.total))}</td><td style={td}><DigLink label="深挖" prompt={`节点 ${String(c.node)} 表 ${String(r.sch)}.${String(r.name)}（reltuples ${fmtInt(Number(r.reltuples))}，${fmtBytes(Number(r.total))}）从未 analyze。请核对它在 Top SQL 里的计划（是否全表扫/估算行数偏差），说明 ANALYZE 的预期收益与执行注意点（平台只读，由 DBA 执行）。`} /></td></tr>)}</tbody>
           </table></div>
-          {items.length > 6 ? <div style={{ fontSize: 12.5, color: T.dim, marginTop: 6 }}>另 {items.length - 6} 张见存档 statsNever.items。</div> : null}
+          {items.length > 6 ? <div style={{ marginTop: 6 }}><Link onClick={() => setAllStats(!allStats)}>{allStats ? '收起 ↑' : `列出全部 ${items.length} 张 →`}</Link>{Number(sn.count ?? 0) > items.length ? <span style={{ fontSize: 12.5, color: T.dim, marginLeft: 8 }}>（存档保留前 {items.length} 张，共 {Number(sn.count)} 张；全量在会话里用 db_query 反查）</span> : null}</div> : null}
         </>)}</div>
     </div>
   );

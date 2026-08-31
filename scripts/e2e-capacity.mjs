@@ -58,8 +58,17 @@ if (c) {
   check('Top 表含 gsbench.fact_sales 且 lastAnalyze 为空', (c.topTables ?? []).some((t) => t.sch === 'gsbench' && t.name === 'fact_sales' && (t.lastAnalyze === undefined || t.lastAnalyze === null)), `${(c.topTables ?? []).length} 张`);
   const notes = (c.collectionNotes ?? []).join(' ');
   check('文件级：可读，或如实降级（openGauss 只允许初始账号 pg_ls_dir）且 WAL 给出参数上限估算', (c.sys?.wal?.available === true && c.sys?.log?.available === true) || (/初始账号/.test(notes) && c.summary?.dataDirSource === 'db-only' && Number(c.sys?.wal?.capBytes) > 0), c.sys?.wal?.available ? `WAL ${c.sys?.wal?.segments} 段 · pg_log ${c.sys?.log?.files} 文件 ${GB(c.sys?.log?.bytes)}` : `降级 · WAL 上限 ≤ ${GB(c.sys?.wal?.capBytes)} · source=${c.summary?.dataDirSource}`);
+  // 增速按语义断言（窗口长度会随采样推进变化，不能钉死小时数）：
+  //   post-reset = 悬崖后样本够了，用清理后的段（窗口 ≥1 h）；pre-reset = 悬崖刚发生，暂用清理前的段（窗口 ≥24 h）且必为 low；
+  //   窗口不足 24 h 一律 low——不许拿几小时的观测报"高置信度"。
   const g = c.summary?.growth ?? {};
-  check('增速：观测窗 ≥ 24 h（悬崖后样本不足时退回清理前段并标注）', Number(g.windowHours) >= 24 && Number(g.points) >= 4, `segment=${g.segment} · ${g.windowHours} h · ${g.points} 点 · 置信度 ${g.confidence}`);
+  const segOk = g.segment === 'post-reset' ? Number(g.windowHours) >= 1 && Number(g.points) >= 2
+    : g.segment === 'pre-reset' ? Number(g.windowHours) >= 24 && g.confidence === 'low'
+      : Number(g.points) >= 2;
+  check('增速：分段语义正确（post-reset 用清理后段 / pre-reset 退回清理前段）', segOk, `segment=${g.segment} · ${g.windowHours} h · ${g.points} 点 · 置信度 ${g.confidence} · ${(Number(g.bytesPerDay) / 1024 ** 3).toFixed(3)} GB/天`);
+  check('增速置信度诚实（窗口 < 24 h 必为 low）', Number(g.windowHours) >= 24 || g.confidence === 'low', `${g.windowHours} h → ${g.confidence}`);
+  const ser = c.history?.series ?? {};
+  check('趋势三序列齐备（db 有点、dir 有点、disk 无主机侧数据但带说明）', (ser.db?.points ?? []).length >= 2 && (ser.dir?.points ?? []).length >= 1 && ser.disk !== undefined && String(ser.disk?.note ?? '') !== '', `db ${(ser.db?.points ?? []).length} · dir ${(ser.dir?.points ?? []).length} · disk ${(ser.disk?.points ?? []).length}（${String(ser.disk?.note ?? '').slice(0, 40)}…）`);
   const after = Number(psql("SELECT count(*) FROM opendb_capacity_samples WHERE node = 'og5'") || 0);
   check('采样表新增 ≥ 50 行', after - before >= 50, `${before} → ${after}`);
   if (before > 0) check('第二次起：Top 表带上次采样的增量', (c.topTables ?? []).some((t) => t.delta !== undefined) && c.summary?.firstRun === false, `${(c.topTables ?? []).filter((t) => t.delta !== undefined).length} 张有增量 · 窗口 ${c.summary?.delta24?.hours} h`);

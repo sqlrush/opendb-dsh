@@ -44,13 +44,15 @@ async function section<T>(notes: string[], label: string, fn: () => Promise<T>, 
 }
 
 // ───────────────────────────────────────────── 平台 PG：历史采样 / 回填 / 事件
-async function loadHistory(pool: pg.Pool, node: string, dbName: string, days: number): Promise<SamplePoint[]> {
+/** 取某条序列的历史采样（面板趋势图的三条序列：库 / 数据目录 / 磁盘已用，都走这一个取法） */
+async function loadSeries(pool: pg.Pool, node: string, kind: string, name: string, days: number): Promise<SamplePoint[]> {
   const r = await pool.query(
     `SELECT extract(epoch FROM collected_at) * 1000 AS t, bytes FROM opendb_capacity_samples
-      WHERE node = $1 AND kind = 'db' AND name = $2 AND collected_at > now() - ($3 || ' days')::interval ORDER BY collected_at`,
-    [node, dbName, String(days)]);
+      WHERE node = $1 AND kind = $2 AND name = $3 AND collected_at > now() - ($4 || ' days')::interval ORDER BY collected_at`,
+    [node, kind, name, String(days)]);
   return r.rows.map((row) => ({ t: num(row.t), bytes: num(row.bytes) }));
 }
+const loadHistory = (pool: pg.Pool, node: string, dbName: string, days: number): Promise<SamplePoint[]> => loadSeries(pool, node, 'db', dbName, days);
 /**
  * 首次运行：从健康采集存档回填库大小（按小时去重），让趋势图不必等一周。
  * 守卫：只要该节点已有任何 db 采样就不回填——否则观测窗小于回填样本年龄时（如 growthWindowDays=1），
@@ -145,7 +147,8 @@ function defineCapacityCollectTool(deps: Deps) {
            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
           WHERE c.relkind = 'r' AND n.nspname NOT IN (${sysIn}) AND n.nspname NOT LIKE 'pg\\_%' AND c.reltuples >= ${Math.floor(T.statsNeverRows)}
             AND s.last_analyze IS NULL AND s.last_autoanalyze IS NULL ORDER BY c.reltuples DESC LIMIT 200`, 200)).rows.map((r) => ({ sch: str(r.sch), name: str(r.name), reltuples: num(r.reltuples), total: num(r.total) })), [] as { sch: string; name: string; reltuples: number; total: number }[]);
-      const statsNever = { count: neverRows.length, maxRows: neverRows[0]?.reltuples ?? 0, items: neverRows.slice(0, 20), bySchema: Object.fromEntries(neverRows.reduce((m, r) => m.set(r.sch, (m.get(r.sch) ?? 0) + 1), new Map<string, number>())) };
+      // items 存 50 张（面板「列出全部 N 张」直接展开；超过 50 的极端情况在提示里说明去会话里反查）
+      const statsNever = { count: neverRows.length, maxRows: neverRows[0]?.reltuples ?? 0, items: neverRows.slice(0, 50), bySchema: Object.fromEntries(neverRows.reduce((m, r) => m.set(r.sch, (m.get(r.sch) ?? 0) + 1), new Map<string, number>())) };
 
       // ④ GUC
       const gucs = await section(notes, 'GUC', async () => Object.fromEntries((await q(`SELECT name, setting, unit FROM pg_settings WHERE name IN ('checkpoint_segments', 'wal_keep_segments', 'max_wal_size', 'enable_stmt_track', 'track_stmt_stat_level', 'track_stmt_retention_time', 'enable_wdr_snapshot', 'wdr_snapshot_retention_days', 'wdr_snapshot_interval', 'log_min_duration_statement', 'log_rotation_age', 'log_rotation_size', 'autovacuum', 'autovacuum_naptime', 'autovacuum_vacuum_scale_factor', 'data_directory', 'max_replication_slots', 'archive_mode')`, 40)).rows.map((r) => [str(r.name), `${str(r.setting)}${str(r.unit)}`])), {} as Record<string, string>);
@@ -174,9 +177,13 @@ function defineCapacityCollectTool(deps: Deps) {
 
       // ⑦ 平台历史：采样序列（首采回填）/ 上次表样本 / 字典事件
       let history: SamplePoint[] = []; let historySource = 'samples'; let prev: Awaited<ReturnType<typeof prevTableSamples>>; let events: Awaited<ReturnType<typeof dictEvents>> = []; let lastSampleAt: number | undefined;
+      let dirSeries: SamplePoint[] = []; let diskSeries: SamplePoint[] = [];
       if (deps.pool !== undefined) {
         const pool = deps.pool;
         history = await section(notes, '历史采样', () => loadHistory(pool, node.name, dbName, days), []);
+        // 趋势图的另两条序列：数据目录（文件级可读时才是真目录大小）与磁盘已用（接入主机侧采集后才有）
+        dirSeries = await section(notes, '数据目录序列', () => loadSeries(pool, node.name, 'dir', 'data', days), []);
+        diskSeries = await section(notes, '磁盘序列', () => loadSeries(pool, node.name, 'disk', 'used', days), []);
         if (history.length === 0) { const filled = await section(notes, '健康存档回填', () => backfillFromHealth(pool, node.name, dbName, days), []); if (filled.length > 0) { history = filled; historySource = 'health-backfill'; notes.push(`首次运行：从健康采集存档回填 ${filled.length} 个库大小样本（按小时去重）`); } }
         lastSampleAt = history.length > 0 ? history[history.length - 1].t : undefined;
         prev = await section(notes, '上次表样本', () => prevTableSamples(pool, node.name), undefined);
@@ -224,7 +231,15 @@ function defineCapacityCollectTool(deps: Deps) {
         scope: 'capacity', version: 1, node: node.name, nodeId: node.id, db: dbName, collectedAt, growthWindowDays: days, topN,
         det: { worst, counts }, findings,
         summary: { dbBytes, dbBytesAll, dataDirBytes, dataDirSource, filesAvailable, disk: undefined, nonTableBytes, nonTableShare: dataDirBytes > 0 ? nonTableBytes / dataDirBytes : 0, growth, daysToFull: dtf, delta24, gapHours, firstRun, bloatTodo: findings.filter((f) => f.rule === 'CAP_STMT_HISTORY_BLOAT' && f.level !== 'ok').length, statsNeverCount: statsNever.count, lastSampleAt: lastSampleAt !== undefined ? new Date(lastSampleAt).toISOString() : undefined },
-        history: { points, gaps, events, source: historySource },
+        history: {
+          points, gaps, events, source: historySource,
+          // 三条序列（面板可切）：db 恒有；dir 在文件级不可读时等于"库内合计"；disk 需主机侧采集接入
+          series: {
+            db: { points, available: true, label: `数据库 ${dbName}（pg_database_size）`, note: '' },
+            dir: { points: [...dirSeries, { t: nowMs, bytes: dataDirBytes }], available: true, label: filesAvailable ? '数据目录（库 + WAL + 日志 + 审计 + core）' : '数据目录 · 仅库内合计', note: filesAvailable ? '' : 'openGauss 的 pg_ls_dir / pg_stat_file 只允许初始账号（omm），WAL / 日志 / 审计 / core 未计入' },
+            disk: { points: diskSeries, available: diskSeries.length > 0, label: '磁盘已用（数据目录所在卷）', note: '主机侧采集未接入：openGauss 视图不暴露文件系统容量，这条序列要等主机侧（df）接入后才有值' },
+          },
+        },
         composition: { dir: dirComp, db: dbComp },
         databases, tablespaces, schemas, topTables, deadTop, statsNever,
         sys: { wal, stmt: { ...stmt, enable: gucs.enable_stmt_track ?? '', level: gucs.track_stmt_stat_level ?? '', retention: gucs.track_stmt_retention_time ?? '' }, wdr: { ...wdr, retentionDays: gucNum('wdr_snapshot_retention_days'), interval: gucs.wdr_snapshot_interval ?? '' }, log, audit, core },
@@ -237,7 +252,8 @@ function defineCapacityCollectTool(deps: Deps) {
         try {
           const rows: [string, string, number, unknown][] = [
             ...databases.map((d) => ['db', d.name, d.bytes, null] as [string, string, number, unknown]),
-            ['dir', 'data', dataDirBytes, { source: 'estimate' }],
+            ['dir', 'data', dataDirBytes, { source: dataDirSource }],
+            ...(input.disk !== undefined ? [['disk', 'used', input.disk.usedBytes, { total: input.disk.totalBytes, avail: input.disk.availBytes }] as [string, string, number, unknown]] : []),
             ...tablespaces.map((t) => ['tablespace', t.name, t.bytes, null] as [string, string, number, unknown]),
             ...schemas.map((s) => ['schema', s.name, s.bytes, { rels: s.rels }] as [string, string, number, unknown]),
             ...tables.map((t) => ['table', `${t.sch}.${t.name}`, t.total, { heap: t.heap, idx: t.idx, reltuples: t.reltuples, dead: t.dead }] as [string, string, number, unknown]),
