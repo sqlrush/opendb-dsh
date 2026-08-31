@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>容量与增长报告 · R1 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C; --ph:#ADB2B8;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC;
+    --c1:#4176E6; --c2:#8B6BE0; --c3:#2FA79A; --c4:#E0963F; --c5:#D9607A; --c6:#7A8AA6; --c7:#B9C2D0;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  .num{font-variant-numeric:tabular-nums}.mono{font-family:var(--mono)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  .topbar{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 24px;font-size:14px}
+  .topbar b{font-weight:600}.topbar .dim{color:var(--dim)}.topbar .ret{margin-left:auto;border:1px solid var(--line);border-radius:10px;padding:4px 12px;color:var(--sub)}
+  .page{max-width:1180px;margin:0 auto;padding:20px 24px 80px}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title h1{font-size:20px;font-weight:600;margin:0}.title .meta{font-size:13.5px;color:var(--dim)}
+  .tabs{display:flex;gap:22px;margin:12px 0 22px;border-bottom:1px solid var(--line);font-size:14px}.tabs span{padding:6px 0 8px;color:var(--sub)}.tabs span.on{color:var(--blue);border-bottom:2px solid var(--blue);margin-bottom:-1px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:16px 20px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);min-width:0}
+  h2{font-size:18px;font-weight:600;margin:30px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}h2 .hint{font-size:13.5px;color:var(--dim);font-weight:400}
+  h3{font-size:16px;font-weight:600;margin:0 0 6px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}h3 .hint{font-size:13px;color:var(--dim);font-weight:400}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;border-radius:6px;padding:1px 9px;font-weight:500;white-space:nowrap}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.notice{background:var(--notice-soft);color:var(--notice)}.chip.grey{background:var(--fill2);color:var(--sub)}
+  .key{font:600 12px var(--mono);background:var(--fill);border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:var(--sub);white-space:nowrap}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+  .link{font-size:12.5px;color:var(--blue);white-space:nowrap;cursor:pointer}
+  .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.stat{background:var(--fill);border-radius:8px;padding:11px 14px;min-width:0}
+  .stat .l{font-size:12.5px;color:var(--dim);white-space:nowrap}.stat .v{font-size:22px;font-weight:600;line-height:1.3;margin-top:2px;white-space:nowrap}.stat .v small{font-size:13px;font-weight:500;color:var(--dim);margin-left:4px}.stat .d{font-size:12.5px;color:var(--dim);margin-top:2px}
+  .stat .d.down{color:var(--ok)}.stat .d.up{color:var(--warn)}
+  .picker{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);flex-wrap:wrap}
+  .picker .w{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:2px 10px;color:var(--sub);background:#fff;cursor:pointer}.picker .w.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .trend{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0}
+  .trend .side{border-left:1px solid var(--line);padding-left:20px;font-size:13.5px}
+  .trend .side .t{font-size:13px;color:var(--dim);margin:8px 0 2px}.trend .side .b{font-size:18px;font-weight:600}.trend .side .b small{font-size:12.5px;color:var(--dim);font-weight:400;margin-left:6px}
+  .legend{display:flex;gap:16px;font-size:12.5px;color:var(--sub);margin-top:8px;flex-wrap:wrap;align-items:center}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+  .tip{position:fixed;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);padding:8px 12px;font-size:12.5px;line-height:1.55;max-width:320px;display:none;z-index:9}
+  .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+  .four{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  /* 构成：堆叠条 + 明细行（名称一行、说明一行） */
+  .stack{display:flex;height:22px;border-radius:6px;overflow:hidden;margin:10px 0 10px}.stack i{display:block;height:100%}
+  .rows{font-size:13.5px}.row{display:grid;grid-template-columns:14px minmax(0,1fr) 72px 68px 52px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+  .row:first-child{border-top:none}.row .n{min-width:0;line-height:1.35}.row .n small{display:block;color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .bar{height:6px;border-radius:3px;background:var(--fill2);position:relative}.row .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+  .row.clk{cursor:pointer;border-radius:6px}.row.clk:hover{background:var(--fill)}.row.sel{background:#EEF3FF}
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}th{font-size:12.5px;color:var(--dim);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}td.r,th.r{text-align:right}tr:last-child td{border-bottom:none}
+  td .obj{font-family:var(--mono);font-size:12.5px}td .obj b{font-weight:600}td .obj span{color:var(--dim)}
+  .never{color:var(--warn);font-weight:500}.mini{height:5px;border-radius:3px;background:var(--fill2);position:relative;width:110px;display:inline-block;vertical-align:middle;margin-right:6px}.mini i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--c6)}
+  .filterbar{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);margin:4px 0 10px;flex-wrap:wrap}.filterbar .f{border:1px solid var(--line);border-radius:6px;padding:0 9px;color:var(--sub);cursor:pointer;font-size:12.5px}.filterbar .f.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  /* 非表占用小卡：流式 label · value，值可在空格处折行 */
+  .kv{font-size:13px;margin-top:6px;line-height:1.6}.kv div{margin:2px 0}.kv .l{color:var(--dim);margin-right:6px}.kv .v{font-family:var(--mono);font-size:12.5px;overflow-wrap:break-word}
+  .big{font-size:22px;font-weight:600;line-height:1.3;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;white-space:nowrap}.big small{font-size:12.5px;color:var(--dim);font-weight:400;margin-left:0}
+  /* 发现 / 解读 */
+  .find{display:grid;grid-template-columns:8px 176px minmax(0,1fr) 170px;gap:12px;align-items:start;padding:10px 0;border-top:1px solid var(--line);font-size:14px}.find:first-child{border-top:none}
+  .find .dot{width:8px;height:8px;border-radius:4px;margin-top:9px}.find .m{font-size:12.5px;color:var(--dim);margin-top:2px}.find .m b{color:var(--sub);font-weight:500}
+  .pri .p{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;align-items:start;font-size:15px;margin-bottom:8px}.pri .n{font:600 13px var(--mono);background:var(--fill2);border-radius:6px;padding:2px 0;text-align:center;margin-top:3px}
+  .strip{display:flex;gap:3px;align-items:flex-end;height:26px}.strip i{flex:1;max-width:16px;height:100%;border-radius:3px;background:var(--rest)}.strip i.w{background:var(--warn)}.strip i.o{background:var(--ok)}.strip i.sel{outline:2px solid var(--ink);outline-offset:1px}
+  .notes{font-size:13.5px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:8px 14px;margin-top:16px}
+  .foot{margin-top:40px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:12px}
+  .ann{font-size:12.5px;color:var(--sub);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="ribbon">设计稿 R1 · 容量与增长报告 · 全部数字为 og5 2026-08-31 10:12（压测 schema 清理后）实测，历史序列取自平台 08-26→08-29 健康采集存档 · 可交互：趋势图悬停 / 时间范围与序列切换 / 构成行点击筛选 Top 对象</div>
+<div class="topbar"><b>opendb-harness</b><span class="dim">任务</span><span>›</span><span>og5 容量与增长</span><span class="ret">返回列表</span></div>
+<div class="page">
+
+  <!-- ① 页头 -->
+  <div class="title">
+    <h1>og5 容量与增长</h1>
+    <span class="chip warn">告警 2</span><span class="chip notice">关注 3</span><span class="chip ok">正常 5</span>
+    <span class="meta">节点 og5 · 采集 2026-08-31 10:12 · 每日 02:00 自动 + 手动 · 本次为首次运行（对象级增量自下次起可得）</span>
+  </div>
+  <div class="tabs"><span class="on">容量报告</span><span>运行历史</span><span>任务设置</span></div>
+
+  <!-- ② 摘要 -->
+  <div class="stats">
+    <div class="stat"><div class="l">磁盘（数据目录所在卷）</div><div class="v num">277.1 GB<small>可用</small></div><div class="d">已用 70% · 总量 919.8 GB · 本库只占卷的 6%</div></div>
+    <div class="stat"><div class="l">数据目录</div><div class="v num">58.0 GB</div><div class="d down">▼ 116 GB / 24h · 清理前 174 GB</div></div>
+    <div class="stat"><div class="l">数据库 postgres</div><div class="v num">48.4 GB</div><div class="d down">▼ 110.9 GB / 24h · DROP SCHEMA ×3</div></div>
+    <div class="stat"><div class="l">增速（观测窗 73 h 线性回归）</div><div class="v num">+0.03 GB/天</div><div class="d">满盘估计 — · 增速 &lt; 0.1 GB/天不外推</div></div>
+    <div class="stat"><div class="l">非表占用</div><div class="v num" style="color:var(--notice)">26.3 GB<small>45%</small></div><div class="d">WAL 8.3 · 全量 SQL 追踪 16.0 · WDR 1.4 · 日志/审计 0.7</div></div>
+    <div class="stat"><div class="l">膨胀待办</div><div class="v num" style="color:var(--warn)">1 张</div><div class="d">statement_history 16.0 GB 只装 10.1 万行</div></div>
+    <div class="stat"><div class="l">统计信息从未收集</div><div class="v num" style="color:var(--warn)">42 张</div><div class="d">gsbench 全部表 · 含 3,355 万行 fact_sales</div></div>
+    <div class="stat"><div class="l">采集覆盖</div><div class="v num" style="color:var(--notice)">73 h<small>/ 5 天</small></div><div class="d">空窗 41 h（08-29 17:00 → 08-31 10:05）</div></div>
+  </div>
+
+  <!-- ③ 增长趋势（hero） -->
+  <h2>增长趋势 <span class="hint">逐时采样 · 灰带 = 无采集 · 竖线 = 字典里的建/删批次 · 虚线 = 按观测窗增速外推 · 悬停看数值</span></h2>
+  <div class="card">
+    <div class="trend">
+      <div>
+        <div class="picker" style="margin-bottom:8px"><span>范围</span><span class="w on" data-r="7">7 天</span><span class="w" data-r="30">30 天</span><span class="w" data-r="90">90 天</span><span style="margin-left:14px">序列</span><span class="w on" data-s="db">数据库</span><span class="w" data-s="dir">数据目录</span><span class="w" data-s="disk">磁盘已用</span></div>
+        <svg id="trend" width="100%" height="260" viewBox="0 0 840 260" preserveAspectRatio="none" style="display:block"></svg>
+        <div class="legend" id="trend-legend"></div>
+        <div class="ann" id="trend-ann"></div>
+      </div>
+      <div class="side">
+        <div class="t">观测窗</div><div class="b">73 h<small>08-26 16:00 → 08-29 17:00</small></div>
+        <div class="t">窗内净增</div><div class="b num">+0.1 GB<small>≈ 0.03 GB/天</small></div>
+        <div class="t">24 h 变化</div><div class="b num" style="color:var(--ok)">−110.9 GB<small>DROP SCHEMA ×3</small></div>
+        <div class="t">磁盘可用</div><div class="b num">277.1 GB<small>70% 已用</small></div>
+        <div class="t">满盘估计</div><div class="b">—<small>增速低于 0.1 GB/天不外推</small></div>
+        <div class="t">置信度</div><div><span class="chip notice">低</span> <span style="font-size:12.5px;color:var(--dim)">采集空窗 41 h，且 24h 内有人工清理</span></div>
+        <div style="margin-top:12px"><span class="link">在会话里看增长明细 →</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ 构成 -->
+  <h2>容量构成 <span class="hint">左：数据目录磁盘实占（du）· 右：库内对象逻辑大小（pg_total_relation_size，稀疏文件会略大于实占）· 点右侧一行筛选下方 Top 对象</span></h2>
+  <div class="two">
+    <div class="card">
+      <h3>数据目录 58.0 GB <span class="hint">/var/lib/opengauss/data</span></h3>
+      <div class="stack" id="dir-stack"></div>
+      <div class="rows" id="dir-rows"></div>
+    </div>
+    <div class="card">
+      <h3>数据库 postgres 48.4 GB <span class="hint">按 schema / 系统表</span></h3>
+      <div class="stack" id="db-stack"></div>
+      <div class="rows" id="db-rows"></div>
+    </div>
+  </div>
+
+  <!-- ⑤ Top 对象 -->
+  <h2>Top 对象 <span class="hint">按总大小 · 24h 增量自下次采集起可得 · 死元组与 vacuum/analyze 来自 pg_stat_user_tables · 每行可深挖</span></h2>
+  <div class="card" style="padding:12px 20px 6px">
+    <div class="filterbar"><span>筛选</span><span class="f on" data-f="">全部</span><span class="f" data-f="gsbench">gsbench</span><span class="f" data-f="gsbench_v4">gsbench_v4</span><span class="f" data-f="gaussdb">gaussdb</span><span class="f" data-f="demo">演示 schema</span><span id="filter-note" style="margin-left:auto"></span></div>
+    <div style="overflow-x:auto"><table id="top">
+      <thead><tr><th>#</th><th>对象</th><th class="r">总大小</th><th>堆 / 索引</th><th class="r">行数（reltuples）</th><th class="r">24h 增量</th><th class="r">死元组</th><th>最后 vacuum</th><th>最后 analyze</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+
+  <!-- ⑥ 非表占用与保留策略 -->
+  <h2>非表占用与保留策略 <span class="hint">这些不是业务数据，却占了数据目录 45%——每项给出"谁在决定它的大小"</span></h2>
+  <div class="four">
+    <div class="card">
+      <h3>WAL · pg_xlog <span class="chip ok">正常</span></h3>
+      <div class="big num">8.25 GB<small>528 段 × 16 MB</small></div>
+      <div class="kv"><div><span class="l">上限由</span><span class="v">checkpoint_segments = 256</span></div><div><span class="l">保留</span><span class="v">wal_keep_segments = 16</span></div><div><span class="l">复制槽</span><span class="v">0（无滞留）</span></div></div>
+      <div class="ann">段数在参数允许范围内；不能手删，只能调参数。</div>
+    </div>
+    <div class="card">
+      <h3>全量 SQL 追踪 <span class="chip warn">膨胀</span></h3>
+      <div class="big num">16.0 GB<small>statement_history · 100,927 行</small></div>
+      <div class="kv"><div><span class="l">开关</span><span class="v">enable_stmt_track = on</span></div><div><span class="l">级别</span><span class="v">track_stmt_stat_level = L2,L2</span></div><div><span class="l">保留</span><span class="v">1 h（全量）/ 7 d（慢 SQL）</span></div></div>
+      <div class="ann">昨天 730 万行、今天 10 万行，表却一直 16 GB——滚动删除不回收空间（≈166 KB/行）。</div>
+    </div>
+    <div class="card">
+      <h3>运行日志 · pg_log <span class="chip notice">无保留策略</span></h3>
+      <div class="big num">0.58 GB<small>57 个文件 · 07-31 起</small></div>
+      <div class="kv"><div><span class="l">慢日志阈值</span><span class="v">log_min_duration_statement = 1 s</span></div><div><span class="l">轮转</span><span class="v">按天，无最长保留</span></div><div><span class="l">最近清理</span><span class="v">08-31 手工删 269 文件 / 3.96 GB</span></div></div>
+      <div class="ann">05-01 起从未清理过；建议给出保留天数策略。</div>
+    </div>
+    <div class="card">
+      <h3>WDR 快照 <span class="chip ok">保留生效</span></h3>
+      <div class="big num">1.37 GB<small>192 个快照 · 08-23 起</small></div>
+      <div class="kv"><div><span class="l">间隔</span><span class="v">wdr_snapshot_interval = 60 min</span></div><div><span class="l">保留</span><span class="v">wdr_snapshot_retention_days = 8</span></div><div><span class="l">审计 / core</span><span class="v">pg_audit 0.12 GB · core 0</span></div></div>
+      <div class="ann">快照表死元组 15–16%，autovacuum 正常回收。</div>
+    </div>
+  </div>
+
+  <!-- ⑦ Vacuum / 统计信息 -->
+  <h2>Vacuum 与统计信息健康 <span class="hint">膨胀看死元组比例，坏计划看 analyze 新鲜度——两者都只从 pg_stat_user_tables 读</span></h2>
+  <div class="two">
+    <div class="card">
+      <h3>死元组 Top <span class="hint">n_dead / (live + dead)</span></h3>
+      <table>
+        <thead><tr><th>对象</th><th class="r">死元组</th><th class="r">占比</th><th>最后 autovacuum</th></tr></thead>
+        <tbody>
+          <tr><td><span class="obj">snapshot.<b>snap_class_vital_info</b></span></td><td class="r num">69,768</td><td class="r num"><span class="mini"><i style="width:16%"></i></span>15.8%</td><td class="num">08-29 21:49</td></tr>
+          <tr><td><span class="obj">snapshot.<b>snap_global_statio_all_indexes</b></span></td><td class="r num">42,217</td><td class="r num"><span class="mini"><i style="width:16%"></i></span>16.1%</td><td class="num">08-29 20:49</td></tr>
+          <tr><td><span class="obj">snapshot.<b>snap_global_stat_all_indexes</b></span></td><td class="r num">42,217</td><td class="r num"><span class="mini"><i style="width:16%"></i></span>16.1%</td><td class="num">08-29 20:50</td></tr>
+          <tr><td><span class="obj">snapshot.<b>snap_global_thread_wait_status</b></span></td><td class="r num">30,500</td><td class="r num"><span class="mini"><i style="width:16%"></i></span>16.1%</td><td class="num">08-29 20:47</td></tr>
+          <tr><td><span class="obj">snapshot.<b>snap_summary_statio_all_tables</b></span></td><td class="r num">27,098</td><td class="r num"><span class="mini"><i style="width:15%"></i></span>15.0%</td><td class="num">08-29 23:48</td></tr>
+        </tbody>
+      </table>
+      <div class="ann">全部是 WDR 快照表的正常周转；业务表死元组计数为 0（见右侧原因）。autovacuum = on · naptime 30 s · scale_factor 0.2。</div>
+    </div>
+    <div class="card">
+      <h3>统计信息从未收集 <span class="chip warn">42 张</span></h3>
+      <div style="font-size:14px;margin:4px 0 8px">gsbench 的 42 张表 <span class="mono" style="font-size:12.5px">last_analyze = never</span>，且 <span class="mono" style="font-size:12.5px">n_live_tup = 0</span>——优化器只有装载时写入的 reltuples，没有列级直方图。</div>
+      <table>
+        <thead><tr><th>对象</th><th class="r">reltuples</th><th class="r">大小</th><th>影响</th></tr></thead>
+        <tbody>
+          <tr><td><span class="obj">gsbench.<b>fact_sales</b></span></td><td class="r num">33,554,475</td><td class="r num">6.22 GB</td><td>08-28 超时事故本尊 · Top SQL 常客</td></tr>
+          <tr><td><span class="obj">gsbench.<b>plan_data</b></span></td><td class="r num">10,737,424</td><td class="r num">7.49 GB</td><td>索引 2.37 GB 无直方图</td></tr>
+          <tr><td><span class="obj">gsbench.<b>order_items</b></span></td><td class="r num">22,369,703</td><td class="r num">1.90 GB</td><td>连接选择率靠猜</td></tr>
+          <tr><td><span class="obj">gsbench.<b>orders</b></span></td><td class="r num">13,421,813</td><td class="r num">1.16 GB</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <div class="ann">另：gsbench_v4 81 张、gaussdb 19 张同样从未 analyze（演示数据，权重低）。<span class="link">列出全部 42 张 →</span></div>
+    </div>
+  </div>
+
+  <!-- ⑧ 发现 -->
+  <h2>发现 <span class="hint">阈值判定 · 级别由脚本产出，不可被解读下调 · 每条可直接深挖</span></h2>
+  <div class="card" style="padding:4px 20px">
+    <div class="find"><i class="dot" style="background:var(--warn)"></i><span class="key">CAP_STMT_HISTORY_BLOAT</span><div>statement_history 16.0 GB 只承载 100,927 行（≈166 KB/行）——L2 全量追踪滚动删除后空间不回收<div class="m">evidence：pg_total_relation_size 17,168,703,488 B · count(*) 100,927 · 08-30 同表 730 万行同为 16 GB · <b>阈值</b> 系统表 &gt; 4 GB 且行均 &gt; 8 KB</div></div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--warn)"></i><span class="key">CAP_STATS_NEVER</span><div>gsbench 42 张表从未 analyze（含 fact_sales 3,355 万行、plan_data 1,074 万行），n_live_tup 计数为 0<div class="m">evidence：pg_stat_user_tables.last_analyze / last_autoanalyze 均为 NULL · reltuples 来自装载 · <b>阈值</b> reltuples &gt; 100 万且从未 analyze</div></div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--notice)"></i><span class="key">CAP_NONTABLE_SHARE</span><div>非表占用 26.3 GB = 数据目录的 45%（WAL 8.25 + 全量 SQL 追踪 16.0 + WDR 1.37 + 日志/审计 0.7）<div class="m">evidence：du pg_xlog / pg_log / pg_audit + pg_total_relation_size(statement_history, snapshot.*) · <b>阈值</b> 关注 &gt; 30% → 告警 &gt; 50%</div></div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--notice)"></i><span class="key">CAP_COLLECT_GAP</span><div>采集空窗 41 h（08-29 17:00 → 08-31 10:05），增速外推置信度低<div class="m">evidence：opendb_capacity_samples 最近两点间隔 · 原因：分钟级监控任务 08-30 被删，容量任务今日首跑 · <b>阈值</b> 关注 &gt; 24 h</div></div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--notice)"></i><span class="key">CAP_LOG_RETENTION</span><div>pg_log 只按天轮转、无最长保留；05-01 至 08-31 从未清理，累计到 4.3 GB 后手工删除<div class="m">evidence：log_rotation_age = 1d · log_truncate_on_rotation = off · 无 max age 类参数 · 08-31 删 269 文件 3.96 GB</div></div><span class="link">在会话里深挖 →</span></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">CAP_DISK_FREE</span><div>磁盘可用 277.1 GB（已用 70%），本库仅占卷的 6%</div><div class="m">实测 70% · 阈值 关注 &gt; 80% → 告警 &gt; 90%</div></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">CAP_WAL_SIZE</span><div>pg_xlog 528 段 / 8.25 GB，在 checkpoint_segments = 256 的保留上限内，无复制槽滞留</div><div class="m">阈值 段数 &gt; 3 × checkpoint_segments，或存在 inactive 槽</div></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">CAP_GROWTH</span><div>观测窗 73 h 内数据库净增 +0.1 GB（≈ 0.03 GB/天）</div><div class="m">阈值 满盘 &lt; 90 天关注 → &lt; 30 天告警</div></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">CAP_WDR_RETENTION</span><div>WDR 192 个快照 1.37 GB，8 天保留生效</div><div class="m">阈值 快照 schema &gt; 10 GB，或最老快照超过保留期 2 天</div></div>
+    <div class="find"><i class="dot" style="background:var(--ok)"></i><span class="key">CAP_DEAD_TUPLES</span><div>死元组最高 16.1%（snapshot.snap_global_statio_all_indexes），autovacuum 正常回收</div><div class="m">阈值 关注 &gt; 20% 且大小 &gt; 1 GB → 告警 &gt; 40%</div></div>
+  </div>
+
+  <!-- ⑨ 解读 -->
+  <h2>解读与处置优先级 <span class="hint">模型解读 · 引用的数字均有出处 · 平台只读，处置由 DBA 执行</span></h2>
+  <div class="two">
+    <div class="card" style="background:var(--fill);border:none"><div style="font-size:13.5px;color:var(--dim);font-weight:500;margin-bottom:4px">根因串联</div>
+      <div style="font-size:15px;color:var(--ink)">这个库"大"的原因有两层：清理前 174 GB 里 82% 是压测 schema（已删）；剩下 58 GB 里又有 45% 不是业务数据——<b>16 GB 的 statement_history</b> 是 L2 全量 SQL 追踪（每条语句连计划带等待事件）留下的空洞，行数已经从 730 万滚到 10 万，空间却一点没还；<b>8.25 GB 的 WAL</b> 由 checkpoint_segments = 256 决定，是参数问题不是负载问题。增长本身不是风险（73 h 净增 0.1 GB），风险在于 gsbench 42 张表<b>从未 analyze</b>——这直接解释了 Top SQL 报表里 fact_sales 全表聚合的坏计划和 08-28 的超时。</div></div>
+    <div class="card"><div style="font-size:13.5px;color:var(--dim);font-weight:500;margin-bottom:4px">处置优先级</div>
+      <div class="pri">
+        <div class="p"><span class="n">P1</span><div>statement_history：把 track_stmt_stat_level 从 L2,L2 降到 OFF,L0（或 L0,L1 保留慢 SQL），再 VACUUM FULL 回收 16 GB；平台的 Top SQL 只依赖慢 SQL 部分 <span class="key">CAP_STMT_HISTORY_BLOAT</span></div></div>
+        <div class="p"><span class="n">P2</span><div>对 gsbench 42 张表执行 ANALYZE（fact_sales / plan_data / order_items 优先），再看 Top SQL 报表的计划是否改变 <span class="key">CAP_STATS_NEVER</span></div></div>
+        <div class="p"><span class="n">P3</span><div>pg_log 定一条保留策略（如 30 天）并纳入巡检；WAL 8.25 GB 若嫌大可把 checkpoint_segments 调回 64–128，与 08-27 健康报告的 checkpoint 频率一起权衡 <span class="key">CAP_LOG_RETENTION</span> <span class="key">CAP_WAL_SIZE</span></div></div>
+      </div></div>
+  </div>
+
+  <!-- ⑩ 历史 -->
+  <h2>检查历史 <span class="hint">一格一次运行 · 点格子查看当次报告 · 首次运行只有一格</span></h2>
+  <div class="card">
+    <div class="strip"><i class="w sel"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="ann">08-31 10:12 告警 2 · 关注 3 · 正常 5 —— 之后每日 02:00 一格；对象级 24h 增量、增速置信度都随格子增多而可信。</div>
+  </div>
+
+  <div class="notes">口径：大小一律按二进制（pg_size_pretty 口径，1 GB = 1024³ B）。目录级 = 容器内 du（磁盘实占）；对象级 = pg_total_relation_size（逻辑大小，稀疏文件下会略大于实占，两者不互相加总）。增速 = 观测窗内样本的线性回归斜率；满盘天数 = 磁盘可用 ÷ 增速，增速 &lt; 0.1 GB/天不外推。事件标注来自平台字典的 added / removed 批次。数据源全部只读：pg_database_size · pg_tablespace_size · pg_total_relation_size · pg_stat_user_tables · pg_ls_dir / pg_stat_file · pg_settings · pg_replication_slots · snapshot.snapshot。</div>
+  <div class="foot">R1 设计稿 · 待 user 评审 · 实现落点：task-capacity（server 注册 TaskType + client registerTaskPanel）+ tool-capacity-collect（采集器，存 opendb_capacity_samples 时序 + opendb_task_collects 整包）· 图表用 chart-kit（Line / Bars）· 阈值 CAP_* 接 task-thresholds 可配置。</div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const cs = getComputedStyle(document.documentElement);
+  const col = (v) => cs.getPropertyValue(v).trim();
+  const tip = document.getElementById('tip');
+  const showTip = (html, x, y) => { tip.innerHTML = html; tip.style.display = 'block'; tip.style.left = Math.min(x + 14, window.innerWidth - 340) + 'px'; tip.style.top = (y + 14) + 'px'; };
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  // ---------- 趋势：真实小时序列（GB，二进制）。t = 距 08-26 00:00 的小时数 ----------
+  const H0 = (d, h) => (d - 26) * 24 + h;
+  const DBS = [];
+  const flat = (from, to, v) => { for (let t = from; t <= to; t++) DBS.push([t, v]); };
+  DBS.push([H0(26,16),159.3],[H0(26,17),159.5],[H0(26,18),159.6],[H0(26,19),159.6]);
+  flat(H0(26,22), H0(27,17), 159.2); flat(H0(27,18), H0(29,0), 159.3); DBS.push([H0(29,10),159.4],[H0(29,11),159.4],[H0(29,17),159.4]);
+  DBS.push([H0(31,10) + 5/60, 159.3], [H0(31,10) + 7/60, 48.4], [H0(31,10) + 12/60, 48.4]);
+  const SERIES = {
+    db:   { name: '数据库 postgres（pg_database_size）', pts: DBS, max: 200, endLabel: '48.4 GB',
+            ann: '08-26 16:00 → 08-29 17:00 净增 +0.1 GB（几乎平直）；08-31 10:07 三个 schema 删除，−110.9 GB（字典批次：91 对象 removed）。' },
+    dir:  { name: '数据目录（du，磁盘实占）', pts: [[H0(31,10), 174.0], [H0(31,10) + 0.5, 58.0]], max: 200, endLabel: '58.0 GB',
+            ann: '数据目录序列自本次运行起采集（du 走 health 的主机维度）：目前只有首采 2 点——10:00 174 GB → 10:30 58.0 GB（含 pg_log / core 清理 −4.7 GB）。' },
+    disk: { name: '磁盘已用（数据目录所在卷）', pts: [[H0(31,10) + 0.5, 642.6]], max: 1000, endLabel: '642.6 / 919.8 GB',
+            ann: '磁盘已用序列自本次运行起采集：首采 1 点 642.6 GB（70%）；虚线为可用 277.1 GB 的水位参考。' },
+  };
+  const GAPS = [[H0(29,17), H0(31,10) + 5/60]];          // 无采集（仅数据库序列有历史）
+  const EVENTS = [{ t: H0(31,10) + 7/60, kind: 'del', label: 'DROP SCHEMA ×3 · 91 对象 removed · −110.9 GB' }];
+  const RANGE = { 7: [H0(25,0), H0(31,12)], 30: [H0(2,0), H0(31,12)], 90: [H0(-58,0), H0(31,12)] };
+  let range = 7, series = 'db';
+  const svg = document.getElementById('trend');
+  const W = 840, Hh = 260, L = 56, R = 16, T = 16, B = 34, iw = W - L - R, ih = Hh - T - B;
+  const dayOf = (t) => Math.floor(t / 24) + 26;                          // 26 = 08-26；>31 进入 9 月，<1 退到 7 月
+  const fmtD = (t) => { let d = dayOf(t), m = 8; if (d > 31) { m = 9; d -= 31; } else if (d < 1) { m = 7; d += 31; } return `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
+  const fmtT = (t) => `${fmtD(t)} ${String(Math.floor(((t % 24) + 24) % 24)).padStart(2, '0')}:${String(Math.round((t % 1) * 60)).padStart(2, '0')}`;
+  function draw() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const S = SERIES[series]; const pts = S.pts;
+    const [x0, x1] = RANGE[range];
+    const X = (t) => L + (t - x0) / (x1 - x0) * iw;
+    const max = S.max, Y = (v) => T + ih - v / max * ih;
+    const step = max >= 1000 ? 250 : 50;
+    for (let v = 0; v <= max; v += step) {
+      svg.appendChild(el('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: '#EEF0F3' }));
+      const t = el('text', { x: L - 8, y: Y(v) + 4, 'text-anchor': 'end', 'font-size': 11, fill: col('--dim') }); t.textContent = v + ' GB'; svg.appendChild(t);
+    }
+    // 无采集灰带：范围左侧的"任务尚未存在"段 + 数据库序列的 41 h 空窗
+    const bands = [[x0, pts[0][0], `<b>无采集</b><br>${fmtT(x0)} → ${fmtT(pts[0][0])}<br>容量任务尚未创建（本次为首次运行）`]];
+    if (series === 'db') GAPS.forEach(([a, b]) => bands.push([a, b, `<b>无采集 41 h</b><br>${fmtT(a)} → ${fmtT(b)}<br>分钟级监控任务 08-30 被删；容量任务今日首跑`]));
+    bands.forEach(([a, b, html]) => { const g = el('rect', { x: X(a), y: T, width: Math.max(0, X(b) - X(a)), height: ih, fill: '#F1F3F6' }); svg.appendChild(g);
+      g.addEventListener('mousemove', (e) => showTip(html, e.clientX, e.clientY)); g.addEventListener('mouseleave', hideTip); });
+    // x 轴刻度：7 天每天、30 天每 5 天、90 天每 10 天
+    const every = range === 90 ? 10 : range === 30 ? 5 : 1;
+    for (let d = Math.ceil(x0 / 24) * 24; d <= x1; d += 24) { if (((dayOf(d) % every) + every) % every !== 0) continue; const t = el('text', { x: X(d), y: Hh - 12, 'text-anchor': 'middle', 'font-size': 10.5, fill: col('--dim') }); t.textContent = fmtD(d); svg.appendChild(t); }
+    // 折线：跨空窗断开；单点序列画点不画线
+    let d = ''; let prev = null;
+    pts.forEach(([t, v]) => { const gap = prev !== null && GAPS.some(([a, b]) => prev <= a && t >= b); d += (prev === null || gap ? 'M' : 'L') + X(t).toFixed(1) + ' ' + Y(v).toFixed(1) + ' '; prev = t; });
+    if (pts.length > 1) svg.appendChild(el('path', { d, fill: 'none', stroke: col('--c1'), 'stroke-width': 2 }));
+    pts.forEach(([t, v]) => { if (pts.length <= 2) svg.appendChild(el('circle', { cx: X(t), cy: Y(v), r: 4, fill: col('--c1') })); });
+    // 外推虚线（数据库 ≈ 0.03 GB/天 → 视觉上水平；磁盘序列改画可用水位参考线）
+    const last = pts[pts.length - 1];
+    if (series === 'disk') {
+      svg.appendChild(el('line', { x1: L, x2: W - R, y1: Y(919.8), y2: Y(919.8), stroke: col('--crit'), 'stroke-width': 1, 'stroke-dasharray': '5 4' }));
+      const t = el('text', { x: L + 6, y: Y(919.8) - 5, 'font-size': 11, fill: col('--crit') }); t.textContent = '卷容量 919.8 GB'; svg.appendChild(t);
+    } else if (pts.length > 1) {
+      svg.appendChild(el('line', { x1: X(last[0]), y1: Y(last[1]), x2: W - R, y2: Y(last[1] + 0.03 * ((x1 - last[0]) / 24)), stroke: col('--c1'), 'stroke-width': 1.5, 'stroke-dasharray': '5 4' }));
+    }
+    // 事件竖线（字典批次）
+    EVENTS.forEach((ev) => { const c = col(ev.kind === 'del' ? '--crit' : '--ok'); const ln = el('line', { x1: X(ev.t), x2: X(ev.t), y1: T, y2: T + ih, stroke: c, 'stroke-width': 1.5 }); svg.appendChild(ln);
+      const tri = el('path', { d: `M${X(ev.t) - 5} ${T - 2} L${X(ev.t) + 5} ${T - 2} L${X(ev.t)} ${T + 7} Z`, fill: c, style: 'cursor:pointer' }); svg.appendChild(tri);
+      const on = (e) => showTip(`<b>${fmtT(ev.t)} 字典批次</b><br>${ev.label}<br><span style="color:#81858C">来源：opendb_dict_changes（gsbench_e2e_20260801_100g 84 · loadtest 3 · bench 4）</span>`, e.clientX, e.clientY);
+      tri.addEventListener('mousemove', on); ln.addEventListener('mousemove', on); tri.addEventListener('mouseleave', hideTip); ln.addEventListener('mouseleave', hideTip); });
+    // 采样点悬停（透明命中圈）
+    pts.forEach(([t, v], i) => { const c = el('circle', { cx: X(t), cy: Y(v), r: 6, fill: 'transparent', style: 'cursor:crosshair' }); svg.appendChild(c);
+      c.addEventListener('mousemove', (e) => { const p = pts[i - 1]; showTip(`<b>${fmtT(t)}</b><br>${S.name.split('（')[0]} ${v.toFixed(1)} GB` + (p ? `<br>较上一采样 ${(v - p[1]) >= 0 ? '+' : ''}${(v - p[1]).toFixed(1)} GB` : ''), e.clientX, e.clientY); }); c.addEventListener('mouseleave', hideTip); });
+    // 末点标注（靠右时放到点的左侧，避免被裁）
+    const lx = X(last[0]); const nearRight = lx > W - R - 90;
+    const lt = el('text', { x: nearRight ? lx - 8 : lx + 6, y: Y(last[1]) - 8, 'text-anchor': nearRight ? 'end' : 'start', 'font-size': 12, 'font-weight': 700, fill: col('--ink') }); lt.textContent = S.endLabel; svg.appendChild(lt);
+    if (series === 'db') { const ft = el('text', { x: X(pts[4][0]) + 4, y: Y(159.2) - 8, 'font-size': 11, fill: col('--sub') }); ft.textContent = '159.3 GB（73 h 内 ±0.4）'; svg.appendChild(ft); }
+    document.getElementById('trend-legend').innerHTML = `<span class="sw" style="background:var(--c1)"></span>${S.name}<span class="sw" style="background:#E6E9EE"></span>无采集<span style="display:inline-block;width:14px;border-top:2px dashed var(--c1)"></span>${series === 'disk' ? '卷容量' : '外推'}<span class="sw" style="background:var(--crit)"></span>删除批次<span class="sw" style="background:var(--ok)"></span>新建批次`;
+    document.getElementById('trend-ann').textContent = S.ann;
+  }
+  draw();
+  document.querySelectorAll('.picker .w[data-r]').forEach((w) => w.addEventListener('click', () => { document.querySelectorAll('.picker .w[data-r]').forEach((x) => x.classList.remove('on')); w.classList.add('on'); range = Number(w.dataset.r); draw(); }));
+  document.querySelectorAll('.picker .w[data-s]').forEach((w) => w.addEventListener('click', () => { document.querySelectorAll('.picker .w[data-s]').forEach((x) => x.classList.remove('on')); w.classList.add('on'); series = w.dataset.s; draw(); }));
+
+  // ---------- 构成 ----------
+  const DIR = [
+    ['表空间 gsbench_ts', 28.8, '--c1', 'pg_location/ · gsbench + gsbench_v4 的对象'],
+    ['base（pg_default）', 19.6, '--c2', 'statement_history 16.0 · snapshot 1.4 · gaussdb 1.8 · 演示 1.0'],
+    ['pg_xlog', 8.25, '--c4', '528 段 · checkpoint_segments = 256'],
+    ['其它', 0.60, '--c7', 'pg_clog / pg_csnlog / global / pg_stat_tmp …'],
+    ['pg_log', 0.58, '--c5', '57 个文件 · 07-31 起 · 30 天前的已手工清'],
+    ['pg_audit', 0.12, '--c6', '审计日志'],
+  ];
+  const DB = [
+    ['gsbench', 25.2, '--c1', '42 对象 · 保留：超时验收与 Top SQL 的数据源', 'gsbench'],
+    ['statement_history', 16.0, '--c4', 'pg_catalog · 全量 SQL 追踪（L2）', 'sys'],
+    ['gsbench_v4', 10.6, '--c2', '81 对象 · 压测历史，待删', 'gsbench_v4'],
+    ['gaussdb', 1.83, '--c3', '19 对象 · bench_* 演示表', 'gaussdb'],
+    ['snapshot', 1.37, '--c6', '119 对象 · WDR 快照（保留 8 天）', 'sys'],
+    ['演示 schema ×3', 0.98, '--c5', 'demo_mem / health_demo / sqltune_demo', 'demo'],
+    ['其它目录表', 0.70, '--c7', 'pg_catalog 其余 + public / bigjoin / qa_1234 …', 'sys'],
+  ];
+  function comp(stackId, rowsId, items, total, clickable) {
+    const st = document.getElementById(stackId), rows = document.getElementById(rowsId);
+    items.forEach(([n, v, c, d, key]) => {
+      const i = document.createElement('i'); i.style.width = (v / total * 100) + '%'; i.style.background = col(c); i.title = `${n} ${v} GB`; st.appendChild(i);
+      const r = document.createElement('div'); r.className = 'row' + (clickable ? ' clk' : ''); r.dataset.k = key || '';
+      r.innerHTML = `<span class="sw" style="background:${col(c)}"></span><span class="n">${n}<small title="${d}">${d}</small></span><span class="bar"><i style="width:${(v / items[0][1] * 100).toFixed(0)}%;background:${col(c)}"></i></span><span class="num" style="text-align:right;font-weight:600">${v.toFixed(v < 1 ? 2 : 1)} GB</span><span class="num" style="text-align:right;color:var(--dim);font-size:12.5px">${(v / total * 100).toFixed(1)}%</span>`;
+      rows.appendChild(r);
+      if (clickable) r.addEventListener('click', () => { const k = key === 'sys' ? '' : key; setFilter(k === filter ? '' : k); });
+    });
+  }
+  comp('dir-stack', 'dir-rows', DIR, 58.0, false);
+  comp('db-stack', 'db-rows', DB, 56.7, true);
+
+  // ---------- Top 对象 ----------
+  const TOP = [
+    ['gsbench','plan_data',7.49,5.12,2.37,10737424],['gsbench','fact_sales',6.22,5.45,0.78,33554475],['gsbench_v4','fact_sales',2.66,1.46,1.20,8592244],
+    ['gsbench','vacuum_targets',1.96,1.86,0.09,1952264],['gsbench','order_items',1.90,1.43,0.47,22369703],['gsbench','accounts',1.68,1.51,0.17,8048850],
+    ['gsbench_v4','plan_data',1.52,1.02,0.50,1006632],['gsbench','orders',1.16,0.87,0.28,13421813],['gsbench_v4','vacuum_targets',0.77,0.71,0.06,374984],
+    ['gsbench_v4','order_items',0.72,0.30,0.42,4697612],['gsbench','customers',0.55,0.49,0.06,2684490],['gaussdb','bench_order_items',0.53,0.32,0.21,4999991],
+    ['gsbench_v4','orders',0.51,0.23,0.27,3257989],['gsbench_v4','accounts',0.42,0.29,0.13,1465067],['gsbench_v4','sort_data',0.42,0.37,0.06,671087],
+    ['demo_mem','big_orders',0.35,0.35,0,2000938],['gaussdb','bench_reviews',0.26,0.19,0.06,3000000],['gaussdb','bench_orders',0.21,0.13,0.08,2000000],
+    ['gaussdb','bench_payments',0.19,0.12,0.08,1800000],['gaussdb','bench_shipments',0.16,0.12,0.04,1800000],
+  ];
+  let filter = '';
+  const tbody = document.querySelector('#top tbody');
+  const isDemo = (s) => /demo/.test(s);
+  function renderTop() {
+    tbody.innerHTML = '';
+    const rows = TOP.filter(([s]) => !filter || (filter === 'demo' ? isDemo(s) : s === filter));
+    rows.forEach(([s, t, tot, heap, idx, n], i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="num" style="color:var(--dim)">${i + 1}</td><td><span class="obj"><span>${s}.</span><b>${t}</b></span></td><td class="r num" style="font-weight:600">${tot.toFixed(2)} GB</td>` +
+        `<td><span class="mini" style="width:90px"><i style="width:${(heap / tot * 100).toFixed(0)}%;background:var(--c1)"></i><i style="left:${(heap / tot * 100).toFixed(0)}%;width:${(idx / tot * 100).toFixed(0)}%;background:var(--c2)"></i></span><span class="num" style="font-size:12.5px;color:var(--sub)">${heap.toFixed(2)} / ${idx.toFixed(2)}</span></td>` +
+        `<td class="r num">${n.toLocaleString('en-US')}</td><td class="r"><span class="chip grey" style="font-size:12px">首采</span></td><td class="r num">0 <span style="color:var(--dim);font-size:12px">(计数器 0)</span></td><td class="never">never</td><td class="never">never</td><td><span class="link">深挖 →</span></td>`;
+      tbody.appendChild(tr);
+    });
+    const sum = rows.reduce((a, r) => a + r[2], 0);
+    document.getElementById('filter-note').textContent = `${rows.length} 个对象 · 合计 ${sum.toFixed(1)} GB` + (filter ? ` · 筛选：${filter === 'demo' ? '演示 schema' : filter}` : '');
+    document.querySelectorAll('.filterbar .f').forEach((f) => f.classList.toggle('on', f.dataset.f === filter));
+    document.querySelectorAll('#db-rows .row').forEach((r) => r.classList.toggle('sel', !!filter && r.dataset.k === filter));
+  }
+  function setFilter(k) { filter = k; renderTop(); }
+  document.querySelectorAll('.filterbar .f').forEach((f) => f.addEventListener('click', () => setFilter(f.dataset.f)));
+  renderTop();
+</script>
+</body>
+</html>
