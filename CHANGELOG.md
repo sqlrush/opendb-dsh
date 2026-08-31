@@ -8,6 +8,15 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ## [Unreleased]
 
 ### Added
+- **资源 › k8s 集群状态（新面板插件 `ui-cluster`，user 2026-08-31 通过 `docs/prototypes/cluster-r4.html`）**：侧栏「资源」升为与
+  「工作区」同款一级目录，下挂「k8s 集群状态」「模型用量」。主区三个 tab——**架构图**：k8s 边界框内 Pod 全量展示（不折叠）、
+  按类型着色（网关/执行器/采集/状态库/缓存/对象存储/向量库/嵌入模型八色）、每层居中、Pod 之间画出调用关系（线色 = 调用方，
+  实线派发 / 虚线读写，带箭头与关系标注，跨层的 host→postgres 走左侧总线绕开执行面）；框外是被管数据库，**几百台不平铺**——
+  按环境分组的节点矩阵（一格一节点、按健康着色、组内坏的浮到最前）+ 搜索/引擎/环境/只看告警 +「需要关注」清单，只有选中的那台
+  与集群连线。点任意 Pod 或节点出右侧详情（资源计量含 request/limit、运行信息、部署）。**节点视图**与**事件**（Warning 置顶）。
+  显示名统一为「组件-序号」，k8s 真名（含 ReplicaSet 哈希，改不了）放在卡片悬停与详情。
+  server 半边为 platform-status 新增的 `cluster` 端点（k8s 只读 API + metrics-server + 平台注册表的最近判定）；
+  RBAC 扩到 `events` 与集群级 `nodes`·`metrics.k8s.io`，全部只读，未授权时整页如实降级。验收 `scripts/browser/cluster-check.mjs`（21/21）。
 - **容量与增长报告（新任务类型 `capacity`，user 2026-08-31 通过 `docs/prototypes/capacity-r1.html` 后开发）**：回答现在多大、涨多快、
   还能撑多久、空间花在哪。采集器 `capacity_collect`（tool-capacity-collect）一次采齐库 / 表空间 / schema / Top 表大小、死元组与 analyze
   新鲜度、非表占用（WAL、全量 SQL 追踪 statement_history、WDR 快照、pg_log、pg_audit、core）及决定它们大小的 GUC；采样写
@@ -39,6 +48,12 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   一律放行（fail-open），数据库自己的错误照旧原样返回。新增 `db_describe(relation)`（查一张表/视图的字典）与 `db_find_columns(keyword)`
   （按列名反查关系）两个工具。起因：模型按 PG 印象在 openGauss 的 `pg_stat_activity` 上查 `wait_event`（openGauss 只有 `waiting`），
   连错三次。
+
+### Fixed
+- **`deploy/k8s/rollout.sh` 会在新 Pod 崩溃时误报 `ROLLOUT OK`**：`kubectl rollout status` 的退出码被管道吃掉，滚动没完成也继续；
+  旧 ReplicaSet 的 Pod 因 `maxUnavailable=0` 仍在服务，入口 200 / 插件包 200 / 无头 Chrome 面板检查全打在旧 Pod 上，一路绿灯
+  （2026-08-31 `ui-cluster` 缺 `apply` 导致插件树加载失败实证）。现在滚动状态非零即报错并注明"下面的验收结果不可信"，
+  并逐个 Deployment 校验 Pod 就绪与 CrashLoopBackOff，日志关键词加 `invalid plugin, expect function`。
 
 ### Changed
 - 镜像构建 `deploy/k8s/build-image.sh` 改推**纯 v2 manifest**（`--provenance=false --sbom=false`）。起因：buildx 默认推 OCI image index

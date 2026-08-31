@@ -1081,3 +1081,39 @@ og5 实测 worst=warn：`statement_history` 16 GB 只装 5.7 万行（≈296 KB/
 
 **验收**：单测 15 例（`packages/task-capacity/test`，含悬崖两分支与文件级降级）；真机 e2e `scripts/e2e-capacity.mjs` **20/20 PASS**
 （og5，两轮：首采回填 + 第二次的对象级增量）。`scripts/browser/task-scroll-shots.mjs` 的锚点正则补了「容量态势：」，否则截不到首屏以下。
+
+## 资源 › k8s 集群状态（R4 上线，2026-08-31，user 通过 `docs/prototypes/cluster-r4.html` 后开发）
+
+侧栏「资源」升为与「工作区」同款的**一级目录**，下挂「k8s 集群状态」与「模型用量」两项；
+`registerResourcePanel` 从单面板改成**按 key 多面板**（`registerResourcePanel(Panel, 'cluster')`），
+不带 key 注册沿用旧语义 `usage`，platform-status 老版本不改也能挂上；顶栏标题变成「资源 › k8s 集群状态」。
+
+**三层落点**：
+- **RBAC**（`deploy/charts/opendb-dsh/templates/rbac.yaml`）：命名空间 Role 加 `events`；新增 ClusterRole/Binding
+  给 `nodes` 与 `metrics.k8s.io/{nodes,pods}` 的 get·list（nodes 是集群作用域，必须 ClusterRole）。全部只读。
+- **server**（`platform-status` 的 `/opendb-status` 新增 `cluster` 端点）：并发取 nodes / pods / node-metrics /
+  pod-metrics / events，整形成规范结构——Pod 带组件名、角色标签、所在层与类型色（`ROLES` 映射表：k8s 真名含
+  ReplicaSet 哈希不可改，这里映射成 host/runtime/collector/postgres/redis/minio/qdrant/ollama）；CPU/内存单位
+  解析支持 `250m`/`2`/`1500000000n` 与 `512Mi`/`2Gi`/裸字节；被管数据库取 `dsh_db_nodes` 左连每节点最近一次判定
+  （`opendb_task_collects` ∪ `opendb_health_collects`），离线优先于判定。
+- **面板**（新包 `ui-cluster`，client-only，750 行分五文件）：架构图（k8s 边界框 + Pod 全量 + 类型着色 + 每层居中
+  + 调用关系连线）、被管数据库舰队矩阵、节点视图、事件、右侧详情。
+
+**画连线的两个坑**（都实测踩过）：① 连线必须画在**边界框内部**的 svg 上——框有半透明白底，画在外层 stage 的 svg 会被
+盖住（R2 时线是"画了但看不见"）；② 跨层的 `host→postgres` 直连会横穿执行面的卡片、标签压在 Pod 上，改走**左侧正交总线**绕开。
+同层排序用固定的 `ORDER`（host/runtime/collector/postgres/…），按字母排会把 postgres 排到 minio/ollama 后面。
+CPU 显示：metrics-server 精度到毫核，空闲 Pod 真会回 0，写 `0m` 会被读成"没在跑"，统一显示 `<1m`。
+
+**事故：新 Pod 崩溃而滚动验收误报 PASS（本次实证，已修）**
+`ui-cluster` 的 server 入口初版只导出 `name` 没有 `apply`，cordis 报
+`invalid plugin, expect function or object with an "apply" method` → **整棵插件树加载失败**，新 Host Pod 崩溃重启 5 次。
+但 `rollout.sh` 报了 `ROLLOUT OK`：`kubectl rollout status` 的退出码被管道（`| tail -1`）吃掉，滚动没完成也继续往下；
+旧 ReplicaSet 的 Pod 因 `maxUnavailable=0` 仍在服务，于是入口 200、插件包 200、无头 Chrome 面板检查**全打在旧 Pod 上**，
+一路绿灯。已给 rollout.sh 补三道：`PIPESTATUS[0]` 非零即报错并注明"下面的验收结果不可信"、逐个 Deployment 校验 Pod
+就绪与 CrashLoopBackOff、日志关键词加 `invalid plugin, expect function`。
+**client-only 插件包必须导出空 `apply`**（对照 ui-node-monitor）——已核 ui-chart / ui-memory / ui-knowledge /
+ui-node-monitor / ui-task-inline / ui-cluster 六个包全部具备。
+
+**验收**：`scripts/browser/cluster-check.mjs` 21 项，真机 **21/21**（侧栏结构、Pod 全量 9 张、连线 15 条带 5 条关系标注、
+点 Pod 出详情、三个 tab、console 零错误）。断言只在**架构图与事件表各自的 DOM 范围内**判定——最初用整页文本匹配，
+被别的页面内容（图表刻度、Top SQL 正文里的 Killing/Started）蒙混过关，功能坏了也可能过。

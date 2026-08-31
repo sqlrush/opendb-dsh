@@ -1,4 +1,7 @@
-# platform-status 插件的 k8s 只读权限（仅本 namespace pods get/list）
+# platform-status 插件的 k8s 只读权限。
+# 命名空间内：pods / events（k8s 集群状态页的 Pod 卡片与事件表）。
+# 集群级：nodes 与 metrics.k8s.io（节点容量与实时用量——nodes 是集群作用域，必须 ClusterRole）。
+# 全部只读（get/list/watch 里只给 get/list），平台不做任何写操作。
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -12,7 +15,7 @@ metadata:
   labels: {{- include "opendb.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["pods"]
+    resources: ["pods", "events"]
     verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -26,4 +29,31 @@ subjects:
 roleRef:
   kind: Role
   name: {{ .Release.Name }}-host-readonly
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-host-cluster-readonly
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-host-cluster-readonly
+  labels: {{- include "opendb.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-host
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Release.Name }}-host-cluster-readonly
   apiGroup: rbac.authorization.k8s.io

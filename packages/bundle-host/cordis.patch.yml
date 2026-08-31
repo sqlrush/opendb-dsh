@@ -131,6 +131,10 @@
 - insert:
     - id: ui-node-monitor
       name: '@opendb-dsh/ui-node-monitor'
+# ── 资源 › k8s 集群状态（client-only；server 半边在 platform-status 的 cluster 端点）──────
+- insert:
+    - id: ui-cluster
+      name: '@opendb-dsh/ui-cluster'
 # ── 默认模型（user 2026-08-22：v4-flash → v4-pro）───────────────────────────
 - id: agent-default-model
   config:

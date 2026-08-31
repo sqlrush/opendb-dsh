@@ -9,7 +9,7 @@
  * （opendb_archived_tasks 旁路表），数据库无菜单。
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { getState, setState, subscribe } from './state.ts';
+import { getState, setState, subscribe, listResourcePanels } from './state.ts';
 
 const BLUE = '#4D6BFE';   // dsh 文件夹图标同款蓝
 
@@ -46,6 +46,13 @@ const I = {
     <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke={c} strokeWidth="1.3" strokeLinecap="round">
       <path d="M2.5 13.5h11" />
       <path d="M4.5 13V9M8 13V5.5M11.5 13V7.5" />
+    </svg>
+  ),
+  /** k8s 集群：立方体（对齐 k8s 的舵轮/立方语汇，但保持本侧栏的线性风格） */
+  cluster: (c: string, s = 15) => (
+    <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke={c} strokeWidth="1.3" strokeLinejoin="round">
+      <path d="M8 1.8 13.5 4.6v5.2L8 12.6 2.5 9.8V4.6z" />
+      <path d="M8 6.4 13.5 4.6M8 6.4 2.5 4.6M8 6.4v6.2" strokeWidth="1.1" />
     </svg>
   ),
   search: (c: string, s = 15) => (
@@ -171,6 +178,8 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
 
   return function HarnessSidebar() {
     const hs = useSyncExternalStore(subscribe, getState);
+    // 资源分组的子项 = 已注册的资源面板（插件注册会触发 subscribe 重渲染，所以这里直接读）
+    const resourceItems = listResourcePanels();
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const [agents, setAgents] = useState<any[]>([]);
     const [sessions, setSessions] = useState<any[]>([]);
@@ -398,12 +407,28 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
           {open.db && indent(nodeRows(nodes))}
         </div>
 
-        {/* 资源：与「智能体」同级的全局入口——交互与列表条目一致（hover 反馈 + 紧凑圆角选中态） */}
-        <div style={{ paddingTop: 4, paddingBottom: 2 }}>
-          <Row onClick={() => setState({ view: 'resources' })}>
-            {I.chart(T.sub as string)}
-            <span className="odbTitle">资源</span>
-          </Row>
+        {/*
+          资源：与「工作区」同级的一级目录（user 2026-08-31 定）——同款小节头 + 下挂子项，
+          每个子项对应一个已注册的资源面板（k8s 集群状态 / 模型用量）。没有插件注册子项时，
+          退回旧的单行入口，避免插件未加载完时点不进资源页。
+        */}
+        <div style={{ paddingTop: 6, paddingBottom: 2 }}>
+          {resourceItems.length > 0 ? (
+            <>
+              <div style={S.secRow}><span style={S.secTitle}>资源</span></div>
+              {indent(resourceItems.map((it) => (
+                <Row key={it.key} onClick={() => setState({ view: 'resources', resourceKey: it.key })}>
+                  {it.key === 'cluster' ? I.cluster(BLUE) : I.chart(BLUE)}
+                  <span className="odbTitle">{it.label}</span>
+                </Row>
+              )))}
+            </>
+          ) : (
+            <Row onClick={() => setState({ view: 'resources' })}>
+              {I.chart(T.sub as string)}
+              <span className="odbTitle">资源</span>
+            </Row>
+          )}
         </div>
       </div>
     );

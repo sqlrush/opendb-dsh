@@ -33,11 +33,23 @@ echo "## 滚动：$TARGETS"
 ( bad=0; total=0; codes=""; for i in $(seq 1 240); do c=$(curl -s -o /dev/null -m 3 -w "%{http_code}" "http://127.0.0.1:18080/plugins/@opendb-dsh/task-health/client.js"); total=$((total+1)); [ "$c" != "200" ] && { bad=$((bad+1)); codes="$codes $(date +%H:%M:%S)=$c"; }; sleep 1; done; echo "$total $bad$codes" ) > /tmp/rollout-window.txt 2>&1 &
 PROBE=$!
 for d in $TARGETS; do kubectl -n $NS rollout restart deploy/$d; done
-for d in $TARGETS; do kubectl -n $NS rollout status deploy/$d --timeout=600s | tail -1; done
+# rollout status 的退出码必须看：新 ReplicaSet 起不来时它非零，但旧 Pod 仍在服务，
+# 后面的入口/插件包/浏览器验收全都会打到旧 Pod 而误报 PASS（2026-08-31 ui-cluster 缺 apply 实证）。
+for d in $TARGETS; do
+  kubectl -n $NS rollout status deploy/$d --timeout=600s | tail -1
+  [ "${PIPESTATUS[0]}" = "0" ] || note "deploy/$d 未完成滚动（新 Pod 未就绪，旧 Pod 仍在服务——下面的验收结果不可信）"
+done
 
 echo "## 验收"
+# 目标 Deployment 的每个 Pod 都要就绪；崩溃重启（CrashLoopBackOff / 反复重启）一律算失败
+for d in $TARGETS; do
+  bad=$(kubectl -n $NS get pods -l app.kubernetes.io/instance --no-headers -o custom-columns="N:.metadata.name,R:.status.containerStatuses[*].ready,S:.status.containerStatuses[*].state" 2>/dev/null | grep "^$d-" | grep -cv "true")
+  [ "${bad:-0}" = "0" ] || note "deploy/$d 有 $bad 个 Pod 未就绪"
+  crash=$(kubectl -n $NS get pods --no-headers -o custom-columns="N:.metadata.name,W:.status.containerStatuses[*].state.waiting.reason" 2>/dev/null | grep "^$d-" | grep -c "CrashLoopBackOff\|Error")
+  [ "${crash:-0}" = "0" ] || note "deploy/$d 有 $crash 个 Pod 在崩溃重启"
+done
 for pod in $(kubectl -n $NS get pods -o name | grep -E "host|runtime"); do
-  n=$(kubectl -n $NS logs $pod --all-containers 2>/dev/null | grep -c "migrations\] FAILED\|ERR_MODULE_NOT_FOUND"); [ "$n" = "0" ] || note "$pod 有 $n 条迁移失败/模块缺失"
+  n=$(kubectl -n $NS logs $pod --all-containers 2>/dev/null | grep -c "migrations\] FAILED\|ERR_MODULE_NOT_FOUND\|invalid plugin, expect function"); [ "$n" = "0" ] || note "$pod 有 $n 条迁移失败/模块缺失/插件形状错误"
 done
 ok=0; for i in $(seq 1 40); do c=$(curl -s -o /dev/null -m 5 -w "%{http_code}" http://127.0.0.1:18080/); if [ "$c" = 200 ]; then ok=$((ok+1)); else ok=0; fi; [ $ok -ge 3 ] && break; sleep 2; done
 [ $ok -ge 3 ] || note "入口 18080 未连续 200"

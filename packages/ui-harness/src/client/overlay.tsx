@@ -5,7 +5,7 @@
  * 经 registerTaskPanel(typeKey, Panel) 注册专属 UI；未注册的类型用默认面板（运行历史+报告）。
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { getState, setState, subscribe, getTaskPanel, getResourcePanel, getNodePanel } from './state.ts';
+import { getState, setState, subscribe, getTaskPanel, getResourcePanel, getNodePanel, listResourcePanels } from './state.ts';
 
 
 export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown) => Promise<any>) {
@@ -543,7 +543,10 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
   }
 
   function ResourcesPage() {
-    const Panel = getResourcePanel();
+    // 资源是一级分组，下面每项一个面板（cluster = k8s 集群状态、usage = 模型用量）；
+    // 选中的项没有插件注册时退回任一已注册面板，再没有才显示内置降级页。
+    const hs = getState();
+    const Panel = getResourcePanel(hs.resourceKey) ?? getResourcePanel(listResourcePanels()[0]?.key);
     if (Panel !== undefined) return <Panel />;
     const [agents, setAgents] = useState<any[]>([]);
     useEffect(() => { void call('agents/list', {}).then((a) => setAgents(a.agents)).catch(() => {}); }, []);
@@ -637,7 +640,8 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
         </div>
       );
     }
-    const title = hs.view === 'tasks' ? '任务' : hs.view === 'databases' ? '数据库' : '资源';
+    const resItem = listResourcePanels().find((i) => i.key === hs.resourceKey);
+    const title = hs.view === 'tasks' ? '任务' : hs.view === 'databases' ? '数据库' : resItem !== undefined ? `资源 › ${resItem.label}` : '资源';
     return (
       <div style={{
         position: 'fixed', top: 0, bottom: 0, right: 0, left: hs.sidebarRight,

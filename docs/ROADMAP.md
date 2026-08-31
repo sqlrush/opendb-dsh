@@ -156,6 +156,7 @@ MySQL 等非 PG 系数据库；k8s 内数据库（operator）；公有云 SaaS �
 | W6·收口 ✅ | CI 门（.github/workflows/ci.yml：build+patch lint+dump-config PENDING 零容忍+PG 单测）；ui-node-monitor 拆包 ✅（registerNodePanel 桥）；UI 视觉第一轮 ✅（Sparkline 渐变/Empty 空态/数据库页 950 节点适配/侧栏限量/表格 hover）——后续微调随 user 反馈 |
 | P2 W1（事件驱动） | **alert-ddl** · **task-incident**（双半边） |
 | 容量与增长报告（2026-08-31，user 通过 `docs/prototypes/capacity-r1.html` 后开发）✅ | **task-capacity**（TaskType `capacity` + 面板 + 纯函数判定 CAP_*）· **tool-capacity-collect**（`capacity_collect`：大小/增速/非表占用/vacuum·analyze 新鲜度，采样表 `opendb_capacity_samples` migration 019）· chart-kit Line 扩灰带/事件标线/断线/虚线 |
+| 资源 › k8s 集群状态（2026-08-31，user 通过 `docs/prototypes/cluster-r4.html` 后开发）✅ | **ui-cluster**（client-only 面板：架构图 + 舰队矩阵 + 节点视图 + 事件）· platform-status 扩 `cluster` 端点（k8s 只读 API + metrics-server + 注册表判定）· RBAC 扩 events 与集群级 nodes·metrics · ui-harness 侧栏「资源」升一级目录、`registerResourcePanel` 改按 key 多面板 |
 | P2 W2（常驻监控+技能） | **task-monitor-dashboard**（双半边：runMode:'service' 首个实践）· **skill-pg** |
 | P2 W3（知识与检索）✅ | knowledge-pg · tool-knowledge（实际交付名，代 knowledge-ingest）· ui-memory / ui-knowledge（双半边）· session-query-pg |
 | P2 W4（平台面收尾） | **connection-auth**（简版）· **agent-presets-pg** · **storage-redis**（可选） |

@@ -274,6 +274,9 @@ importers:
       '@opendb-dsh/ui-chart':
         specifier: workspace:*
         version: link:../ui-chart
+      '@opendb-dsh/ui-cluster':
+        specifier: workspace:*
+        version: link:../ui-cluster
       '@opendb-dsh/ui-harness':
         specifier: workspace:*
         version: link:../ui-harness
@@ -1613,6 +1616,21 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1
 
+  packages/ui-cluster:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.1
+        version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@types/react':
+        specifier: ^18.3.12
+        version: 18.3.31
+      esbuild:
+        specifier: ^0.24.0
+        version: 0.24.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+
   packages/ui-harness:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -1876,6 +1894,9 @@ importers:
       '@opendb-dsh/ui-chart':
         specifier: workspace:*
         version: link:../../packages/ui-chart
+      '@opendb-dsh/ui-cluster':
+        specifier: workspace:*
+        version: link:../../packages/ui-cluster
       '@opendb-dsh/ui-harness':
         specifier: workspace:*
         version: link:../../packages/ui-harness

@@ -15,11 +15,13 @@ export interface HarnessState {
    * 历史里只有一张表，点不进任何一次的详细大盘。
    */
   selectedRunId: string;
+  /** 资源页当前子项（侧栏「资源」分组下选中的那一项）：cluster / usage。 */
+  resourceKey: string;
   /** 侧栏右缘 px —— 主区页面贴齐它渲染（侧栏收展实时跟随），不盖侧栏。 */
   sidebarRight: number;
 }
 
-let state: HarnessState = { view: 'chat', agentId: '', agentName: '', selectedTaskId: '', selectedNodeId: '', selectedRunId: '', sidebarRight: 260 };
+let state: HarnessState = { view: 'chat', agentId: '', agentName: '', selectedTaskId: '', selectedNodeId: '', selectedRunId: '', resourceKey: 'cluster', sidebarRight: 260 };
 const listeners = new Set<() => void>();
 
 export function getState(): HarnessState {
@@ -76,15 +78,27 @@ declare global {
   }
 }
 
-/** 全局资源大盘面板（platform-status 插件的 client 半边注册，单一）。 */
+/**
+ * 资源页面板（2026-08-31 起按 key 多面板）：侧栏「资源」是一级分组，下面每一项对应一个 key
+ * （cluster = k8s 集群状态，usage = 模型用量…）。不带 key 注册的沿用旧语义 = 'usage'，
+ * 这样 platform-status 老版本不改也能继续挂上。
+ */
 export type ResourcePanelComponent = () => any;
-let resourcePanel: ResourcePanelComponent | undefined;
-export function registerResourcePanel(panel: ResourcePanelComponent): () => void {
-  resourcePanel = panel;
+export const RESOURCE_ITEMS: { key: string; label: string }[] = [
+  { key: 'cluster', label: 'k8s 集群状态' },
+  { key: 'usage', label: '模型用量' },
+];
+const resourcePanels = new Map<string, ResourcePanelComponent>();
+export function registerResourcePanel(panel: ResourcePanelComponent, key = 'usage'): () => void {
+  resourcePanels.set(key, panel);
   for (const fn of listeners) fn();
-  return () => { resourcePanel = undefined; };
+  return () => { resourcePanels.delete(key); };
 }
-export function getResourcePanel(): ResourcePanelComponent | undefined { return resourcePanel; }
+export function getResourcePanel(key = 'usage'): ResourcePanelComponent | undefined { return resourcePanels.get(key); }
+/** 已注册的资源项（按 RESOURCE_ITEMS 顺序），侧栏据此渲染子项——没有插件注册的项不显示。 */
+export function listResourcePanels(): { key: string; label: string }[] {
+  return RESOURCE_ITEMS.filter((i) => resourcePanels.has(i.key));
+}
 
 /** 节点监控详情面板（ui-node-monitor 插件注册；W6 拆包——ui-harness 内置实现降级备用）。 */
 export type NodePanelComponent = (props: { nodeId: string }) => any;
@@ -108,7 +122,7 @@ if (typeof window !== 'undefined') {
   };
   for (const p of queued) {
     if (p.kind === 'task' && typeof p.key === 'string') registerTaskPanel(p.key, p.comp);
-    else if (p.kind === 'resource') registerResourcePanel(p.comp);
+    else if (p.kind === 'resource') registerResourcePanel(p.comp, typeof p.key === 'string' ? p.key : undefined);
     else if (p.kind === 'node') registerNodePanel(p.comp);
   }
 }
