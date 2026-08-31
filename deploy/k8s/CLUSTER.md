@@ -484,6 +484,8 @@ GRANT SELECT ON ALL TABLES IN SCHEMA gsbench_e2e_20260801_100g, gsbench TO opend
 
 生产接入清单更新：平台只读账号 = MONADMIN + AUDITADMIN + 业务 schema 的 USAGE/SELECT + 事务级只读。
 新建表需 `ALTER DEFAULT PRIVILEGES` 才自动继承（未做，按需再议）。
+（2026-08-31 注：`gsbench_e2e_20260801_100g` 已随压测数据清理整 schema 删除，上面那两条授权只剩历史意义；
+账号本身 08-27 起已是 SYSADMIN。经过见文末「og5 压测数据清理」。）
 
 ## 阈值可配置化插件上线（2026-08-24，user 拍板：平台配置可写、实时生效、改前必确认）
 
@@ -978,3 +980,32 @@ push 前补齐；以后新增插件包按 CLAUDE.md"三处缺一不可"之外再
 
 **已知边界**：08-18（字典开始观测）之前的列级差异只能按当前结构回推；业务表 DDL 原文需 og 审计 `audit_system_object` 覆盖 table/index
 （当前只有账号类进审计）；`pg_object.mtime` 刷新但签名未变的事件（授权、统计）显示为"仅时间戳"。
+
+## og5 压测数据清理（2026-08-31，user 授权后由平台会话执行）
+
+起因：user 问「og5 那个库是不是很大了」。执行前盘点（容器 `og5`，数据目录 `/var/lib/opengauss/data`）：**174 GB**，
+其中 postgres 库 159 GB；表空间 `gsbench_ts`（`data/pg_location`）135 GB；schema 大小：`gsbench_e2e_20260801_100g` 140 GB
+（84 对象，fact_sales 32 GB / 1.118 亿行、plan_data 27 GB）、`gsbench` 25 GB（fact_sales 3,355 万行 = 08-28 超时事故本尊）、
+`gsbench_v4` 11 GB、`loadtest` 4.6 GB、`bench` 234 MB；库外大头：`pg_catalog.statement_history` 16 GB / 730 万行
+（`enable_stmt_track=on`、`track_stmt_stat_level=L2,L2`、保留 7 天）、pg_xlog 8.3 GB（`checkpoint_segments=256`，无复制槽）、
+pg_log 4.3 GB（05-01 起 325 个文件）、两个 7 月 core 文件约 1 GB。
+
+预检（以容器内 `omm` = sysadmin）：目标 schema 无活动会话；其它 schema 没有依赖它们的对象；`gsbench_ts` 里还有 169 个
+gsbench / gsbench_v4 的对象 → **只删 schema，不动表空间**（文件随表删除即释放）。
+
+执行：`bash /tmp/og5-as-omm.sh /tmp/og5-drop-bench.sql`（mac；脚本 = `docker cp` SQL 文件进容器 + `docker exec -u omm og5 gsql -p 5432 -d postgres -At -f`，
+无需密码）——`DROP SCHEMA gsbench_e2e_20260801_100g / loadtest / bench CASCADE`，级联 34 + 2 + 2 张表，**1.3 s** 完成。
+
+结果：postgres 库 **159 → 48 GB**；`gsbench_ts` 135 → 29 GB；`pg_default` 25 → 20 GB；数据目录 **174 → 63 GB**。
+剩余 schema：`gsbench`、`gsbench_v4`（保留原因：慢 SQL 演示与超时验收的数据源；`scripts/e2e-db-query-timeout.mjs` 已改打
+`gsbench.fact_sales`，真机 PASS）。清理后立即打了一次字典快照（collector `POST /dict-snapshot?node=og5`），`opendb_dict_changes` 记下
+**91 条 removed**（100g schema 84 + loadtest 3 + bench 4，含索引/序列），`opendb_dict_objects` 里三个 schema 已无残留——结构历史会显示为
+一批「批量登记」删除。VM 侧（`docker exec og5 df -h /`）可用 153 G → 205 G：没到 111 G 是因为同一天 docker 构建缓存也在涨
+（`docker system df`：Build Cache 141.6 GB 全部 reclaimable、停止容器 12.3 GB、悬空卷 11 GB——`docker builder prune` 是下一个大头，user 定）。
+宿主机侧：OrbStack 虚拟盘对 mac 的空间回收是异步 TRIM，删后几分钟内 mac 的 `df` 不会等量下降（mac Data 卷当时 217 GiB 可用）。
+
+纪律：① og5 的 SQL 一律走文件（`/tmp/og5-as-omm.sh` / `/tmp/og5-as-ro.sh`），inline `docker exec … gsql -c "…"` 经 ssh 引号必坏；
+② Claude Code auto 模式分类器会拦 ssh 里的 `DROP`，user 明确说「你来执行」才放行——预检、SQL 文件、仓库解引用都先做完再请示。
+
+未做、待 user 定：`gsbench` 25 GB / `gsbench_v4` 11 GB；`statement_history` 16 GB（`track_stmt_stat_level` 改 `OFF,L0` 才根治，或截断）；
+pg_log 5–7 月文件与两个 core 文件约 5 GB。
