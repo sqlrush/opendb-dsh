@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>平台规则目录 · R1 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC;
+    --health:#2FA79A; --sqlreview:#4176E6; --wdr:#8B6BE0; --ddl:#C9862D; --capacity:#D6604D;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  .num{font-variant-numeric:tabular-nums}.mono{font-family:var(--mono)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  .app{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:calc(100vh - 31px)}
+  .side{border-right:1px solid var(--line);padding:14px 12px;font-size:14px;background:#fff}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:2px 8px 14px}
+  .brand i{display:inline-block;width:20px;height:20px;border-radius:5px;background:var(--ink);flex:none}
+  .newbtn{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:7px;color:var(--ink);margin-bottom:14px}
+  .sec{font-size:12.5px;color:var(--dim);padding:6px 8px 4px;display:flex;align-items:center;gap:6px}
+  .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;color:var(--ink)}
+  .row .n{margin-left:auto;font-size:12.5px;color:var(--dim)}
+  .row.on{background:var(--fill2);font-weight:500}
+  .main{min-width:0}
+  .top{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 24px;font-size:14px}
+  .top b{font-weight:600}.top .dim{color:var(--dim)}
+  .page{padding:18px 24px 48px;min-width:0}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px}
+  .title h1{font-size:20px;font-weight:600;margin:0}
+  .title .meta{font-size:13.5px;color:var(--dim)}
+  .lead{font-size:14.5px;color:var(--sub);max-width:76em;margin:5px 0 0}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;border-radius:6px;padding:1px 9px;font-weight:500;white-space:nowrap}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}
+  .chip.gap{background:var(--notice-soft);color:var(--notice);font-size:11.5px;padding:0 7px;font-weight:500}
+
+  /* 概览 */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(226px,1fr));gap:10px;margin:14px 0 6px}
+  .stat{background:var(--fill);border-radius:8px;padding:11px 13px;min-width:0}
+  .stat .l{font-size:12.5px;color:var(--dim)}
+  .stat .v{font-size:22px;font-weight:600;line-height:1.35;margin-top:1px}
+  .stat .v small{font-size:12.5px;font-weight:500;color:var(--dim);margin-left:5px}
+  .stat .d{font-size:12px;color:var(--dim);line-height:1.55;margin-top:2px}
+  .segbar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:7px 0 5px}
+  .segbar i{display:block;height:100%}
+  .mini{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--sub)}
+  .mini i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+
+  /* 工具条 */
+  .bar{position:sticky;top:0;background:#fff;z-index:5;padding:12px 0 10px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .bar .l1{display:flex;gap:10px;align-items:center}
+  .bar .l2{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:9px}
+  .search{flex:1 1 auto;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:5px 11px}
+  .search input{border:none;outline:none;font:14px/1.6 inherit;width:100%;background:transparent;color:var(--ink)}
+  .f{border:1px solid var(--line);border-radius:6px;padding:1px 10px;font-size:13px;color:var(--sub);background:#fff;cursor:pointer;white-space:nowrap}
+  .f.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .f.lv.on{border-color:transparent}
+  .f.lv[data-lv=critical].on{background:var(--crit)}.f.lv[data-lv=warn].on{background:var(--warn)}.f.lv[data-lv=notice].on{background:var(--notice)}
+  .bar .sp{color:var(--dim);font-size:13px;margin-left:4px}
+  .bar .sp:first-child{margin-left:0}
+  .count{font-size:13px;color:var(--dim);white-space:nowrap}
+
+  /* 分组卡 */
+  .grp{border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);margin-bottom:16px;overflow:hidden;background:#fff}
+  .grp>.hd{display:flex;gap:12px;align-items:flex-start;padding:14px 18px 12px;border-left:4px solid var(--c)}
+  .grp .hd .t{font-size:17px;font-weight:600}
+  .grp .hd .i{font-size:13.5px;color:var(--sub);margin-top:2px}
+  .grp .hd .src{margin-left:auto;font-size:12px;color:var(--dim);white-space:nowrap;padding-top:5px}
+  .grp .hd .cnt{font-size:12.5px;color:var(--dim);font-weight:400;margin-left:8px}
+
+  table{border-collapse:collapse;width:100%}
+  thead th{font-size:12.5px;color:var(--dim);font-weight:500;text-align:left;padding:7px 12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--fill);white-space:nowrap}
+  tbody td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13.5px}
+  tbody tr[data-id]{cursor:pointer}
+  tbody tr[data-id]:hover,tbody tr.open{background:var(--fill)}
+  .code{font:600 11.5px var(--mono);background:var(--fill);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--sub);white-space:nowrap}
+  tr.open .code,tr[data-id]:hover .code{background:#fff}
+  .nm{font-weight:500}
+  .steps{display:flex;gap:5px;flex-wrap:wrap}
+  .step{font:500 12px var(--mono);border-radius:5px;padding:0 7px;white-space:nowrap}
+  .step.notice{background:var(--notice-soft);color:var(--notice)}
+  .step.warn{background:var(--warn-soft);color:var(--warn)}
+  .step.critical{background:var(--crit-soft);color:var(--crit)}
+  .step.plain{background:var(--fill2);color:var(--sub)}
+  .desc{color:var(--sub)}
+  .tune{font-size:12px;color:var(--blue);background:#EEF3FF;border-radius:5px;padding:0 7px;white-space:nowrap}
+  .tune.edited{background:#FFF3E0;color:#B26A00}
+  /* 命中列：固定轨道 + 命中/运行 */
+  .hit{display:flex;align-items:center;gap:8px;justify-content:flex-end;white-space:nowrap}
+  .track{width:44px;height:6px;border-radius:3px;background:var(--rest);overflow:hidden;flex:none}
+  .track i{display:block;height:100%;background:var(--blue);opacity:.55}
+  .track.always i{background:var(--notice);opacity:.85}
+  .hit .t{font-size:12.5px;color:var(--sub)}
+  .hit .t b{font-weight:600;color:var(--ink)}
+  .hit .zero{font-size:12.5px;color:var(--dim)}
+  .caret{color:var(--dim);font-size:11px;width:9px;display:inline-block}
+
+  /* 展开详情 */
+  .det td{background:#FBFCFD}
+  .detg{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;padding:2px 0 4px}
+  .detg .k{font-size:12px;color:var(--dim);margin-bottom:2px}
+  .detg .k+.k{margin-top:10px}
+  .detg .v{font-size:13.5px;color:var(--ink);line-height:1.65}
+  .ev{font:12.5px/1.7 var(--mono);background:#fff;border:1px solid var(--line);border-radius:7px;padding:8px 11px;color:var(--sub);white-space:pre-wrap;word-break:break-word}
+  .kv{display:flex;gap:8px;align-items:baseline;font-size:13px;padding:2px 0;flex-wrap:wrap}
+  .kv b{font:600 12px var(--mono);color:var(--sub)}
+  .arrow{color:var(--dim)}
+  .link{color:var(--blue);font-size:12.5px;cursor:pointer}
+  .flag{font-size:12.5px;color:var(--notice);background:var(--notice-soft);border-radius:6px;padding:4px 9px;margin-top:8px;line-height:1.6}
+
+  .notes{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;padding:9px 18px 12px;font-size:13px;color:var(--dim)}
+  .foot{font-size:13px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:10px 16px;margin-top:8px;line-height:1.85}
+  .empty{padding:26px 18px;color:var(--dim);font-size:14px;text-align:center}
+</style>
+</head>
+<body>
+<div class="ribbon">设计稿 R1 · 任务页「平台规则目录」——规则与阈值取自 2026-08-31 代码，命中次数取自 og5 近 30 天采集存档；待 user 评审</div>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><i></i>opendb<span style="font-weight:600">HARNESS</span></div>
+    <div class="newbtn">⊕ 新会话</div>
+    <div class="sec">工作区</div>
+    <div class="sec">◇ 会话 <span class="n">10</span></div>
+    <div class="sec">▤ 任务 <span class="n">5</span></div>
+    <div class="row">平台阈值配置</div>
+    <div class="row on">平台规则目录</div>
+    <div class="row">og5-ddl-lab</div>
+    <div class="row">og5-capacity</div>
+    <div class="row">og5-wdr-1922-1923</div>
+    <div class="sec" style="margin-top:8px">▤ 数据库 <span class="n">1</span></div>
+    <div class="row">og5</div>
+    <div class="sec" style="margin-top:14px">资源</div>
+    <div class="row">k8s 集群状态</div>
+    <div class="row">模型用量</div>
+  </aside>
+
+  <main class="main">
+    <div class="top"><b>任务</b><span class="dim">agent: og-lab</span><span style="margin-left:auto" class="dim">返回会话</span></div>
+    <div class="page">
+      <div class="title">
+        <h1>平台规则目录</h1>
+        <span class="chip ok">✓ 判定归脚本 · 级别不可被模型下调</span>
+        <span class="meta">代码即真相 · 目录与实现由单测守护同步</span>
+      </div>
+      <p class="lead">报告里每一条「发现」都出自下面这些确定性规则：命中即立发现、级别由脚本定，模型只做解读与串联。
+        阈值数字是代码默认值，被改过的会标出当前生效值；右侧「近 30 天命中」是这条规则在 og5 上真的响过几次——
+        常年不响可能是阈值太松，每次都响多半是阈值该复议。</p>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="l">确定性规则</div>
+          <div class="v"><span class="num">56</span><small>条 · 5 个插件</small></div>
+          <div class="d">健康 15 · SQL 审核 14 · WDR 8 · DDL 8 · 容量 11</div>
+        </div>
+        <div class="stat">
+          <div class="l">最高可判级别分布</div>
+          <div class="segbar"><i style="background:var(--crit);width:14%"></i><i style="background:var(--warn);width:53%"></i><i style="background:var(--notice);width:33%"></i></div>
+          <div class="mini"><span><i style="background:var(--crit)"></i>critical 8</span><span><i style="background:var(--warn)"></i>warn 30</span><span><i style="background:var(--notice)"></i>notice 18</span></div>
+        </div>
+        <div class="stat">
+          <div class="l">可调阈值</div>
+          <div class="v"><span class="num">44</span><small>项 · 已改 1</small></div>
+          <div class="d">改在「平台阈值配置」，下次采集生效；<b>能改的只有数字</b></div>
+        </div>
+        <div class="stat">
+          <div class="l">近 30 天几乎每次都命中</div>
+          <div class="v"><span class="num">6</span><small>条 · 建议复议阈值</small></div>
+          <div class="d mono" style="font-size:11.5px">SESS_ACTIVE_HIGH · CACHE_LOW · WAIT_CONC · LWLOCK_HOT · XACT_LONG · IDX_UNUSED</div>
+        </div>
+      </div>
+
+      <div class="bar">
+        <div class="l1">
+          <label class="search">🔍<input id="q" placeholder="搜规则码 / 名称 / 判据，例如 DDLR、缓存、死元组、statement_history"></label>
+          <span class="count" id="count"></span>
+        </div>
+        <div class="l2">
+          <span class="sp">插件</span><span id="plugs" style="display:contents"></span>
+          <span class="sp">级别</span>
+          <span class="f lv" data-lv="critical">critical</span><span class="f lv" data-lv="warn">warn</span><span class="f lv" data-lv="notice">notice</span>
+          <span class="sp">只看</span>
+          <span class="f" id="fTune">⚙ 可调阈值</span>
+          <span class="f" id="fHit">近 30 天命中过</span>
+          <span class="f" id="fGap">目录缺登记</span>
+        </div>
+      </div>
+
+      <div id="list"></div>
+
+      <div class="foot">
+        📋 <b>阈值怎么改</b>：会话里说一句「把 CONN_HIGH 的 warn 改成 0.85」，智能体复述确认后落库，下次采集起生效；改动记录与当前生效值见任务页「平台阈值配置」。
+        比较方向、级别阶梯、规则语义都在代码里，<b>不随会话改</b>。<br>
+        📚 <b>与客户规范的关系</b>：客户自带的规范文档进知识库，报告里作为对照引用，<b>参考不改判</b>（KB 契约）——级别永远由这张表决定。<br>
+        🔒 <b>只读定位</b>：规则只产出发现与建议，平台不执行任何变更；能在库上做什么由数据库自己的授权决定。<br>
+        🧮 <b>「近 30 天命中」口径</b>：命中运行数 / 该插件同期运行数，取自采集存档（健康 606 次 · SQL 审核 20 次带规则扫描 · DDL 9 次 · WDR 5 次 · 容量 5 次），只计非 ok 的发现。
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const PLUGINS = [
+  { key:'health', cn:'健康检查', color:'var(--health)', runs:606,
+    title:'健康检查 · 逐维阈值判定', source:'packages/task-health/src/collectors.ts',
+    intro:'确定性采集器逐维出证据包，阈值命中即立发现；整体状态 = 最差级别，模型不可下调。',
+    notes:['集群 scope 追加：COMMON_*（同 code ≥半数实例）、SET_DRIFT（关键参数漂移）、WORST_INSTANCE（最差上浮）'] },
+  { key:'sqlreview', cn:'SQL 审核', color:'var(--sqlreview)', runs:20,
+    title:'SQL 审核 · 目录 / 文本 / 计划三类', source:'packages/task-sqlreview/src/rules.ts · sqlscan.ts',
+    intro:'目录类查系统目录、文本类对 Top-N 慢 SQL 正则、计划类标注 EXPLAIN 行；优化建议走验证阶梯（explain-verified / estimated / no-gain / plan-unavailable）。' },
+  { key:'wdr', cn:'WDR 窗口', color:'var(--wdr)', runs:5,
+    title:'WDR 窗口 · 窗口阈值 + 归因纪律', source:'packages/task-wdr/src/wdr.ts',
+    intro:'窗口 = 既有快照对 delta；阈值判定与 Top SQL 归因全部脚本产出。',
+    notes:['等待事件剔除 STATUS 空闲类（wait cmd 等归因噪声）','只消费既有快照：绝不 create_wdr_snapshot / 不碰 GUC'] },
+  { key:'ddl', cn:'DDL 追溯', color:'var(--ddl)', runs:9,
+    title:'DDL 追溯 · 规范扫描 + 时间轴', source:'packages/task-ddl/src/ddl.ts',
+    intro:'三源阶梯（字典变更 / 审计日志 / dbe_perf）合并时间轴；规范规则对时间轴条目逐条扫描。',
+    notes:['审计条目按对象名 ±15 分钟吸附字典条目；同刻 >30 条折叠为「批量登记」'] },
+  { key:'capacity', cn:'容量与增长', color:'var(--capacity)', runs:5,
+    title:'容量与增长 · 空间 / 增速 / 新鲜度', source:'packages/task-capacity/src/capacity.ts',
+    intro:'大小、增速、非表占用、vacuum 与统计新鲜度全部脚本判定；主机磁盘与文件级数据取不到时如实降级，不外推、不误报。',
+    notes:['2026-08-31 容量插件上线后新补入目录'] },
+];
+
+// levels[].lv 用于筛选与配色；tune = 可调阈值 key；hit = 近 30 天命中的运行数；gap = 存档里出现过但目录未登记
+const RULES = [
+  // ── health（近 30 天 606 次运行）
+  { p:'health', id:'CONN_HIGH', name:'连接占用', levels:[{lv:'warn',t:'warn ≥80%'},{lv:'critical',t:'critical ≥90%'}], desc:'当前连接数 / max_connections', from:'pg_stat_activity · max_connections',
+    tune:['connRatio.warn','connRatio.critical'], hit:0, sample:'近 30 天未触发（og5 连接数长期在 30% 以下）' },
+  { p:'health', id:'CACHE_LOW', name:'缓存命中率', levels:[{lv:'notice',t:'notice <99%'},{lv:'warn',t:'warn <95%'}], desc:'blks_hit /（hit + read）', from:'pg_stat_database',
+    tune:['cacheHit.notice','cacheHit.warn'], hit:606, sample:'缓存命中率 98.2%，低于 99% 关注线（notice）' },
+  { p:'health', id:'XACT_LONG / XACT_IDLE', name:'长事务 · 空闲事务', levels:[{lv:'notice',t:'notice ≥300s'},{lv:'warn',t:'warn ≥1800s'},{lv:'critical',t:'critical ≥7200s'}], desc:'从 xact_start 起算；idle in transaction 单列 code', from:'pg_stat_activity.xact_start',
+    tune:['xactSec.notice','xactSec.warn','xactSec.critical'], hit:605, sample:'pid 2814386 事务已开 3h12m 且 idle in transaction（critical）' },
+  { p:'health', id:'BLOAT_MID / BLOAT_HIGH', name:'死元组膨胀', levels:[{lv:'notice',t:'notice ≥15%'},{lv:'warn',t:'warn ≥30%'}], desc:'n_dead_tup /（live + dead），只看 live > 1 万的表', from:'pg_stat_user_tables',
+    tune:['bloatRatio.notice','bloatRatio.warn'], hit:541, sample:'gsbench.history 死元组 34%（warn）' },
+  { p:'health', id:'SLOWSQL / SLOWSQL_MANY', name:'慢 SQL', levels:[{lv:'notice',t:'notice 均耗时 ≥1000ms'},{lv:'warn',t:'warn ≥3 条 ≥3000ms'}], desc:'按均耗时取 Top-N', from:'dbe_perf.statement',
+    tune:['slowAvgMs.notice','slowAvgMs.warn'], hit:350, sample:'3 条 SQL 均耗时超 3s，最慢 8.4s（warn）' },
+  { p:'health', id:'LOCK_CHAIN', name:'锁与阻塞链', levels:[{lv:'warn',t:'warn ≥1 会话被阻塞'},{lv:'critical',t:'critical ≥5'}], desc:'未授予的锁 join 持有者，输出完整阻塞链', from:'pg_locks · pg_stat_activity',
+    tune:['blockedSessions.warn','blockedSessions.critical'], hit:1, sample:'1 条阻塞链：pid 281 → pid 314（AccessExclusiveLock）' },
+  { p:'health', id:'CKPT_REQ', name:'被动 checkpoint', levels:[{lv:'notice',t:'notice ≥30%'},{lv:'warn',t:'warn ≥50%'}], desc:'checkpoints_req /（timed + req）', from:'pg_stat_bgwriter',
+    tune:['ckptReqShare.notice','ckptReqShare.warn'], hit:0, sample:'近 30 天未触发' },
+  { p:'health', id:'WAIT_CONC', name:'等待集中', levels:[{lv:'notice',t:'notice Top1 ≥40%'}], desc:'Top1 等待事件占全部等待的比例', from:'dbe_perf.wait_events',
+    tune:['waitTopShare.notice'], hit:605, sample:'WALWriteWait 占全部等待 46%（notice）' },
+  { p:'health', id:'LWLOCK_HOT', name:'LWLock 争用', levels:[{lv:'notice',t:'notice ≥20%'},{lv:'warn',t:'warn ≥40%'}], desc:'LWLOCK 类等待占总等待', from:'dbe_perf.wait_events',
+    tune:['lwlockShare.notice','lwlockShare.warn'], hit:605, sample:'LWLock 类占 23%，以 buffer_content 为主（notice）' },
+  { p:'health', id:'SESS_ACTIVE_HIGH', name:'活跃会话', levels:[{lv:'notice',t:'notice ≥5'}], desc:"state = 'active' 计数", from:'pg_stat_activity',
+    tune:['activeSessions.notice'], edited:{ key:'activeSessions.notice', now:'5', def:'50', who:'会话「og5过载状态查询」', when:'08-25', why:'用户要求进一步收紧：og5 活跃会话 ≥5 即触发 notice' },
+    hit:606, sample:'活跃会话 7 个（notice，当前阈值 5）' },
+  { p:'health', id:'IDX_INVALID / IDX_UNUSED', name:'索引健康', levels:[{lv:'warn',t:'warn 失效 > 0'},{lv:'notice',t:'notice 未用 > 0'}], desc:'indisvalid = false / idx_scan = 0（排除 PK 与唯一索引）', from:'pg_index · pg_stat_user_indexes',
+    tune:[], hit:605, sample:'12 个索引 idx_scan = 0（notice）' },
+  { p:'health', id:'OS_LOAD_HIGH', name:'主机负载', levels:[{lv:'notice',t:'notice'}], desc:'主机侧负载采集（存档里真出现过，但目录一直没登记这条）', from:'节点主机采集',
+    tune:[], hit:35, gap:true, sample:'近 30 天 35 次运行里出现过（目录未登记，开码时补进 catalog）' },
+  { p:'health', id:'XACT_PREPARED', name:'悬挂两阶段事务', levels:[{lv:'notice',t:'notice > 0'}], desc:'未决的 prepared transaction 会卡住 vacuum', from:'pg_prepared_xacts', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'health', id:'REPL_BROKEN', name:'复制异常', levels:[{lv:'critical',t:'critical state ≠ streaming'}], desc:'无备机 = 正常单机，不报', from:'pg_stat_replication', tune:[], hit:0, sample:'og5 单机，无复制关系' },
+  { p:'health', id:'NODE_UNREACHABLE', name:'节点不可达', levels:[{lv:'warn',t:'warn'}], desc:'整机采集失败时如实降级，不猜测健康度', from:'采集器自身', tune:[], hit:0, sample:'近 30 天未触发' },
+
+  // ── sqlreview（近 30 天 20 次带规则扫描的运行）
+  { p:'sqlreview', id:'TBL001', name:'大表无主键', levels:[{lv:'warn',t:'warn'},{lv:'critical',t:'critical 被慢 SQL 的 UPDATE/DELETE 命中'}], desc:'> 1 万行且无 PK / 唯一键；确定性联动升级', from:'pg_class · pg_constraint',
+    tune:[], hit:20, sample:'gsbench.history 无主键，且被一条 3.2s 的 DELETE 命中 → critical' },
+  { p:'sqlreview', id:'TBL002', name:'大表无索引', levels:[{lv:'warn',t:'warn'}], desc:'> 10 万行且无任何索引', from:'pg_class · pg_index', tune:[], hit:20, sample:'2 张 10 万行以上的表没有任何索引' },
+  { p:'sqlreview', id:'IDX001', name:'失效索引', levels:[{lv:'warn',t:'warn'}], desc:'indisvalid = false', from:'pg_index', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'sqlreview', id:'IDX002', name:'索引列过多', levels:[{lv:'notice',t:'notice'}], desc:'indnatts > 5', from:'pg_index', tune:[], hit:20, sample:'一个索引含 7 列' },
+  { p:'sqlreview', id:'IDX003', name:'完全重复索引', levels:[{lv:'warn',t:'warn'}], desc:'同表同列序的两个索引', from:'pg_index', tune:[], hit:20, sample:'同表同列序重复建了两个索引' },
+  { p:'sqlreview', id:'IDX004', name:'前缀冗余索引', levels:[{lv:'notice',t:'notice'}], desc:'(a) 被 (a,b) 覆盖', from:'pg_index', tune:[], hit:20, sample:'(o_w_id) 被 (o_w_id,o_d_id) 覆盖' },
+  { p:'sqlreview', id:'IDX005', name:'从未使用索引', levels:[{lv:'notice',t:'notice'}], desc:'idx_scan = 0（排除 PK 与唯一索引）', from:'pg_stat_user_indexes', tune:[], hit:20, sample:'—' },
+  { p:'sqlreview', id:'COL001', name:'超长 varchar', levels:[{lv:'notice',t:'notice'}], desc:'varchar(> 4000)', from:'pg_attribute', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'sqlreview', id:'DML001', name:'无 WHERE 的 UPDATE / DELETE', levels:[{lv:'critical',t:'critical'}], desc:'对 Top-N 慢 SQL 正文正则', from:'dbe_perf.statement 正文', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'sqlreview', id:'DQL001', name:'SELECT *', levels:[{lv:'notice',t:'notice'}], desc:'全列拉取', from:'SQL 正文', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'sqlreview', id:'DQL002', name:'前置模糊 LIKE', levels:[{lv:'warn',t:'warn'}], desc:"LIKE '%…' 无法走索引", from:'SQL 正文', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'sqlreview', id:'DQL003', name:'NOT IN 子查询', levels:[{lv:'notice',t:'notice'}], desc:'NULL 语义陷阱，建议改 NOT EXISTS', from:'SQL 正文', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'sqlreview', id:'PLAN_SEQSCAN', name:'计划：全表扫描', levels:[{lv:'notice',t:'notice'},{lv:'warn',t:'warn rows > 10 万'}], desc:'在 EXPLAIN 行内标注，不改判 SQL 级别', from:'EXPLAIN 计划树', tune:[], hit:null, sample:'Seq Scan on history (rows=4.2e7)' },
+  { p:'sqlreview', id:'PLAN_SPILL', name:'计划：排序 / 聚合下盘', levels:[{lv:'warn',t:'warn'}], desc:'Sort Method: external / Disk:', from:'EXPLAIN 计划树', tune:[], hit:null, sample:'Sort Method: external merge  Disk: 18.4GB' },
+
+  // ── wdr（近 30 天 5 次运行）
+  { p:'wdr', id:'WDR_LOAD_HIGH', name:'平均活跃会话', levels:[{lv:'notice',t:'notice ≥2'},{lv:'warn',t:'warn ≥5'}], desc:'ΔDB_TIME / 窗口时长', from:'两次 WDR 快照 delta',
+    tune:['avgActive.notice','avgActive.warn'], hit:4, sample:'窗口 9 分钟，AAS 6.7（warn）' },
+  { p:'wdr', id:'WDR_TEMP_SPILL', name:'临时文件下盘', levels:[{lv:'notice',t:'notice ≥10MB'},{lv:'warn',t:'warn ≥100MB'}], desc:'Δtemp_bytes（库级）', from:'pg_stat_database delta',
+    tune:['tempBytes.notice','tempBytes.warn'], hit:4, sample:'窗口内临时下盘 18.4GB（warn）' },
+  { p:'wdr', id:'WDR_CACHE_LOW', name:'窗口命中率', levels:[{lv:'notice',t:'notice <99%'},{lv:'warn',t:'warn <95%'}], desc:'用窗口内 blks delta 算命中率，不用累计值', from:'pg_stat_database delta',
+    tune:['cacheHit.notice','cacheHit.warn'], hit:4, sample:'窗口命中率 93.1%（warn）' },
+  { p:'wdr', id:'WDR_CKPT_REQ', name:'被动 checkpoint', levels:[{lv:'notice',t:'notice ≥30%'},{lv:'warn',t:'warn ≥50%'}], desc:'窗口 delta 的被动占比', from:'pg_stat_bgwriter delta',
+    tune:['ckptReqShare.notice','ckptReqShare.warn'], hit:0, sample:'近 30 天未触发' },
+  { p:'wdr', id:'WDR_DEADLOCK', name:'死锁', levels:[{lv:'warn',t:'warn > 0'}], desc:'Δdeadlocks', from:'pg_stat_database delta', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'wdr', id:'WDR_ROLLBACK_HIGH', name:'回滚率', levels:[{lv:'notice',t:'notice ≥5%'},{lv:'warn',t:'warn ≥20%'}], desc:'窗口事务数 > 100 时才判', from:'xact_commit / xact_rollback delta',
+    tune:['rollbackRatio.notice','rollbackRatio.warn'], hit:0, sample:'近 30 天未触发' },
+  { p:'wdr', id:'WDR_SQL_BLOCKED', name:'锁等待型 SQL 主导', levels:[{lv:'warn',t:'warn 占窗口耗时 ≥30%'}], desc:'attr = blk 的 Top SQL 份额', from:'Top SQL 归因',
+    tune:['blkSqlShare.warn'], hit:0, sample:'近 30 天未触发' },
+  { p:'wdr', id:'归因纪律', name:'Top SQL attr 徽章', levels:[{lv:'plain',t:'脚本判定 · 模型不可改'}], desc:'tmp = 下盘 > 0 · cpu = cpu/elapsed ≥50% · io = io/elapsed ≥30% · blk = elapsed > 1s 且 cpu/io 双 < 5%', from:'dbe_perf.statement 分项耗时',
+    tune:[], hit:null, sample:'一条 SQL 只挂一个徽章；冲突时按上面顺序取第一个' },
+
+  // ── ddl（近 30 天 9 次运行）
+  { p:'ddl', id:'DDLR00', name:'DROP SCHEMA', levels:[{lv:'critical',t:'critical'}], desc:'整个模式被删除', from:'字典变更 / 审计原文', tune:[], hit:2,
+    sample:'08-31 10:07 · DROP SCHEMA gsbench_e2e_20260801_100g CASCADE（omm）' },
+  { p:'ddl', id:'DDLR01', name:'表被删除', levels:[{lv:'warn',t:'warn'}], desc:'DROP TABLE，或字典里对象消失', from:'字典变更 / 审计原文', tune:[], hit:8, sample:'字典观测到 public.gone 消失' },
+  { p:'ddl', id:'DDLR02', name:'TRUNCATE', levels:[{lv:'warn',t:'warn'}], desc:'清空表（可回滚点少的场景高危）', from:'审计原文', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'ddl', id:'DDLR03', name:'DROP COLUMN / CONSTRAINT', levels:[{lv:'warn',t:'warn'}], desc:'破坏性结构变更，下游依赖需先核对', from:'审计原文', tune:[], hit:0, sample:'近 30 天未触发' },
+  { p:'ddl', id:'DDLR04', name:'业务时段变更', levels:[{lv:'notice',t:'notice'}], desc:'北京 09:00–20:00 执行破坏 / 变更类 DDL', from:'时间轴条目 + 时区换算',
+    tune:['businessHourStart','businessHourEnd'], hit:9, sample:'08-31 10:07（北京 10 点）执行 DROP SCHEMA' },
+  { p:'ddl', id:'DDLR05', name:'同一对象反复变更', levels:[{lv:'warn',t:'warn'}], desc:'24 小时内同一对象变更 ≥3 次——变更抖动', from:'时间轴按对象聚合',
+    tune:['churnCount','churnWindowHours'], hit:7, sample:'ddl_lab.t_order 3 小时内改了 3 次' },
+  { p:'ddl', id:'DDLR07', name:'DROP 无 IF EXISTS', levels:[{lv:'notice',t:'notice'}], desc:'重复执行会报错，清场脚本不幂等', from:'审计原文', tune:[], hit:2, sample:'DROP SCHEMA bench CASCADE（未带 IF EXISTS）' },
+  { p:'ddl', id:'DDLR90', name:'归因缺失', levels:[{lv:'notice',t:'notice'}], desc:'审计查询无权限时，可观测性缺口本身就是一条发现', from:'采集器降级路径', tune:[], hit:0,
+    sample:'og5 已授权 AUDITADMIN，本条未触发' },
+
+  // ── capacity（近 30 天 5 次运行）
+  { p:'capacity', id:'CAP_DISK_FREE', name:'磁盘水位', levels:[{lv:'notice',t:'notice ≥80%'},{lv:'warn',t:'warn ≥90%'}], desc:'数据目录所在卷已用占比；主机侧数据没接入时如实标「未接入」，不猜',
+    from:'主机采集（og5 暂未接入）', tune:['diskUsed.notice','diskUsed.warn'], hit:0, sample:'主机磁盘未接入，满盘估算只给增速' },
+  { p:'capacity', id:'CAP_GROWTH', name:'增速与满盘天数', levels:[{lv:'notice',t:'notice < 90 天'},{lv:'warn',t:'warn < 30 天'}], desc:'线性回归增速；日增 < 0.1 GiB 不外推；检测到清理悬崖只用其后的段',
+    from:'opendb_capacity_samples', tune:['daysToFull.notice','daysToFull.warn','minGrowthBytesPerDay'], hit:0, sample:'17.21 GB/天为一次性装载污染的低置信值，不据此动作' },
+  { p:'capacity', id:'CAP_NONTABLE_SHARE', name:'非表占用比', levels:[{lv:'notice',t:'notice ≥30%'},{lv:'warn',t:'warn ≥50%'}], desc:'WAL + 全量 SQL 追踪 + WDR + 日志/审计/core 占数据目录比例',
+    from:'数据目录构成采集', tune:['nonTableShare.notice','nonTableShare.warn'], hit:4, sample:'非表占用 31%（notice），其中 statement_history 16GB' },
+  { p:'capacity', id:'CAP_STMT_HISTORY_BLOAT', name:'系统表膨胀', levels:[{lv:'warn',t:'warn 体积 ≥4GiB 且行均 ≥8KB'}], desc:'statement_history 等系统表又大、行均又异常 = 空间没回收',
+    from:'系统表体积 + 行数', tune:['sysTableBloat.minBytes','sysTableBloat.avgRowBytes'], hit:5, sample:'statement_history 16GB、行均 11.8KB（warn）' },
+  { p:'capacity', id:'CAP_STATS_NEVER', name:'统计信息从未收集', levels:[{lv:'warn',t:'warn ≥100 万行且从未 analyze'}], desc:'从未 analyze 的大表让优化器按默认选择率出坏计划',
+    from:'pg_stat_user_tables.last_analyze', tune:['statsNeverRows'], hit:5, sample:'19 张大表从未 analyze（warn）' },
+  { p:'capacity', id:'CAP_DEAD_TUPLES', name:'死元组占比', levels:[{lv:'notice',t:'notice ≥20%'},{lv:'warn',t:'warn ≥40%'}], desc:'只看 ≥1GiB 的表，小表不判',
+    from:'pg_stat_user_tables', tune:['deadRatio.notice','deadRatio.warn','deadRatio.minBytes'], hit:0, sample:'近 30 天未触发' },
+  { p:'capacity', id:'CAP_WAL_SIZE', name:'WAL 体积', levels:[{lv:'warn',t:'warn 段数 > 3 × checkpoint_segments'}], desc:'openGauss 不允许非初始账号读目录，改按 GUC 给上限估算，并注明是估算',
+    from:'checkpoint_segments 等 GUC', tune:['walSegFactor'], hit:0, sample:'按 GUC 估算上限 48GB（pg_ls_dir 需 omm 账号，已如实降级）' },
+  { p:'capacity', id:'CAP_WDR_RETENTION', name:'WDR 快照保留', levels:[{lv:'warn',t:'warn 体积 ≥10GiB 或最老快照超期 > 2 天'}], desc:'snapshot schema 体积与最老快照年龄',
+    from:'snapshot schema', tune:['wdr.maxBytes','wdr.overdueDays'], hit:0, sample:'快照 schema 1.2GB、最老 7 天（保留 8 天，正常）' },
+  { p:'capacity', id:'CAP_LOG_RETENTION', name:'日志保留', levels:[{lv:'warn',t:'warn 无保留策略且 ≥2GiB'}], desc:'pg_log 只轮转不清理时会一直长',
+    from:'log_directory 与 GUC', tune:['logMaxBytes'], hit:0, sample:'pg_log 只轮转不清理，当前 640MB' },
+  { p:'capacity', id:'CAP_COLLECT_GAP', name:'采集空窗', levels:[{lv:'notice',t:'notice 相邻采样间隔 > 24h'}], desc:'空窗会让增速失真——所以它是一条发现，而不是悄悄用旧数据',
+    from:'opendb_capacity_samples', tune:['collectGapHours'], hit:0, sample:'最近 5 次采样间隔均 < 24h' },
+  { p:'capacity', id:'采集诚实', name:'降级即发现', levels:[{lv:'plain',t:'脚本判定 · 不可被解读掩盖'}], desc:'取不到的数据一律标注来源与原因（主机磁盘未接入、pg_ls_dir 需 omm 账号），判定不因此误报，也不外推',
+    from:'采集器降级路径', tune:[], hit:null, sample:'两处降级都会写进报告的「口径」区块' },
+];
+
+const LV_ORDER = { critical:3, warn:2, notice:1, plain:0 };
+const state = { q:'', plugin:'', lv:new Set(), tune:false, hit:false, gap:false, open:new Set() };
+
+document.getElementById('plugs').innerHTML = `<span class="f on" data-p="">全部</span>` +
+  PLUGINS.map(p => `<span class="f" data-p="${p.key}">${p.cn}</span>`).join('');
+
+function match(r){
+  if (state.plugin !== '' && r.p !== state.plugin) return false;
+  if (state.lv.size > 0 && !r.levels.some(x => state.lv.has(x.lv))) return false;
+  if (state.tune && (r.tune ?? []).length === 0) return false;
+  if (state.hit && !(r.hit > 0)) return false;
+  if (state.gap && r.gap !== true) return false;
+  const q = state.q.trim().toLowerCase();
+  if (q !== '' && !`${r.id} ${r.name} ${r.desc} ${r.from}`.toLowerCase().includes(q)) return false;
+  return true;
+}
+
+const runsOf = (r) => PLUGINS.find(p => p.key === r.p).runs;
+const rate = (r) => (r.hit === null ? null : r.hit / runsOf(r));
+
+function hitCell(r){
+  if (r.hit === null) return `<span class="hit"><span class="zero" title="标注型规则，不单独计命中">—</span></span>`;
+  const runs = runsOf(r), pctv = r.hit / runs;
+  if (r.hit === 0) return `<span class="hit"><span class="track"><i style="width:0"></i></span><span class="zero">0 / ${runs}</span></span>`;
+  return `<span class="hit"><span class="track ${pctv >= 0.95 ? 'always' : ''}"><i style="width:${Math.round(pctv * 100)}%"></i></span>
+    <span class="t"><b class="num">${r.hit}</b> / <span class="num">${runs}</span></span></span>`;
+}
+
+function detailRow(r){
+  const p = PLUGINS.find(x => x.key === r.p), ed = r.edited, rt = rate(r);
+  return `<tr class="det"><td colspan="7">
+    <div class="detg">
+      <div>
+        <div class="k">判据来源</div><div class="v">${r.from}</div>
+        <div class="k">出现在</div>
+        <div class="v">${p.cn}报告 · ${r.p === 'sqlreview' ? '违规清单与逐条分析卡' : r.p === 'ddl' ? '「规范扫描」区块（含通过项）' : '「发现」区块'}</div>
+        ${ rt !== null && rt >= 0.95 ? `<div class="flag">⚠ 近 30 天 ${r.hit}/${runsOf(r)} 次运行都命中——常亮的发现会淹没真问题，建议复议阈值或确认这是长期现状。</div>` : '' }
+        ${ r.gap === true ? `<div class="flag">⚠ 存档里出现过这条规则，但目录（catalog.ts）没登记——开码时补上，并让单测守住"实际产出 ⊆ 目录"。</div>` : '' }
+      </div>
+      <div>
+        <div class="k">阈值（可在「平台阈值配置」改数字）</div>
+        ${ (r.tune ?? []).length === 0
+            ? `<div class="v" style="color:var(--dim)">本规则没有可调数字（判定为布尔或结构性条件）</div>`
+            : (r.tune ?? []).map(k => `<div class="kv"><b>${k}</b>${ ed && ed.key === k
+                ? `<span class="arrow">默认 ${ed.def} →</span><span style="color:#B26A00;font-weight:600">当前 ${ed.now}</span>`
+                : `<span class="arrow">代码默认值</span>` }</div>`).join('') }
+        ${ ed ? `<div class="v" style="color:var(--sub);margin-top:6px;font-size:12.5px">改动：${ed.when} · ${ed.who}<br>理由：${ed.why}</div>` : '' }
+      </div>
+      <div>
+        <div class="k">最近一次命中长这样</div>
+        <div class="ev">${r.sample}</div>
+        <div class="link" style="margin-top:8px">带着这条规则开会话问 →</div>
+      </div>
+    </div>
+  </td></tr>`;
+}
+
+function render(){
+  const list = document.getElementById('list');
+  const shown = RULES.filter(match);
+  document.getElementById('count').textContent = `${shown.length} / ${RULES.length} 条`;
+  if (shown.length === 0){ list.innerHTML = `<div class="grp"><div class="empty">没有匹配的规则——换个词，或清掉筛选</div></div>`; return; }
+  list.innerHTML = PLUGINS.map(p => {
+    const rows = shown.filter(r => r.p === p.key), all = RULES.filter(r => r.p === p.key).length;
+    if (rows.length === 0) return '';
+    return `<section class="grp" id="g-${p.key}" style="--c:${p.color}">
+      <div class="hd">
+        <div style="min-width:0">
+          <div class="t">${p.title}<span class="cnt">${rows.length}${rows.length !== all ? ` / ${all}` : ''} 条 · 近 30 天 ${p.runs} 次运行</span></div>
+          <div class="i">${p.intro}</div>
+        </div>
+        <div class="src mono">${p.source}</div>
+      </div>
+      <table>
+        <thead><tr>
+          <th style="width:152px">规则码</th><th style="width:150px">名称</th><th style="width:270px">级别阶梯</th>
+          <th>判据</th><th style="width:84px">阈值</th><th style="width:126px;text-align:right">近 30 天命中</th><th style="width:22px"></th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr data-id="${r.id}" class="${state.open.has(r.id) ? 'open' : ''}">
+              <td><span class="code">${r.id}</span>${r.gap === true ? '<div style="margin-top:4px"><span class="chip gap">目录缺登记</span></div>' : ''}</td>
+              <td class="nm">${r.name}</td>
+              <td><div class="steps">${r.levels.map(x => `<span class="step ${x.lv}">${x.t}</span>`).join('')}</div></td>
+              <td class="desc">${r.desc}</td>
+              <td>${ (r.tune ?? []).length === 0 ? '<span style="color:var(--dim);font-size:12px">—</span>'
+                    : `<span class="tune ${r.edited ? 'edited' : ''}">⚙ ${r.tune.length} 项${r.edited ? ' · 已改' : ''}</span>` }</td>
+              <td>${hitCell(r)}</td>
+              <td style="text-align:right"><span class="caret">${state.open.has(r.id) ? '▾' : '▸'}</span></td>
+            </tr>
+            ${ state.open.has(r.id) ? detailRow(r) : '' }`).join('')}
+        </tbody>
+      </table>
+      ${ (p.notes ?? []).length > 0 ? `<div class="notes">${p.notes.map(n => `<span>· ${n}</span>`).join('')}</div>` : '' }
+    </section>`;
+  }).join('');
+  list.querySelectorAll('tbody tr[data-id]').forEach(tr => tr.addEventListener('click', () => {
+    const id = tr.dataset.id;
+    if (state.open.has(id)) state.open.delete(id); else state.open.add(id);
+    render();
+  }));
+}
+
+document.getElementById('q').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+document.getElementById('plugs').addEventListener('click', (e) => {
+  const el = e.target.closest('.f'); if (el === null) return;
+  state.plugin = el.dataset.p;
+  document.querySelectorAll('#plugs .f').forEach(x => x.classList.toggle('on', x === el));
+  render();
+});
+document.querySelectorAll('.f.lv').forEach(el => el.addEventListener('click', () => {
+  const lv = el.dataset.lv;
+  if (state.lv.has(lv)) state.lv.delete(lv); else state.lv.add(lv);
+  el.classList.toggle('on'); render();
+}));
+document.getElementById('fTune').addEventListener('click', (e) => { state.tune = !state.tune; e.target.classList.toggle('on'); render(); });
+document.getElementById('fHit').addEventListener('click', (e) => { state.hit = !state.hit; e.target.classList.toggle('on'); render(); });
+document.getElementById('fGap').addEventListener('click', (e) => { state.gap = !state.gap; e.target.classList.toggle('on'); render(); });
+render();
+</script>
+</body>
+</html>

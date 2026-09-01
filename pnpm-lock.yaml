@@ -1137,12 +1137,21 @@ importers:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
         version: 4.0.1(@deepseek-ai/cordis-plugin-include@1.0.6)(@deepseek-ai/cordis-plugin-loader@1.0.2)
+      '@opendb-dsh/task-capacity':
+        specifier: workspace:*
+        version: link:../task-capacity
+      '@opendb-dsh/task-ddl':
+        specifier: workspace:*
+        version: link:../task-ddl
       '@opendb-dsh/task-health':
         specifier: workspace:*
         version: link:../task-health
       '@opendb-dsh/task-wdr':
         specifier: workspace:*
         version: link:../task-wdr
+      '@types/pg':
+        specifier: ^8.11.10
+        version: 8.21.0
       '@types/react':
         specifier: ^18.3.12
         version: 18.3.31

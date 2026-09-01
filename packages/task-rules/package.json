@@ -14,5 +14,5 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "@opendb-dsh/tasks": "workspace:*"
   },
-  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@opendb-dsh/task-health": "workspace:*", "@opendb-dsh/task-wdr": "workspace:*", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
+  "devDependencies": { "@deepseek-ai/cordis": "^4.0.1", "@types/pg": "^8.11.10", "@opendb-dsh/task-health": "workspace:*", "@opendb-dsh/task-wdr": "workspace:*", "@opendb-dsh/task-ddl": "workspace:*", "@opendb-dsh/task-capacity": "workspace:*", "@types/react": "^18.3.12", "esbuild": "^0.24.0", "react": "^18.3.1" }
 }

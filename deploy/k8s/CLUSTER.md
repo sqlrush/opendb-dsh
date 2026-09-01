@@ -1178,3 +1178,36 @@ cacheWrite，硬折算就是编数字。来源按会话标题归类：`【任务
 ② 平台规则目录（任务类型 `rules`，纯静态面板，四插件规则/阈值/归因纪律一页看全），会话里也可直接问
 （`rules_catalog` 工具输出 markdown）；③ 阈值改在「平台阈值配置」任务；
 ④ 源码：判定 `packages/task-ddl/src/ddl.ts`、目录快照 `packages/task-rules/src/catalog.ts`。
+
+## 平台规则目录 R1（2026-09-01，user 通过 `docs/prototypes/rules-r1.html` 后开发）
+
+`task-rules` 的面板从「四张静态表」重做为可查、可对账的规则手册。规则本体仍是代码内目录快照
+（`catalog.ts`，纯静态，端点挂了也能看全），活数据来自本包新增的 `/opendb-rules` 通道：
+
+- **命中统计**（`src/stats.ts`）：只读采集存档，不碰报告——存档是脚本产出，报告是模型叙述。
+  口径 = 命中运行数 / 该插件同期**产出过判定**的运行数，**只计非 ok 的发现**（容量插件每次都会给每个维度
+  出一条含 ok 的判定，按条数统计全是满分、毫无信息量）。两种存档形状要各写一段 SQL：健康在
+  `opendb_health_collects.payload.nodes[].findings[]`，其余在 `opendb_task_collects` 的
+  `ruleFindings[]`（ddl/sqlreview）或 `findings[]`（wdr/capacity）；规则码字段也有 `code` 与 `rule` 两种。
+- **阈值当前值**直接取 `opendbThresholds.list()`——每个 spec 自带 `rule` 字段，所以目录**不需要**再手写一份
+  「哪条规则有哪些可调数字」，天然不漂。改阈值的人记的是 session id，端点顺带查 `session/title` 换成会话标题。
+
+**页面上两条不用等人发现的自检**：① 存档里出现过、目录没登记的规则码，直接以「目录缺登记」行显示；
+② 命中率 ≥95% 的规则轨道条转琥珀，点开写明"常亮的发现会淹没真问题，建议复议阈值"。
+做这版时这两条立刻各抓到东西：整个**容量插件（10 条 CAP_*）**和健康的 **OS_LOAD_HIGH / OS_IOWAIT_HIGH**
+从来没进过目录（后者近 30 天真命中 35 次）；og5 上有 6 条规则 606/606 次全中（`SESS_ACTIVE_HIGH` 是 8-25
+把阈值从 50 收紧到 5 的直接后果）。
+
+**级别阶梯是代码默认值**，所以被改过的规则会在阶梯旁并排标一个琥珀色「当前 ≥5」——否则页面会理直气壮地
+显示一个早已不生效的数字（08-25 activeSessions 50→5 实证）。
+
+**新增守护**：`packages/task-rules/test/type.test.ts` 加了「目录与 task-capacity / task-ddl 常量同步」与
+**「阈值 spec 引用的规则码必须在目录里」**（61 项阈值逐一对账）。后者当场揪出 ddl 的两个参数类阈值
+（时间轴合并 / 折叠）没有归属——补成一行「时间轴参数」（`codes: []` 不参与命中统计，`tuneRules` 单独挂阈值）。
+
+**验收**：`scripts/browser/rules-check.mjs` 真机 **29/29**（五组齐、彩色档位块、⚙ 挂载、命中列 N/M 与轨道条按比例、
+搜索/插件/只看可调三种筛选真的改变行数、点开有判据 + 阈值默认→当前 + 改动会话与理由 + 最近命中原文、console 零错误）。
+面板要走 `/opendb-rules` 通道，client 的 `inject` 必须带 `connection`（面板 props 里的 `call` 只通向 `/opendb`）。
+
+**任务实例**：平台没有建任务的 UI（任务只在会话里用 `task_create` 建），所以「平台规则目录」这个任务是
+用无头 Chrome 走产品自己的会话流建的（一轮对话、8 秒、无 cron）；`task-f7d19ae2`。
