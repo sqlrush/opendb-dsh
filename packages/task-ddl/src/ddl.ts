@@ -120,7 +120,7 @@ export function mergeTimeline(dict: TimelineEntry[], audit: TimelineEntry[], win
   return [...merged, ...leftover].sort((x, y) => y.time.localeCompare(x.time));
 }
 
-/** 规范扫描：确定性规则（对时间轴条目；时段按北京时间） */
+/** 规范扫描：确定性规则（对时间轴条目；时段按北京时间）。规则码 → 标签见 rule-label.ts */
 export function scanDdlRules(entries: TimelineEntry[], tzOffsetMinutes = 480, T: DdlThresholds = DDL_THRESHOLDS): DdlRuleFinding[] {
   const out: DdlRuleFinding[] = [];
   const real = entries.filter((e) => e.action !== 'baseline');

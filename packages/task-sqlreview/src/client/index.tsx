@@ -7,6 +7,7 @@
  * 只读展示；深挖 = 直接新建会话并发送（不再复制提示词）。
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Priorities } from '@opendb-dsh/chart-kit';
 
 // 深挖要用 sessions / connection / workspaces：必须列进 inject，否则 apply 时它们还不在 ctx 上，
 // 点「在会话里深挖」只会静默失败（2026-08-27 行为测试抓到；与 task-health 同一份清单）
@@ -548,14 +549,7 @@ export function SqlReviewPanel({ task, runId, call }: { task: any; runId?: strin
             {String(data?.rootCause ?? '') !== '' ? <div style={{ ...card, background: T.fill, border: 'none' }}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>根因串联</div><div style={{ fontSize: 15, color: T.sub }}>{String(data.rootCause)}</div></div> : null}
             {(data?.priorities ?? []).length > 0 ? (
               <div style={card}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>处置优先级</div>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {(data.priorities as any[]).map((p, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1fr)', gap: 10, alignItems: 'start', fontSize: 15 }}>
-                      <span style={{ font: `600 13px ${mono}`, background: T.fill2, borderRadius: 6, textAlign: 'center', padding: '2px 0', marginTop: 4 }}>P{String(p.p).replace(/^P/i, '')}</span>
-                      <div>{String(p.action)} {(p.refs ?? []).length > 0 ? <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6, verticalAlign: 'middle' }}>{(p.refs as any[]).map((r, k) => <span key={k} style={keyChip}>{itemsByKey.get(String(r))?.label ?? String(r)}</span>)}</span> : null}</div>
-                    </div>
-                  ))}
-                </div>
+                <Priorities items={data.priorities as any[]} refLabel={(r) => itemsByKey.get(r)?.label ?? r} />
               </div>
             ) : null}
           </div>

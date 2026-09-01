@@ -12,6 +12,7 @@
   "peerDependencies": { "@deepseek-ai/cordis": "^4.0.1" },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
+    "@opendb-dsh/chart-kit": "workspace:*",
     "@opendb-dsh/tasks": "workspace:*",
     "@opendb-dsh/thresholds-pg": "workspace:*"
   },

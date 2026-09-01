@@ -5,6 +5,7 @@
  *   <Pie>   环形饼图（构成占比）
  *   <Gauge> 阈值水位（0-1 占比 + notice/warn/critical 刻度，标出实测落档）
  *   <Line>  折线（时间序列，可叠阈值虚线，悬停读数）
+ *   <Priorities> 处置优先级列表（非图表，但四个任务面板逐字重复过，抽在这里统一）
  */
 import { useEffect, useRef, useState } from 'react';
 
@@ -313,6 +314,52 @@ export function Line({ series, unit, thresholds = [], height = 170, width = 720,
           {series.map((s, i) => <span key={s.name}><i style={{ display: 'inline-block', width: 10, height: 3, background: s.color ?? PALETTE[i % PALETTE.length], marginRight: 5, verticalAlign: 'middle' }} />{s.name}</span>)}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// ── 处置优先级列表（四个任务面板共用；2026-08-31 user 报「DDL 报告处置优先级显示有问题」后抽出）
+export interface Priority { p?: unknown; action?: unknown; refs?: unknown }
+
+/**
+ * 归一化优先级徽章。报告 schema 里 `p` 只约束是字符串，模型实际会填三种形状：
+ *   "P0" / "0"     → 正常，显示 P0
+ *   "high"/"低"    → 短词，原样显示（不擅自映射成 P0，那是编数字）
+ *   一整句叙述      → 当标题另起一行，徽章退回序号 #N（列表本身就是处置顺序）
+ * 关键是徽章列**永不换行**：老版本用固定 34px 列装下整句话，一个字一行把卡片撑成一条竖带。
+ */
+export function normalizePriority(p: Priority, i: number): { badge: string; title: string; action: string } {
+  const raw = String(p.p ?? '').trim();
+  const num = /^[Pp]?\s*(\d{1,2})\b/.exec(raw);
+  const action = String(p.action ?? '').trim();
+  if (num !== null) return { badge: `P${num[1]}`, title: '', action };
+  if (raw !== '' && raw.length <= 8 && !/[，。；、,.;]/.test(raw)) return { badge: raw, title: '', action };
+  return { badge: `#${i + 1}`, title: raw, action };
+}
+
+export function Priorities({ items, refLabel }: { items: Priority[]; refLabel?: (r: string) => string }) {
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {items.map((p, i) => {
+        const { badge, title, action } = normalizePriority(p, i);
+        const refs = Array.isArray(p.refs) ? p.refs.map((r) => String(r)) : [];
+        return (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr)', gap: 10, alignItems: 'start', fontSize: 15 }}>
+            <span style={{ font: `600 13px ${MONO}`, background: '#f2f3f5', borderRadius: 6, textAlign: 'center', padding: '2px 7px', marginTop: 4, minWidth: 20, whiteSpace: 'nowrap' }}>{badge}</span>
+            <div style={{ minWidth: 0 }}>
+              {title !== '' ? <div style={{ fontWeight: 600, lineHeight: 1.5, overflowWrap: 'anywhere' }}>{title}</div> : null}
+              <div style={{ lineHeight: 1.6, overflowWrap: 'anywhere', color: title === '' ? INK : '#61666b', marginTop: title === '' ? 0 : 2 }}>{action}</div>
+              {refs.length > 0 ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                  {refs.map((r, k) => (
+                    <span key={k} style={{ font: `600 12px ${MONO}`, background: '#f7f8fa', border: `1px solid ${LINE}`, borderRadius: 5, padding: '1px 7px', color: '#61666b', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r}>{refLabel === undefined ? r : refLabel(r)}</span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

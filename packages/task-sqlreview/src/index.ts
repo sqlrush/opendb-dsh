@@ -65,7 +65,8 @@ export const SQLREVIEW_TASK_TYPE: TaskType<SqlReviewConfig> = {
       detail: z.string().default('').description('解读：瓶颈归因 + 建议（索引类建议写明[需人工执行·预估]）；引用数字须有出处'),
     })).required(),
     priorities: z.array(z.object({
-      p: z.string().required(), action: z.string().required(), refs: z.array(z.string()).default([]),
+      p: z.string().required().description('优先级档位，只填 P0/P1/P2；标题与理由写进 action'),
+      action: z.string().required(), refs: z.array(z.string()).default([]),
     })).default([]),
     rootCause: z.string().default(''),
     collectionNotes: z.array(z.string()).default([]),

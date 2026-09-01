@@ -41,7 +41,7 @@ export const CAPACITY_TASK_TYPE: TaskType<CapacityConfig> = {
     }).required(),
     situation: z.string().default('').description('一句话：现在多大、涨多快、空间主要花在哪'),
     findings: z.array(z.object({ rule: z.string().required(), object: z.string().default(''), note: z.string().required().description('对该条发现的解读：为什么、影响谁、要不要动') })).default([]),
-    priorities: z.array(z.object({ p: z.string().required(), action: z.string().required(), refs: z.array(z.string()).default([]) })).default([]),
+    priorities: z.array(z.object({ p: z.string().required().description('优先级档位，只填 P0/P1/P2；标题与理由写进 action'), action: z.string().required(), refs: z.array(z.string()).default([]) })).default([]),
     rootCause: z.string().default('').description('串联：这个库"大"和"涨"的原因分别是什么'),
     collectionNotes: z.array(z.string()).default([]),
   }),

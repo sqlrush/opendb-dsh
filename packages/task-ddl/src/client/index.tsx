@@ -5,6 +5,8 @@
  * 变更故事线 / 处置优先级（模型）→ 检查历史。数字全部来自采集存档 run.collect；diff 在前端按定义时间线算（history.ts 纯函数）。
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Priorities } from '@opendb-dsh/chart-kit';
+import { DDL_RULE_LABEL } from '../rule-label.ts';
 import { compareVersions, stateAt, diffDefinition } from '../history.ts';
 import type { Version, Lane, SubLane, ObjectHistory, DdlEvent, ObjectDiff } from '../history.ts';
 import { T, sev, mono, FONT, tnum, card, keyChip, codeBlock, LANE_COLORS, changeColor, CHANGE_CN, SRC_CN, hhmm, mmdd, mmddhhmm, ymd, oneLine } from './format.ts';
@@ -274,11 +276,12 @@ function Timeline({ c, versions }: { c: any; versions: Version[] }) {
     </div>
   );
 }
-const RULE_LABEL: Record<string, string> = { DDLR00: 'DROP SCHEMA', DDLR01: '表被删除', DDLR02: 'TRUNCATE', DDLR03: 'DROP COLUMN / CONSTRAINT', DDLR04: '业务时段变更', DDLR05: '同一对象反复变更', DDLR06: '账号权限提升', DDLR07: '无主键新表', DDLR90: '归因缺失' };
+// 标签表与判定同源（../ddl.ts），面板不再自己维护一份——两份曾经对不上，见那边的注释
 function Rules({ c, notes }: { c: any; notes: Map<string, string> }) {
   const findings: any[] = (c.ruleFindings ?? []).slice().sort((a: any, b: any) => (ORDER[String(b.level)] ?? 0) - (ORDER[String(a.level)] ?? 0));
   const hit = new Set(findings.map((f) => String(f.rule)));
-  const passed = ['DDLR00', 'DDLR01', 'DDLR02', 'DDLR03', 'DDLR04', 'DDLR05', 'DDLR90'].filter((r) => !hit.has(r));
+  // 通过项 = 平台真正会判的全部规则减去命中的（原先漏了 DDLR07，扫过却从不在通过项里出现）
+  const passed = Object.keys(DDL_RULE_LABEL).filter((r) => !hit.has(r));
   return (
     <div style={{ ...card, padding: '4px 20px' }}>
       {findings.map((f, i) => { const lv = String(f.level); const note = notes.get(`${String(f.rule)}|${String(f.object)}`) ?? notes.get(String(f.rule)) ?? ''; return (
@@ -291,7 +294,7 @@ function Rules({ c, notes }: { c: any; notes: Map<string, string> }) {
         </div>); })}
       {passed.map((r, i) => (
         <div key={r} style={{ display: 'grid', gridTemplateColumns: '8px 100px minmax(0,1fr) 110px', gap: 12, alignItems: 'start', padding: '10px 0', borderTop: findings.length + i === 0 ? 'none' : `1px solid ${T.line}`, fontSize: 14 }}>
-          <i style={{ width: 8, height: 8, borderRadius: 4, marginTop: 9, background: T.sev.ok.c, fontStyle: 'normal' }} /><span style={keyChip}>{r}</span><div>{r === 'DDLR90' ? '全部变更均已归因到操作者' : `无 ${RULE_LABEL[r] ?? r}`}</div><span />
+          <i style={{ width: 8, height: 8, borderRadius: 4, marginTop: 9, background: T.sev.ok.c, fontStyle: 'normal' }} /><span style={keyChip}>{r}</span><div>{r === 'DDLR90' ? '全部变更均已归因到操作者' : `无 ${DDL_RULE_LABEL[r] ?? r}`}</div><span />
         </div>))}
     </div>
   );
@@ -387,7 +390,7 @@ export function DdlPanel({ task, runId, call }: { task: any; runId?: string; cal
           <H2 hint="模型解读 · 引用的对象与时间均有出处">变更故事线与处置优先级</H2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 12 }}>
             {String(data?.rootCause ?? '') !== '' ? <div style={{ ...card, background: T.fill, border: 'none' }}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>变更故事线</div><div style={{ fontSize: 15, color: T.sub }}>{String(data.rootCause)}</div></div> : null}
-            {priorities.length > 0 ? <div style={card}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>处置优先级</div><div style={{ display: 'grid', gap: 8 }}>{priorities.map((p, i) => <div key={i} style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1fr)', gap: 10, alignItems: 'start', fontSize: 15 }}><span style={{ font: `600 13px ${mono}`, background: T.fill2, borderRadius: 6, textAlign: 'center', padding: '2px 0', marginTop: 4 }}>P{String(p.p).replace(/^P/i, '')}</span><div>{String(p.action)} {(p.refs ?? []).length > 0 ? <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6, verticalAlign: 'middle', flexWrap: 'wrap' }}>{(p.refs as any[]).map((r, k) => <span key={k} style={keyChip}>{String(r)}</span>)}</span> : null}</div></div>)}</div></div> : null}
+            {priorities.length > 0 ? <div style={card}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>处置优先级</div><Priorities items={priorities} /></div> : null}
           </div>
         </>
       ) : null}

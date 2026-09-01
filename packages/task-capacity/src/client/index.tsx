@@ -6,7 +6,7 @@
  * → CAP_* 发现（深挖）→ 解读与处置优先级（模型）→ 检查历史。数字全部来自采集存档 run.collect；模型只贡献解读。
  */
 import { Component, useEffect, useMemo, useState } from 'react';
-import { Line, StackedBar } from '@opendb-dsh/chart-kit';
+import { Line, Priorities, StackedBar } from '@opendb-dsh/chart-kit';
 import { T, sev, mono, FONT, tnum, card, keyChip, PALETTE, GIB, fmtBytes, fmtGbPerDay, fmtPct, fmtInt, mmdd, mmddhhmm, whenOrNever } from './format.ts';
 
 export const inject = ['slots', 'connection', 'workspaces', 'sessions'];
@@ -411,7 +411,7 @@ export function CapacityPanel({ task, runId, call }: { task: any; runId?: string
             <H2 hint="模型解读 · 引用的数字均有出处 · 平台只读，处置由 DBA 执行">解读与处置优先级</H2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 12 }}>
               {String(data?.rootCause ?? '') !== '' ? <div style={{ ...card, background: T.fill, border: 'none' }}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>根因串联</div><div style={{ fontSize: 15, color: T.ink }}>{String(data.rootCause)}</div></div> : null}
-              {priorities.length > 0 ? <div style={card}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>处置优先级</div><div style={{ display: 'grid', gap: 8 }}>{priorities.map((p, i) => <div key={i} style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1fr)', gap: 10, alignItems: 'start', fontSize: 15 }}><span style={{ font: `600 13px ${mono}`, background: T.fill2, borderRadius: 6, padding: '2px 0', textAlign: 'center', marginTop: 3 }}>{String(p.p)}</span><div style={{ minWidth: 0 }}><div style={{ overflowWrap: 'break-word' }}>{String(p.action)}</div>{(p.refs ?? []).length > 0 ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>{(p.refs ?? []).map((r: any) => <span key={String(r)} style={{ ...keyChip, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }} title={String(r)}>{String(r)}</span>)}</div> : null}</div></div>)}</div></div> : null}
+              {priorities.length > 0 ? <div style={card}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>处置优先级</div><Priorities items={priorities} /></div> : null}
             </div>
           </>
         ) : null}

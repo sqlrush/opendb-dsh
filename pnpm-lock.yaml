@@ -999,6 +999,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/chart-kit':
+        specifier: workspace:*
+        version: link:../chart-kit
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
@@ -1177,6 +1180,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/chart-kit':
+        specifier: workspace:*
+        version: link:../chart-kit
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks
@@ -1224,6 +1230,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.1
+      '@opendb-dsh/chart-kit':
+        specifier: workspace:*
+        version: link:../chart-kit
       '@opendb-dsh/tasks':
         specifier: workspace:*
         version: link:../tasks

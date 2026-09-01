@@ -7,7 +7,7 @@
  *   数字全部直读采集存档（runs/list 附带的 collect）；模型报告只贡献根因串联 / 处置优先级。
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Rail, StackedBar, RankList, Sparkline, Line, SEV, fmtValue, type Level, type Unit } from '@opendb-dsh/chart-kit';
+import { Rail, StackedBar, RankList, Sparkline, Line, SEV, fmtValue, normalizePriority, type Level, type Unit } from '@opendb-dsh/chart-kit';
 
 // 深挖要用 sessions / connection / workspaces：列进 inject 保证 apply 时服务已就绪
 export const inject = ['slots', 'connection', 'workspaces', 'sessions'];
@@ -506,13 +506,18 @@ export function HealthPanel({ task, call }: { task: any; call: (endpoint: string
         <>
           <H2 hint="P0/P1/P2 按影响面排 · 与严重度是两个维度 · 模型叙述">处置优先级</H2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
-            {(data.priorities ?? []).map((p: any, i: number) => (
-              <div key={i} style={{ ...card }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: T.dim, letterSpacing: '.06em' }}>{String(p.p)}</div>
-                <div style={{ fontSize: 14, marginTop: 6, lineHeight: 1.6 }}>{String(p.action)}</div>
-                {(p.refs ?? []).length > 0 ? <div style={{ fontSize: 12, color: T.dim, marginTop: 6, fontFamily: mono }}>{(p.refs ?? []).join(' · ')}</div> : null}
-              </div>
-            ))}
+            {/* p 里偶尔被填成整句叙述（schema 只约束是字符串）——归一化后当标题，徽章退回序号 */}
+            {(data.priorities ?? []).map((p: any, i: number) => {
+              const np = normalizePriority(p, i);
+              return (
+                <div key={i} style={{ ...card }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: T.dim, letterSpacing: '.06em' }}>{np.badge}</div>
+                  {np.title !== '' ? <div style={{ fontSize: 14, fontWeight: 600, marginTop: 6, lineHeight: 1.5 }}>{np.title}</div> : null}
+                  <div style={{ fontSize: 14, marginTop: 6, lineHeight: 1.6 }}>{np.action}</div>
+                  {(p.refs ?? []).length > 0 ? <div style={{ fontSize: 12, color: T.dim, marginTop: 6, fontFamily: mono }}>{(p.refs ?? []).join(' · ')}</div> : null}
+                </div>
+              );
+            })}
           </div>
         </>
       ) : null}

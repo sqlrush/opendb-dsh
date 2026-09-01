@@ -1151,3 +1151,30 @@ cacheWrite，硬折算就是编数字。来源按会话标题归类：`【任务
 两个教训写进脚本：① 断言前必须 `waitForFunction` 等真数据落地，固定 `sleep` 会在慢查询时假失败；
 ② 认药丸按钮要按 `cursor:pointer` 过滤——正文里的「合计 … tokens」文字同样能被 `textContent === 'tokens'` 匹配到，
 第一版就点了个假按钮却仍然"通过"。
+
+## 任务报告「处置优先级」的字段纪律（2026-08-31，user 报 DDL 报告显示问题）
+
+报告 schema 里 `priorities[].p` 只约束是字符串，模型实际填过三种形状：`P0`、`high/medium/low`、
+以及**整句叙述**（DDL 那次把标题写进了 `p`，最长 83 字）。四个面板都拿固定 34px 的徽章列去装，
+于是一个字一行，把优先级卡片撑成一条竖带——**这是渲染层没有防御模型自由字段的典型事故**。
+
+两头一起改：
+- **渲染层兜底**（chart-kit 新增 `<Priorities>` + `normalizePriority`，四面板共用）：徽章列宽随内容、
+  永不换行；`P0/1/2` 原样、`high` 这类短词原样（不擅自映射成 P0——那是编数字）、整句叙述改当标题
+  另起一行且徽章退回序号 `#N`。`p` 缺失也不炸。
+- **源头收紧**：四个报告 schema 的 `p` 补 `P0|P1|P2` 字段说明，ddl/wdr 的提示词写明"p 只填档位，
+  具体做什么写进 action"。老报告是存档，不回改——渲染兜底就是为它们准备的。
+
+验收 `scripts/browser/priority-check.mjs`（ddl/wdr/capacity 各 7/7）。断言的是**几何**不是文本：
+徽章高度 ≤32px、徽章文字 ≤6 字、正文列宽 > 徽章列 3 倍——文本断言会被"字都在页面上"蒙混过去。
+
+**顺手查出的第二个问题**：DDL「规范扫描」的通过项是面板里手写的第二份数组，漏了 `DDLR07`
+（DROP 无 IF EXISTS）——这条真会扫，窗口内没命中时却从不出现在"通过"里，读报告的人会以为平台没查过幂等性；
+同一份手写标签表还留着从未实现的 `DDLR06` 和标错的 `DDLR07`。标签表已移到
+`packages/task-ddl/src/rule-label.ts`（零依赖，client 打包不能碰 ddl.ts——那边 import 了 thresholds-pg/cordis），
+通过项由它派生，并加单测与 `scanDdlRules` 的实际产出双向对账。
+
+**规则规范去哪看**（user 同轮问的）：① 报告内「规范扫描」区块，每条带规则码，含通过项；
+② 平台规则目录（任务类型 `rules`，纯静态面板，四插件规则/阈值/归因纪律一页看全），会话里也可直接问
+（`rules_catalog` 工具输出 markdown）；③ 阈值改在「平台阈值配置」任务；
+④ 源码：判定 `packages/task-ddl/src/ddl.ts`、目录快照 `packages/task-rules/src/catalog.ts`。

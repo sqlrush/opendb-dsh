@@ -6,6 +6,7 @@
  * 数字全部来自采集存档 run.collect（确定性直读），模型报告 run.report.data 只贡献解读。深挖 = 直接新建会话并发送。
  */
 import { useEffect, useMemo, useState } from 'react';
+import { Priorities } from '@opendb-dsh/chart-kit';
 import { T, sev, mono, FONT, tnum, card, keyChip, CLASS_COLOR, WAIT_COLOR, WAIT_CN, ATTR_BADGE, fmtUs, fmtS, fmtCount, fmtBytes, fmtMs, fmtLp, fmtCheckNum, oneLine, hhmm, mmddhhmm, changeText, type Tone } from './format.ts';
 import { AasTrend } from './trend.tsx';
 
@@ -562,14 +563,7 @@ export function WdrPanel({ task, runId, call }: { task: any; runId?: string; cal
             {String(data?.rootCause ?? '') !== '' ? <div style={{ ...card, background: T.fill, border: 'none' }}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>根因串联</div><div style={{ fontSize: 15, color: T.sub }}>{String(data.rootCause)}</div></div> : null}
             {priorities.length > 0 ? (
               <div style={card}><div style={{ fontSize: 13.5, color: T.dim, fontWeight: 500, marginBottom: 4 }}>处置优先级</div>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {priorities.map((p, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '34px minmax(0,1fr)', gap: 10, alignItems: 'start', fontSize: 15 }}>
-                      <span style={{ font: `600 13px ${mono}`, background: T.fill2, borderRadius: 6, textAlign: 'center', padding: '2px 0', marginTop: 4 }}>P{String(p.p).replace(/^P/i, '')}</span>
-                      <div>{String(p.action)} {(p.refs ?? []).length > 0 ? <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6, verticalAlign: 'middle', flexWrap: 'wrap' }}>{(p.refs as any[]).map((r, k) => <span key={k} style={keyChip}>{String(r)}</span>)}</span> : null}</div>
-                    </div>
-                  ))}
-                </div>
+                <Priorities items={priorities} />
               </div>
             ) : null}
           </div>
