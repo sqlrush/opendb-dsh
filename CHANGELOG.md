@@ -7,6 +7,16 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-01
+
+### Fixed
+- **v0.3.0 会让 Runtime 起不来**（发布后滚动时当场发现，未造成中断）：规则目录的 `/opendb-rules` 通道把 `connection`
+  写进了 `task-rules` 的**顶层 `inject`**，而这个包 host / runtime 两侧都装、`connection` 只有 Host 有——Runtime 的插件树
+  永远 `pending (waiting for service: connection)`，boot 失败、新 Pod CrashLoopBackOff。改用嵌套
+  `ctx.inject(['connection'], …)`，Runtime 侧不执行那段、插件照常激活。
+  `maxUnavailable=0` + `rollout.sh` 的滚动状态校验挡住了：旧 Pod 继续服务、脚本以非零退出并注明"验收结果不可信"
+  （8-31 补的三道校验第一次真派上用场）。**v0.3.0 的镜像标签留着但不要 pin**。
+
 ## [0.3.0] - 2026-09-01
 
 一批"把平台自己也摊开给人看"的功能：容量与增长报告（第五个任务插件）、资源一级目录下的 k8s 集群状态与模型用量、

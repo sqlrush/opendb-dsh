@@ -16,9 +16,11 @@ export { ruleStats } from './stats.ts';
 export type { RuleStat, PluginStat } from './stats.ts';
 
 export const name = 'task-rules';
-// connection：注册 /opendb-rules 通道给目录面板取命中统计与阈值当前值；
 // opendbThresholds：阈值的「默认值 → 当前值 + 谁改的」直接来自服务，目录不再手写一份可调项清单。
-export const inject = ['opendbTasks', 'connection', 'opendbThresholds'];
+// connection 不放这里——本包 host / runtime 两侧都装，而 connection 只有 Host 有；
+// 顶层 inject 它会让 Runtime 的插件树永远 pending 并崩循环（2026-09-01 v0.3.0 滚动实测）。
+// 目录面板的 /opendb-rules 通道走嵌套 inject，只在有 connection 的一侧注册。
+export const inject = ['opendbTasks', 'opendbThresholds'];
 
 interface RulesConfig { plugin: string; focus: string }
 
@@ -81,13 +83,16 @@ export function apply(ctx: Context): void {
   const anyCtx = ctx as any;
   ctx.effect(() => anyCtx.opendbTasks.register(RULES_TASK_TYPE), 'task-rules.type');
 
-  ctx.effect(() => anyCtx.connection.rpc.handle('/opendb-rules', async (endpoint: string, payload: any): Promise<any> => {
-    try {
-      if (endpoint !== 'stats') return { ok: false, error: { code: 'not_found', message: `unknown endpoint ${endpoint}`, details: {} } };
-      const days = Math.max(1, Math.min(Number(payload?.days ?? 30), 365));
-      return { ok: true, value: await catalogStats(anyCtx, days) };
-    } catch (cause) {
-      return { ok: false, error: { code: 'internal', message: String((cause as Error).message ?? cause), details: {} } };
-    }
-  }, { authority: 'trusted-host' }), 'task-rules.rpc');
+  // Host 侧才有 connection；Runtime 侧这段不执行，插件照常激活
+  anyCtx.inject(['connection'], (c: any) => {
+    c.effect(() => c.connection.rpc.handle('/opendb-rules', async (endpoint: string, payload: any): Promise<any> => {
+      try {
+        if (endpoint !== 'stats') return { ok: false, error: { code: 'not_found', message: `unknown endpoint ${endpoint}`, details: {} } };
+        const days = Math.max(1, Math.min(Number(payload?.days ?? 30), 365));
+        return { ok: true, value: await catalogStats(anyCtx, days) };
+      } catch (cause) {
+        return { ok: false, error: { code: 'internal', message: String((cause as Error).message ?? cause), details: {} } };
+      }
+    }, { authority: 'trusted-host' }), 'task-rules.rpc');
+  });
 }

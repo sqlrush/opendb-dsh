@@ -1211,3 +1211,19 @@ cacheWrite，硬折算就是编数字。来源按会话标题归类：`【任务
 
 **任务实例**：平台没有建任务的 UI（任务只在会话里用 `task_create` 建），所以「平台规则目录」这个任务是
 用无头 Chrome 走产品自己的会话流建的（一轮对话、8 秒、无 cron）；`task-f7d19ae2`。
+
+### 事故：顶层 inject 一个只有 Host 有的服务 → Runtime 崩循环（2026-09-01，v0.3.0 发布后当场发现）
+
+规则目录要一个 `/opendb-rules` 通道，我把 `connection` 写进了 `task-rules` 的**顶层 `inject`**。
+但 `task-rules` **host / runtime 两个 bundle 都装**（会话侧要 `rules_catalog` 与 TaskType），而 `connection`
+只有 Host 有：Runtime 的插件树因此 `@opendb-dsh/task-rules: pending (waiting for service: connection)`，
+boot 直接 `plugin tree failed to load`，新 Pod CrashLoopBackOff 5 次。
+
+**没造成中断**：`maxUnavailable=0` + rollout.sh 的滚动状态校验——旧 ReplicaSet 的两个 Pod 继续服务，
+`rollout.sh` 报 `✖ deploy/opendb-dsh-runtime-default 未完成滚动（新 Pod 未就绪，旧 Pod 仍在服务——下面的验收结果不可信）`
+并以非零退出。这正是 8-31 那次"误报 ROLLOUT OK"之后补的三道校验，第一次真派上用场。
+
+**定论（写进纪律）**：**只有 Host 有的服务（`connection` / `webServer`）绝不能进双装包的顶层 `inject`**——
+用嵌套 `ctx.inject(['connection'], c => …)`，Runtime 侧那段不执行、插件照常激活。
+（对照：`opendbTasks` / `opendbThresholds` / `opendbSessions` 两侧都有，可以顶层 inject。）
+修复走 v0.3.1；v0.3.0 的镜像标签留着但**不要 pin**。
