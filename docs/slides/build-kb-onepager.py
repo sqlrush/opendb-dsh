@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""opendb-harness 客户知识库一页 PPT（user 2026-09-01 要的；R2：压字数 + 突出"最懂工行"的效果）：
-   把工行多年 GaussDB 实战沉淀（规范 / 工单 / 故障总结）自动构建成可判定的知识资产，
-   并说清三类存储（关系型 / 向量 / 图）各自角色与相互配合。刻意只写存储**类型**，不出现产品名。
+"""opendb-harness 客户知识库一页 PPT（user 2026-09-01 要的）：
+   把工行既有的几十篇规范 / 上千条工单 / 上百份故障总结，自动构建成"最懂工行"的知识库；
+   并说清三类存储引擎（关系型 / 向量 / 图）各自的角色与相互配合。
+   刻意只写存储**类型**，不出现任何产品名。
 
    /usr/bin/python3 docs/slides/build-kb-onepager.py  →  docs/slides/opendb-harness-知识库一页.pptx
-   预览：qlmanage -t -s 2400 -o /tmp/ql <pptx>（macOS QuickLook 渲染成 PNG）
+   预览：qlmanage -t -s 2000 -o /tmp/ql <pptx>（macOS QuickLook 渲染成 PNG）
 """
 from pathlib import Path
 from pptx import Presentation
@@ -17,11 +18,11 @@ from pptx.oxml.ns import qn
 OUT = Path(__file__).with_name('opendb-harness-知识库一页.pptx')
 FONT = 'PingFang SC'
 INK, SUB, DIM, BLUE, LINE = '0F1115', '61666B', '81858C', '4176E6', 'D9DCE1'
-GREEN, AMBER, PURPLE, WARN, RED = '3FA552', 'C9862D', '8B6BE0', 'E07A1F', 'D64545'
-FILL = {'src': 'FFFFFF', 'make': 'E8F5EC', 'rel': 'F2F3F5', 'vec': 'FDF0E3',
-        'graph': 'F3EEFC', 'search': 'EEF3FF', 'loop': 'F7F8FA'}
-EDGE = {'src': 'C9CED6', 'make': GREEN, 'rel': '8A9099', 'vec': AMBER,
-        'graph': PURPLE, 'search': BLUE, 'loop': 'B8BCC4'}
+GREEN, AMBER, PURPLE, TEAL, RED = '3FA552', 'C9862D', '8B6BE0', '2FA79A', 'D6604D'
+FILL = {'src': 'FFFFFF', 'ingest': 'EEF3FF', 'extract': 'E8F5EC', 'rel': 'F2F3F5',
+        'vec': 'FDF0E3', 'graph': 'F3EEFC', 'search': 'EEF3FF', 'use': 'F7F8FA'}
+EDGE = {'src': 'C9CED6', 'ingest': BLUE, 'extract': GREEN, 'rel': '8A9099',
+        'vec': AMBER, 'graph': PURPLE, 'search': BLUE, 'use': 'B8BCC4'}
 
 prs = Presentation()
 prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
@@ -67,7 +68,7 @@ def box(x, y, w, h, kind, title, badge=None, lines=(), title_size=11.5, body_siz
          [[(title, {'bold': True, 'size': title_size, 'color': INK})]
           + ([('  ' + badge, {'bold': True, 'size': badge_size, 'color': EDGE[kind]})] if badge else [])])
     if lines:
-        text(x + 0.08, y + 0.32, w - 0.16, h - 0.36, ['· ' + ln for ln in lines], size=body_size, color=SUB, line_spacing=1.14)
+        text(x + 0.08, y + 0.32, w - 0.16, h - 0.36, ['· ' + ln for ln in lines], size=body_size, color=SUB, line_spacing=1.12)
     return shp
 
 
@@ -91,136 +92,131 @@ def label(x, y, w, t, color=DIM, size=8, align=PP_ALIGN.LEFT):
     return tb
 
 
-def chip(x, y, w, h, fill, color, t, size=8.5):
-    shp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
-    shp.adjustments[0] = 0.3
-    shp.fill.solid(); shp.fill.fore_color.rgb = rgb(fill)
-    shp.line.fill.background(); shp.shadow.inherit = False
-    tf = shp.text_frame
-    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
-    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-    p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-    r = p.add_run(); r.text = t; r.font.name = FONT; r.font.size = Pt(size); r.font.bold = True; r.font.color.rgb = rgb(color)
-    return shp
-
-
 # ── 标题 ──────────────────────────────────────────────────────────────
-text(0.5, 0.28, 12.3, 0.5, [[('客户知识库：让平台"懂工行"', {'bold': True, 'size': 24, 'color': INK}),
-                             ('   把多年 GaussDB 实战沉淀，变成平台的判断力', {'size': 14, 'color': SUB})]])
-text(0.5, 0.80, 12.3, 0.3, ['规范 · 工单 · 故障总结  →  自动结构化  →  三类存储各司其职  →  每条结论都按工行口径给方案'],
-     size=12, color=BLUE)
+text(0.5, 0.26, 12.3, 0.5, [[('客户知识库：从"存着"到"真懂"', {'bold': True, 'size': 24, 'color': INK}),
+                             ('   基于工行多年 GaussDB 实战经验，给出最懂工行风格的方案与建议', {'size': 14, 'color': SUB})]])
+text(0.5, 0.76, 12.3, 0.3, ['几十篇使用规范 + 上千条问题处理工单 + 上百份故障分析总结 → 结构化 → 三类存储各司其职 → 每一条诊断结论旁都能说出"贵行规范怎么说、上次工行怎么处理"'],
+     size=11, color=BLUE)
 
-L, W = 0.5, 7.5
+L, W = 0.5, 8.15
 
-# ── ① 工行既有资料 ───────────────────────────────────────────────────
+# ── ① 客户既有资料 ───────────────────────────────────────────────────
 sw = (W - 0.24) / 3
-for i, (t, n) in enumerate([('使用规范', '几十篇'), ('处理工单', '上千条'), ('故障总结', '上百份')]):
-    box(L + i * (sw + 0.12), 1.30, sw, 0.44, 'src', t, badge=n, title_size=11, badge_size=9)
-label(L, 1.14, 4.0, '① 工行既有资料 · 多来源 · 无统一结构')
-
-# ── ② 自动加工成可判定的知识 ─────────────────────────────────────────
-box(L, 1.96, W, 1.00, 'make', '② 自动加工成"可判定"的知识', badge='模型抽取 + 人工确认后方可引用',
-    title_size=12, badge_size=9)
-mw = (W - 0.30) / 3
-for i, (t, b) in enumerate([
-    ('规范 → 条款卡', '约束对象 · 要求值 · 强制/建议'),
-    ('工单 → 处置卡', '现象 · 动作 · 耗时'),
-    ('故障 → 案例卡', '根因 · 处置 · 防复发'),
+for i, (t, b, n) in enumerate([
+    ('使用规范', '运维/变更/安全规范、准入标准', '几十篇'),
+    ('问题处理工单', '现象、处置动作、验证与耗时', '上千条'),
+    ('故障分析总结', '根因、影响面、复发防范', '上百份'),
 ]):
-    x = L + 0.10 + i * (mw + 0.05)
-    text(x, 2.24, mw, 0.44, [[(t, {'bold': True, 'size': 9.5, 'color': INK})], b], size=8.6, color=SUB, line_spacing=1.1)
-label(L + 0.10, 2.66, W - 0.2, '统一打标：适用引擎与环境 · 生效期 · 版本（重灌出新版，引用可追溯）', color=SUB, size=8.4)
+    x = L + i * (sw + 0.12)
+    box(x, 1.18, sw, 0.62, 'src', t, badge=n, lines=[b], title_size=11, body_size=8.4, badge_size=8.5)
+text(L, 1.02, W, 0.16, ['① 工行既有资料（多来源、多格式、无统一结构）'], size=8.5, color=DIM)
 
-# ── ③ 三类存储各司其职 ───────────────────────────────────────────────
-label(L, 2.94, 5.5, '③ 三类存储各司其职：真相只有一份，能力互补，任一层不可用都能降级')
-by, bh, GAP = 3.26, 1.26, 0.30
+# ── ② 摄入与治理 ─────────────────────────────────────────────────────
+box(L, 2.02, W, 0.60, 'ingest', '② 摄入与治理', badge='自动化管线 · 增量',
+    lines=['格式归一（文档 / 表格 / 工单导出 / 邮件）→ 语义切块；每篇强制打元数据：类型 · 适用引擎与环境 · 生效时间 · 版本 · 密级',
+           '同源资料重灌产出新版本而非覆盖——报告引用永远能追溯到"当时依据的是哪一版规范"'],
+    title_size=11.5, body_size=8.6)
+
+# ── ③ 结构化抽取 ─────────────────────────────────────────────────────
+box(L, 2.84, W, 1.00, 'extract', '③ 结构化抽取：把文本变成"可判定/可复用"的知识', badge='模型抽取 + 人工确认后才可被引用',
+    title_size=11.5, body_size=8.6, badge_size=8.5)
+ew = (W - 0.36) / 3
+for i, (t, b, c) in enumerate([
+    ('规范 → 条款卡', '约束对象 · 条件 · 要求值 · 强制/建议', GREEN),
+    ('工单 → 处置卡', '现象 · 动作 · 验证方式 · 耗时 · 涉及对象', GREEN),
+    ('故障总结 → 案例卡', '现象 · 影响 · 根因 · 处置 · 防复发', GREEN),
+]):
+    x = L + 0.12 + i * (ew + 0.06)
+    text(x, 3.24, ew, 0.5, [[(t, {'bold': True, 'size': 9.5, 'color': INK})], b], size=8.2, color=SUB, line_spacing=1.12)
+
+# ── ④ 三类存储各司其职 ───────────────────────────────────────────────
+text(L, 3.94, W, 0.16, ['④ 三类存储各司其职：真相只有一份，能力互补，任一层不可用都能降级'], size=8.5, color=DIM)
+by, bh = 4.12, 1.36
+GAP = 0.30                      # 缝要够宽，双向箭头才看得见（0.16 的缝里箭头几乎被框线吃掉）
 bw = (W - 2 * GAP) / 3
 box(L, by, bw, bh, 'rel', '关系型数据库', badge='唯一真相',
-    lines=['三种卡片 · 版本 · 引用台账', '记忆：这套库我们做过什么', '按引擎/环境/生效期精确过滤'],
-    title_size=11, body_size=8.6, badge_size=8.5)
+    lines=['文档 · 版本 · 条款卡 / 处置卡 / 案例卡',
+           '记忆系统：平台在贵行环境里做过什么',
+           '引用台账：哪条结论引用了哪一版哪一条',
+           '精确过滤：引擎 · 环境 · 生效期 · 权限'],
+    title_size=11, body_size=8.3, badge_size=8.5)
 box(L + bw + GAP, by, bw, bh, 'vec', '向量数据库', badge='语义召回',
-    lines=['说法不同、意思相同也能召回', '"连接打满" ↔ "连接超阈值"', '只加速，不存真相，可重建'],
-    title_size=11, body_size=8.6, badge_size=8.5)
+    lines=['切块与卡片的向量索引，规模化近邻检索',
+           '解决"说法不同、意思相同"的召回',
+           '贵行说"连接打满" ↔ 平台判"连接超阈值"',
+           '不存业务事实——只加速，可随时重建'],
+    title_size=11, body_size=8.3, badge_size=8.5)
 box(L + 2 * (bw + GAP), by, bw, bh, 'graph', '图数据库', badge='关系推理',
-    lines=['现象 → 根因 → 处置 多跳串联', '条款 ↔ 对象、案例 ↔ 条款', '一条结论牵出规范与历史全链'],
-    title_size=11, body_size=8.6, badge_size=8.5)
+    lines=['实体：对象 · 现象 · 根因 · 处置动作 · 条款',
+           '边：现象→根因→处置、条款→约束对象',
+           '案例→引用条款、故障→涉及节点',
+           '多跳串联：一条结论牵出规范与历史全链'],
+    title_size=11, body_size=8.3, badge_size=8.5)
+# 三库之间的配合：缝里一根双向箭头 + 缝下的说明
 mid = by + bh / 2
 arrow(L + bw, mid, L + bw + GAP, mid, both=True, color=AMBER, width=1.3)
 arrow(L + 2 * bw + GAP, mid, L + 2 * bw + 2 * GAP, mid, both=True, color=PURPLE, width=1.3)
-label(L + bw + GAP / 2 - 0.70, by + bh + 0.02, 1.4, '同步向量 / 回表取原文', color=AMBER, size=7.5, align=PP_ALIGN.CENTER)
-label(L + 2 * bw + 1.5 * GAP - 0.75, by + bh + 0.02, 1.5, '抽实体与边 / 回表取证据', color=PURPLE, size=7.5, align=PP_ALIGN.CENTER)
+label(L + bw + GAP / 2 - 0.75, by + bh + 0.03, 1.5, '同步向量 / 回表取原文', color=AMBER, size=7.5, align=PP_ALIGN.CENTER)
+label(L + 2 * bw + 1.5 * GAP - 0.8, by + bh + 0.03, 1.6, '抽实体与边 / 回表取证据', color=PURPLE, size=7.5, align=PP_ALIGN.CENTER)
 
-# ── ④ 混合检索 ───────────────────────────────────────────────────────
-box(L, 4.86, W, 0.66, 'search', '④ 混合检索：由平台按"发现"发起', badge='语义 + 词法 + 范围过滤 + 图扩展 → 重排',
-    lines=['检索键 = 规则码 + 对象 + 现象词；命中条款卡 / 处置卡 / 案例卡，连同出处一起交给模型'],
-    title_size=12, body_size=8.8, badge_size=9)
+# ── ⑤ 混合检索编排 ───────────────────────────────────────────────────
+box(L, 5.72, W, 0.58, 'search', '⑤ 混合检索编排（由平台按"发现"发起，不靠模型自己想起来查）', badge='语义 + 词法 + 结构过滤 + 图扩展 → 重排',
+    lines=['检索键 = 规则码 + 对象 + 现象词：语义召回近义说法、词法精确命中错误码与对象名、按引擎/环境/生效期过滤、再沿图扩展到根因与历史处置'],
+    title_size=11, body_size=8.6, badge_size=8.5)
 
-# ── ⑤ 闭环 ───────────────────────────────────────────────────────────
-box(L, 5.76, W, 0.58, 'loop', '⑤ 越用越懂', badge='缺口驱动',
-    lines=['查不到规范的发现自动排队提示补料；DBA 点"有用 / 无关"回写排序权重'],
-    title_size=11.5, body_size=8.8, badge_size=9)
-
-cx = L + W / 2
-arrow(cx, 1.74, cx, 1.96, color=BLUE)
-arrow(cx, 2.96, cx, 3.26, color=GREEN)
-arrow(cx, by + bh, cx, 4.86, color=BLUE)
-arrow(cx, 5.52, cx, 5.76, color=SUB)
-
-# ── 右栏：效果 ───────────────────────────────────────────────────────
-R, RW = 8.25, 4.6
-panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(R), Inches(1.10), Inches(RW), Inches(5.24))
-panel.adjustments[0] = 0.03
-panel.fill.solid(); panel.fill.fore_color.rgb = rgb('FFFFFF')
-panel.line.color.rgb = rgb(BLUE); panel.line.width = Pt(1.5)
-panel.shadow.inherit = False
-text(R + 0.18, 1.20, RW - 0.36, 0.36, [[('效果：最懂工行的那一版建议', {'bold': True, 'size': 15, 'color': INK})]])
-text(R + 0.18, 1.58, RW - 0.36, 0.46,
-     [[('知识库 = 工行多年 GaussDB 实战经验的结构化沉淀', {'bold': True, 'size': 10.5, 'color': BLUE})],
-      [('平台判定仍归脚本，知识库负责"按工行的规矩和习惯"给方案', {'size': 9.5, 'color': SUB})]], line_spacing=1.2)
-
-# 示例卡
-cy = 2.15
-cardh = 2.20
-card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(R + 0.18), Inches(cy), Inches(RW - 0.36), Inches(cardh))
-card.adjustments[0] = 0.04
-card.fill.solid(); card.fill.fore_color.rgb = rgb('F7F8FA')
-card.line.color.rgb = rgb(LINE); card.line.width = Pt(1)
-card.shadow.inherit = False
-label(R + 0.26, cy + 0.06, 2.4, '示例 · 报告里的一条结论', color=DIM, size=8)
-chip(R + 0.26, cy + 0.30, 0.46, 0.20, 'FDF0E3', WARN, 'warn')
-text(R + 0.76, cy + 0.27, RW - 0.94, 0.26, [[('系统表膨胀 · 全量 SQL 追踪表 16GB', {'bold': True, 'size': 10.5, 'color': INK})]])
-rows = [
-    ('贵行规范', '全量 SQL 追踪仅在诊断窗口开启（强制）', GREEN),
-    ('历史相似', '同类问题曾降追踪级别后重建，2 小时恢复', PURPLE),
-    ('建议 · 工行口径', '提变更单 → 23:00–06:00 窗口 → 双人复核', BLUE),
-]
-ry = cy + 0.62
-for t, b, c in rows:
-    text(R + 0.26, ry, 1.30, 0.24, [[(t, {'bold': True, 'size': 9, 'color': c})]])
-    text(R + 1.58, ry, RW - 1.76, 0.5, [b], size=9, color=SUB, line_spacing=1.15)
-    ry += 0.60
-
-# 三条要点
-py = cy + cardh + 0.26
+# ── ⑥ 落到平台的确定性结论上 ─────────────────────────────────────────
+box(L, 6.42, W, 0.86, 'use', '⑥ 用在哪：贴到平台每一条确定性结论旁', badge='引用必须有出处 · 查不到就写"无对应规范"，绝不编造',
+    title_size=11, badge_size=8.5)
+uw = (W - 0.36) / 4
 for i, (t, b) in enumerate([
-    ('说工行的话', '用贵行的术语与流程给建议，不给通用套话'),
-    ('每条有出处', '引用可追到哪一版哪一条；查不到就写"无对应规范"'),
-    ('口径按工行', '客户标准与平台默认不一致 → 差异清单，人确认后生效'),
+    ('规范对照', '结论旁引用条款原文（参考不改判）'),
+    ('建议本地化', '按贵行流程改写处置建议'),
+    ('阈值对齐', '工行口径差异清单 → 人确认后生效'),
+    ('案例复用', '相似历史故障的处置与耗时'),
 ]):
-    num = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(R + 0.20), Inches(py + 0.03), Inches(0.26), Inches(0.26))
+    x = L + 0.12 + i * (uw + 0.04)
+    text(x, 6.76, uw, 0.46, [[(t, {'bold': True, 'size': 9, 'color': INK})], b], size=8, color=SUB, line_spacing=1.1)
+
+# 主流程箭头
+cx = L + W / 2
+arrow(cx, 1.80, cx, 2.02, color=BLUE)
+arrow(cx, 2.62, cx, 2.84, color=GREEN)
+arrow(cx, 3.84, cx, 4.12, color=SUB)
+arrow(cx, by + bh, cx, 5.72, color=BLUE)
+arrow(cx, 6.30, cx, 6.42, color=SUB)
+
+# ── 右栏：怎么做到"真懂客户" ─────────────────────────────────────────
+R, RW = 8.95, 3.9
+panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(R), Inches(1.18), Inches(RW), Inches(6.10))
+panel.adjustments[0] = 0.04
+panel.fill.solid(); panel.fill.fore_color.rgb = rgb('FFFFFF')
+panel.line.color.rgb = rgb(LINE); panel.line.width = Pt(1)
+panel.shadow.inherit = False
+text(R + 0.15, 1.26, RW - 0.3, 0.35, [[('效果：基于工行多年 GaussDB 实战经验', {'bold': True, 'size': 14, 'color': INK})]])
+points = [
+    ('懂工行的规矩：能对账，不只是能搜',
+     '规范变成条款卡后，与平台内置的确定性规则逐条比对：贵行有要求、平台在判但阈值不同 → 差异清单；贵行有要求、平台没规则 → 能力缺口；平台在判、贵行没写 → 建议补进规范。知识库因此从"资料检索"变成"按工行口径工作"。'),
+    ('懂工行的处置习惯：给的是贵行的做法',
+     '上千条工单与上百份故障总结沉淀成处置卡 / 案例卡，遇到相似问题直接给贵行历史上的处置路径与耗时；建议按贵行流程表述——提变更单、低峰窗口、双人复核，而不是通用套话。'),
+    ('两套经验双轮驱动',
+     '知识 = 工行多年沉淀的规范与案例；记忆 = 平台在这套 GaussDB 环境里做过什么、上次结论是什么。两者同库同源、互为佐证——既懂贵行的规矩，也记得这套库的脾气。'),
+    ('越用越懂：缺口驱动地长大',
+     '报告里"无对应规范"的发现自动排队，提示补哪类资料；DBA 对每条引用点"有用 / 无关"回写排序权重。冷启动只需先灌最核心的几十篇，而不是一次性倒进所有历史文档。'),
+]
+y = 1.70
+for i, (t, body) in enumerate(points):
+    num = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(R + 0.18), Inches(y + 0.02), Inches(0.3), Inches(0.3))
     num.fill.solid(); num.fill.fore_color.rgb = rgb(BLUE); num.line.fill.background(); num.shadow.inherit = False
     tf = num.text_frame; tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
-    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
-    r = p.add_run(); r.text = str(i + 1); r.font.size = Pt(9); r.font.bold = True; r.font.color.rgb = rgb('FFFFFF'); r.font.name = FONT
-    text(R + 0.54, py, RW - 0.72, 0.28, [[(t, {'bold': True, 'size': 11, 'color': INK}), ('   ' + b, {'size': 9.3, 'color': SUB})]])
-    py += 0.46
+    r = p.add_run(); r.text = str(i + 1); r.font.size = Pt(10); r.font.bold = True; r.font.color.rgb = rgb('FFFFFF'); r.font.name = FONT
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    text(R + 0.58, y - 0.02, RW - 0.75, 0.34, [[(t, {'bold': True, 'size': 11.5, 'color': INK})]])
+    text(R + 0.58, y + 0.30, RW - 0.75, 1.15, [body], size=9.2, color=SUB, line_spacing=1.18)
+    y += 1.44
 
-# 流水线 → 效果
-arrow(L + W, 5.19, R, 5.19, color=BLUE, width=1.5)
-
-text(0.5, 6.62, 8.2, 0.18, ['图例：实线 = 主流程；框间双向箭头 = 存储层之间的同步与回表；三类存储只写类型，不绑定具体产品'], size=7.5, color=DIM)
-text(9.0, 6.62, 3.9, 0.18, ['opendb-harness · 客户知识库一页 · 2026-09'], size=7.5, color=DIM, align=PP_ALIGN.RIGHT)
+text(0.5, 7.32, 8.2, 0.18, ['图例：实线箭头 = 主流程；框间双向箭头 = 存储层之间的同步与回表；三类存储只写类型，不绑定具体产品'], size=7.5, color=DIM)
+text(9.0, 7.32, 3.9, 0.18, ['opendb-harness · 客户知识库一页 · 2026-09'], size=7.5, color=DIM, align=PP_ALIGN.RIGHT)
 
 prs.save(OUT)
 print('saved', OUT)
