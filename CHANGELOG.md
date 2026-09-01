@@ -8,6 +8,14 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ## [Unreleased]
 
 ### Added
+- **资源 › 模型用量（`ui-cluster` 第二个面板，user 2026-08-31 通过 `docs/prototypes/usage-r2.html`）**：把「这些报告到底烧了多少 token」
+  摊开——摘要 6 卡（窗口总量 / 缓存读占比 / 调用次数与平均每次 / 任务运行占比 / 推理 tokens / 今日）→ **用量趋势**（逐日堆叠柱：
+  缓存读 · 输入 · 输出，柱顶标数值，整列悬停出四项明细；调用次数不与 tokens 抢轴，另走一条对齐的细带，标峰值；范围 7/30 日、
+  口径 tokens/调用次数可切）→ **用量构成**（按来源：任务运行 / 报告深挖 / 人工会话，按模型）+ **单次调用规模**分布
+  → **Top 会话**（可直接「打开会话 →」）。数据来自 platform-status 新增的 `usage` 端点，只读会话事件 `assistant/message.usage`。
+  **口径写在页脚**：四个字段全部由模型 API 原样返回（缓存读取自 `prompt_tokens_details.cached_tokens` / `prompt_cache_hit_tokens` /
+  `cache_read_input_tokens`，提供方不返回就是 0，平台不估算）；「输入」已扣掉缓存部分故总量不双算，「推理」已含在输出里；
+  **不做费用换算**（平台不存单价）。原 platform-status 的旧资源大盘面板同时下线。验收 `scripts/browser/usage-check.mjs`（24/24）。
 - **资源 › k8s 集群状态（新面板插件 `ui-cluster`，user 2026-08-31 通过 `docs/prototypes/cluster-r4.html`）**：侧栏「资源」升为与
   「工作区」同款一级目录，下挂「k8s 集群状态」「模型用量」。主区三个 tab——**架构图**：k8s 边界框内 Pod 全量展示（不折叠）、
   按类型着色（网关/执行器/采集/状态库/缓存/对象存储/向量库/嵌入模型八色）、每层居中、Pod 之间画出调用关系（线色 = 调用方，
@@ -50,6 +58,11 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   连错三次。
 
 ### Fixed
+- **模型用量页首屏 5s → 0.3s**：`dsh_session_events` 已到 630 万行 / 2.5 GB 且只有 `(session_id, seq)` 主键，用量聚合原本全表扫，
+  取会话标题又写成了逐行相关子查询（标题事件在会话最早期，从末尾反向扫等于扫全会话），Top 会话那条单查 2.4s。
+  改成先按会话聚合再对聚合结果 `LEFT JOIN LATERAL` 取一次标题，并加两条部分索引（migration 020：带 usage 的
+  `assistant/message` 按 time、`session/title` 按 (session_id, seq desc)；各几千行、实测 96 KB）。同时把逐日序列改按
+  `min(time)` 排序——原先按 `'MM-DD'` 字符串排，跨年窗口会把 01-05 排到 12-30 前面。
 - **`deploy/k8s/rollout.sh` 会在新 Pod 崩溃时误报 `ROLLOUT OK`**：`kubectl rollout status` 的退出码被管道吃掉，滚动没完成也继续；
   旧 ReplicaSet 的 Pod 因 `maxUnavailable=0` 仍在服务，入口 200 / 插件包 200 / 无头 Chrome 面板检查全打在旧 Pod 上，一路绿灯
   （2026-08-31 `ui-cluster` 缺 `apply` 导致插件树加载失败实证）。现在滚动状态非零即报错并注明"下面的验收结果不可信"，

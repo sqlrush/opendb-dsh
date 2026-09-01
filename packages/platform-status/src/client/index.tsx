@@ -100,24 +100,11 @@ function makePanel(call: (endpoint: string, payload?: unknown) => Promise<any>) 
   };
 }
 
-export function apply(ctx: any): void {
-  const call = async (endpoint: string, payload: unknown = {}): Promise<any> => {
-    const r = await ctx.connection.rpc.call('/opendb-status', endpoint, payload);
-    if (!r.ok) throw new Error(r.error?.message ?? 'request failed');
-    return r.value;
-  };
-  const Panel = makePanel(call);
-  registerResourcePanelSafe(Panel);
-}
-
 /**
- * 注册资源大盘：与 ui-harness 的加载顺序无关。桥已在就直接注册，否则排进 __pending，
- * 由后到的 ui-harness 兑现。原先 250ms×40 轮询超 10 秒永久放弃——并发加载下会丢面板。
+ * 2026-08-31：本包的 client 面板下线——资源页拆成「k8s 集群状态」与「模型用量」两项，都由 ui-cluster 承担
+ * （pod 拓扑归集群页，token 用量归用量页，且都换成了 user 定稿的新版）。server 半边（/opendb-status 的
+ * overview / cluster / usage 端点）继续由本包提供，是新面板的数据来源。
+ * makePanel 保留未删：万一 ui-cluster 没加载上，也能手工挂回来应急。
  */
-function registerResourcePanelSafe(Comp: any): void {
-  if (typeof window === 'undefined') return;
-  const w = window as any;
-  if (w.__opendbHarness__?.registerResourcePanel !== undefined) { w.__opendbHarness__.registerResourcePanel(Comp); return; }
-  w.__opendbHarness__ = w.__opendbHarness__ ?? {};
-  w.__opendbHarness__.__pending = [...(w.__opendbHarness__.__pending ?? []), { kind: 'resource', comp: Comp }];
-}
+export function apply(_ctx: any): void { /* client panel retired; see ui-cluster */ }
+

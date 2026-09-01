@@ -103,6 +103,77 @@ async function fleet(pool: pg.Pool): Promise<unknown> {
   return { total: items.length, counts, items };
 }
 
+// ── 模型用量（2026-08-31 R2，user 通过 docs/prototypes/usage-r2.html）
+/**
+ * usage 的四个字段都由模型 API 原样返回（`@earendil-works/pi-ai` 的 parseChunkUsage）：
+ *   cacheReadTokens = prompt_tokens_details.cached_tokens（OpenAI 系）/ prompt_cache_hit_tokens（DeepSeek）/ cache_read_input_tokens（Anthropic）
+ *   inputTokens     = prompt_tokens − cacheRead − cacheWrite  ← 已扣掉缓存部分，所以「输入 + 输出 + 缓存读」不会双算
+ *   reasoningTokens = completion_tokens_details.reasoning_tokens ← 已含在 outputTokens 里，不另计入总量
+ * 提供方不返回缓存字段时就是 0（平台不估算、不推断）。
+ */
+const TOK = `(data->'usage'->>'inputTokens')::bigint`;
+const TOK_O = `(data->'usage'->>'outputTokens')::bigint`;
+const TOK_C = `coalesce((data->'usage'->>'cacheReadTokens')::bigint, 0)`;
+const TOK_R = `coalesce((data->'usage'->>'reasoningTokens')::bigint, 0)`;
+const TOTAL = `${TOK} + ${TOK_O} + ${TOK_C}`;
+const USAGE_ROWS = `dsh_session_events WHERE type = 'assistant/message' AND data ? 'usage'`;
+/**
+ * 会话标题：先按 session 聚好，再对聚合后的少量会话做一次 LATERAL 取最新 session/title。
+ * 不要写成逐行相关子查询——事件表 630 万行、单会话事件成千上万，标题事件又在会话最早期，
+ * 逐行反向扫描实测把 Top 会话那条查询拖到 2.4s（本页首屏 5s 的主因）。
+ */
+const TITLE_LAT = `LEFT JOIN LATERAL (SELECT t.data->>'title' title FROM dsh_session_events t
+                     WHERE t.session_id = a.session_id AND t.type = 'session/title' ORDER BY t.seq DESC LIMIT 1) ti ON true`;
+/** 标题 → 来源：【任务运行】= 定时/手动任务；其余方括号开头 = 报告里的深挖会话；其余 = 人工会话 */
+const KIND = `CASE WHEN ti.title LIKE '【任务运行】%' THEN 'task' WHEN ti.title LIKE '【%' THEN 'dig' ELSE 'manual' END`;
+const n = (v: unknown): number => Number(v ?? 0);
+
+async function usage(pool: pg.Pool, days: number): Promise<unknown> {
+  const win = `to_timestamp(time / 1000.0) > now() - ($1 || ' days')::interval`;
+  const [totals, today, daily, bySource, byModel, sizes, top] = await Promise.all([
+    pool.query(`SELECT coalesce(sum(${TOK}),0) i, coalesce(sum(${TOK_O}),0) o, coalesce(sum(${TOK_C}),0) c, coalesce(sum(${TOK_R}),0) r, count(*) n,
+                       count(DISTINCT session_id) sessions FROM ${USAGE_ROWS} AND ${win}`, [String(days)]),
+    pool.query(`SELECT coalesce(sum(${TOK}),0) i, coalesce(sum(${TOK_O}),0) o, coalesce(sum(${TOK_C}),0) c, count(*) n
+                  FROM ${USAGE_ROWS} AND to_timestamp(time / 1000.0) > date_trunc('day', now())`),
+    // 按 min(time) 排序而不是按 'MM-DD' 字符串：跨年窗口下 01-05 会排到 12-30 前面
+    pool.query(`SELECT to_char(date_trunc('day', to_timestamp(time / 1000.0)), 'MM-DD') d,
+                       sum(${TOK}) i, sum(${TOK_O}) o, sum(${TOK_C}) c, count(*) n
+                  FROM ${USAGE_ROWS} AND ${win} GROUP BY 1 ORDER BY min(time)`, [String(days)]),
+    pool.query(`WITH agg AS (SELECT session_id, sum(${TOTAL}) tok, count(*) cnt
+                               FROM ${USAGE_ROWS} AND ${win} GROUP BY session_id)
+                SELECT kind, sum(tok) tok, sum(cnt) cnt, count(*) sessions
+                  FROM (SELECT ${KIND} kind, a.tok, a.cnt FROM agg a ${TITLE_LAT}) s GROUP BY kind`, [String(days)]),
+    pool.query(`SELECT coalesce(data->'message'->'source'->>'model', '(未知)') model, sum(${TOTAL}) tok, count(*) n
+                  FROM ${USAGE_ROWS} AND ${win} GROUP BY 1 ORDER BY 2 DESC`, [String(days)]),
+    pool.query(`SELECT bucket, count(*) n FROM (
+                  SELECT CASE WHEN t < 10000 THEN '<10k' WHEN t < 30000 THEN '10-30k' WHEN t < 60000 THEN '30-60k'
+                              WHEN t < 100000 THEN '60-100k' ELSE '>100k' END bucket
+                    FROM (SELECT ${TOTAL} t FROM ${USAGE_ROWS} AND ${win}) x) y GROUP BY 1`, [String(days)]),
+    pool.query(`WITH agg AS (SELECT session_id, sum(${TOTAL}) tokens, count(*) calls,
+                                    max(data->'message'->'source'->>'model') model
+                               FROM ${USAGE_ROWS} AND ${win} GROUP BY session_id ORDER BY 2 DESC LIMIT 8)
+                SELECT a.session_id, coalesce(ti.title, '(未命名会话)') title, ${KIND} kind, a.tokens, a.calls, a.model
+                  FROM agg a ${TITLE_LAT} ORDER BY a.tokens DESC`, [String(days)]),
+  ]);
+  const t = totals.rows[0]; const td = today.rows[0];
+  const ORDER = ['<10k', '10-30k', '30-60k', '60-100k', '>100k'];
+  const sizeMap = new Map(sizes.rows.map((r: any) => [String(r.bucket), n(r.n)]));
+  return {
+    windowDays: days,
+    totals: { input: n(t.i), output: n(t.o), cacheRead: n(t.c), reasoning: n(t.r), calls: n(t.n), sessions: n(t.sessions) },
+    today: { input: n(td.i), output: n(td.o), cacheRead: n(td.c), calls: n(td.n) },
+    daily: daily.rows.map((r: any) => ({ day: String(r.d), input: n(r.i), output: n(r.o), cacheRead: n(r.c), calls: n(r.n) })),
+    bySource: bySource.rows.map((r: any) => ({ kind: String(r.kind), tokens: n(r.tok), calls: n(r.cnt), sessions: n(r.sessions) }))
+      .sort((a, b) => b.tokens - a.tokens),
+    byModel: byModel.rows.map((r: any) => ({ model: String(r.model), tokens: n(r.tok), calls: n(r.n) })),
+    sizes: ORDER.map((b) => ({ bucket: b, count: sizeMap.get(b) ?? 0 })),
+    topSessions: top.rows.map((r: any) => ({
+      sessionId: String(r.session_id), title: String(r.title), kind: String(r.kind),
+      tokens: n(r.tokens), calls: n(r.calls), model: r.model === null ? '' : String(r.model),
+    })),
+  };
+}
+
 /** 全局资源大盘的 server 半边：/opendb-status 通道（pod 拓扑 + 模型 token 用量 + k8s 集群状态）。 */
 export function apply(ctx: Context, config: { connectionString: string }): void {
   const anyCtx = ctx as any;
@@ -179,6 +250,11 @@ export function apply(ctx: Context, config: { connectionString: string }): void 
           .sort((a: any, b: any) => (a.type === b.type ? String(b.time).localeCompare(String(a.time)) : a.type === 'Warning' ? -1 : 1))
           .slice(0, 30);
         return { ok: true, value: { nodes, pods, events, fleet: await fleet(pool), collectedAt: new Date().toISOString() } };
+      }
+      // ── 模型用量（资源 › 模型用量）：默认近 7 日，payload.days 可切 30
+      if (endpoint === 'usage') {
+        const days = Math.max(1, Math.min(Number((_payload as { days?: unknown } | null)?.days ?? 7), 90));
+        return { ok: true, value: await usage(pool, days) };
       }
       if (endpoint !== 'overview') return { ok: false, error: { code: 'bad-request', message: `unknown endpoint ${endpoint}`, details: {} } };
 

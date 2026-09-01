@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模型用量 · R1 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545;
+    --cache:#2FA79A; --in:#4176E6; --out:#8B6BE0; --reason:#9A6BB8;
+    --task:#4176E6; --dig:#8B6BE0; --manual:#2FA79A;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  .num{font-variant-numeric:tabular-nums}.mono{font-family:var(--mono)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  .app{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:calc(100vh - 31px)}
+  .side{border-right:1px solid var(--line);padding:14px 12px;font-size:14px;background:#fff}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:2px 8px 14px}
+  .brand i{display:inline-block;width:20px;height:20px;border-radius:5px;background:var(--ink);flex:none}
+  .newbtn{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:7px;color:var(--ink);margin-bottom:14px}
+  .sec{font-size:12.5px;color:var(--dim);padding:6px 8px 4px;display:flex;align-items:center;gap:6px}
+  .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;color:var(--ink);cursor:pointer}
+  .row:hover{background:var(--fill)}.row.on{background:var(--fill2);font-weight:500}
+  .row .n{margin-left:auto;font-size:12.5px;color:var(--dim)}
+  .sk{width:15px;height:15px;flex:none}
+  .main{min-width:0}
+  .top{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 24px;font-size:14px}
+  .top b{font-weight:600}.top .dim{color:var(--dim)}
+  .page{padding:18px 24px 40px;min-width:0}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .title h1{font-size:20px;font-weight:600;margin:0}
+  .title .meta{font-size:13.5px;color:var(--dim)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;border-radius:6px;padding:1px 9px;font-weight:500;white-space:nowrap}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.notice{background:var(--notice-soft);color:var(--notice)}.chip.grey{background:var(--fill2);color:var(--sub)}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:10px;margin:14px 0 18px}
+  .stat{background:var(--fill);border-radius:8px;padding:10px 13px;min-width:0}
+  .stat .l{font-size:12.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stat .v{font-size:21px;font-weight:600;line-height:1.3;margin-top:1px;white-space:nowrap}
+  .stat .v small{font-size:12.5px;font-weight:500;color:var(--dim);margin-left:4px}
+  .stat .d{font-size:12px;color:var(--dim);line-height:1.45}
+  h2{font-size:18px;font-weight:600;margin:26px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  h2 .hint{font-size:13.5px;color:var(--dim);font-weight:400}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);min-width:0}
+  .two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:12px}
+  .pick{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--dim);flex-wrap:wrap;margin-bottom:10px}
+  .f{border:1px solid var(--line);border-radius:6px;padding:0 9px;font-size:12.5px;color:var(--sub);background:#fff;cursor:pointer;white-space:nowrap}
+  .f.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--sub);margin-top:10px;align-items:center}
+  .legend i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+  /* 构成条 */
+  .comp{font-size:13.5px}
+  .comp .r{display:grid;grid-template-columns:14px minmax(0,1fr) 78px 52px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+  .comp .r:first-child{border-top:none}
+  .comp .r .n{min-width:0;line-height:1.35}
+  .comp .r .n small{display:block;color:var(--dim);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .comp .bar{height:6px;border-radius:3px;background:var(--fill2);position:relative}
+  .comp .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+  .stack{display:flex;height:22px;border-radius:6px;overflow:hidden;margin:2px 0 10px}
+  .stack i{display:block;height:100%}
+  /* 分布 */
+  .dist .r{display:grid;grid-template-columns:78px minmax(0,1fr) 96px;gap:10px;align-items:center;font-size:13px;padding:5px 0}
+  .dist .bar{height:14px;border-radius:4px;background:var(--fill2);position:relative;overflow:hidden}
+  .dist .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--blue)}
+  /* 表 */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-size:12.5px;color:var(--dim);font-weight:500;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:middle}
+  td.r,th.r{text-align:right}
+  .link{font-size:12.5px;color:var(--blue);cursor:pointer;white-space:nowrap}
+  .notes{font-size:13px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:8px 14px;margin-top:18px}
+  .foot{margin-top:20px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:12px}
+  svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+  .tip{position:fixed;pointer-events:none;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);padding:8px 12px;font-size:12.5px;line-height:1.6;display:none;z-index:9}
+</style>
+</head>
+<body>
+<div class="ribbon">设计稿 R1 · 资源 › 模型用量 · 全部数字为平台 2026-08-25→08-31 实测（dsh_session_events 的 assistant/message.usage）· 现有页面只有「今日/近7日/Top会话」三块，这版补上缓存命中、来源构成、模型分布与单次规模</div>
+<div class="app">
+  <div class="side">
+    <div class="brand"><i></i>opendb <span style="font-weight:600;letter-spacing:.06em;font-size:12px;background:var(--ink);color:#fff;border-radius:4px;padding:1px 5px">HARNESS</span></div>
+    <div class="newbtn">⊕ 新会话</div>
+    <div class="sec">工作区 <span style="margin-left:auto">⌄</span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h11v7a1.5 1.5 0 0 1-1.5 1.5H5l-2.5 2z" stroke="#4176E6" stroke-width="1.4" stroke-linejoin="round"/></svg>会话<span class="n">10</span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="#4176E6" stroke-width="1.4"/><path d="M5.5 6.5h5M5.5 9.5h3" stroke="#4176E6" stroke-width="1.4" stroke-linecap="round"/></svg>任务<span class="n">4</span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="4.2" rx="5" ry="2" stroke="#4176E6" stroke-width="1.4"/><path d="M3 4.2v7.6c0 1.1 2.2 2 5 2s5-.9 5-2V4.2" stroke="#4176E6" stroke-width="1.4"/></svg>数据库<span class="n">1</span></div>
+    <div class="sec" style="margin-top:10px">资源 <span style="margin-left:auto">⌄</span></div>
+    <div class="row"><svg class="sk" viewBox="0 0 16 16" fill="none"><path d="M8 1.8 13.5 4.6v5.2L8 12.6 2.5 9.8V4.6z" stroke="#4176E6" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6.4 13.5 4.6M8 6.4 2.5 4.6M8 6.4v6.2" stroke="#4176E6" stroke-width="1.2"/></svg>k8s 集群状态</div>
+    <div class="row on"><svg class="sk" viewBox="0 0 16 16" fill="none"><path d="M2.5 12.5v-4M6.2 12.5v-7M9.8 12.5v-9M13.5 12.5v-5" stroke="#4176E6" stroke-width="1.5" stroke-linecap="round"/></svg>模型用量</div>
+  </div>
+
+  <div class="main">
+    <div class="top"><b>资源</b><span class="dim">›</span><span>模型用量</span><span class="dim" style="margin-left:auto;font-size:13px">60 秒自动刷新 · 09-01 00:40</span></div>
+    <div class="page">
+      <div class="title">
+        <h1>模型用量</h1>
+        <span class="chip ok">缓存命中 92%</span>
+        <span class="meta">近 7 日 · 3,292 次调用 · 2 个模型 · 数据源：会话事件里的 usage（输入 / 输出 / 缓存读 / 推理）</span>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="l">近 7 日总量</div><div class="v num">64.2 M<small>tokens</small></div><div class="d">输入 4.6M · 输出 6.2M · 缓存读 53.4M</div></div>
+        <div class="stat"><div class="l">缓存读占比</div><div class="v num" style="color:var(--ok)">83%</div><div class="d">53.4M 走缓存 · 缓存命中率 92%（省下的重复输入）</div></div>
+        <div class="stat"><div class="l">调用次数</div><div class="v num">3,292</div><div class="d">平均每次 19.5k tokens</div></div>
+        <div class="stat"><div class="l">任务运行占比</div><div class="v num">90%</div><div class="d">58.0M / 742 个会话 · 人工会话仅 5.3M</div></div>
+        <div class="stat"><div class="l">推理 tokens</div><div class="v num">3.4 M</div><div class="d">占输出的 55%（v4-pro 的思考过程）</div></div>
+        <div class="stat"><div class="l">今日</div><div class="v num" style="color:var(--dim)">0</div><div class="d">今天还没有任务触发（下次 02:00 容量任务）</div></div>
+      </div>
+
+      <h2>用量趋势 <span class="hint">逐日堆叠 · 缓存读 / 输入 / 输出 · 悬停看当日明细 · 折线 = 调用次数（右轴）</span></h2>
+      <div class="card">
+        <div class="pick">范围 <span class="f on" data-r="7">近 7 日</span><span class="f" data-r="30">近 30 日</span>
+          <span style="margin-left:10px">口径</span><span class="f on" data-m="tok">tokens</span><span class="f" data-m="call">调用次数</span>
+          <span style="margin-left:auto" id="sum"></span>
+        </div>
+        <svg id="trend" width="100%" height="240" viewBox="0 0 900 240" preserveAspectRatio="none" style="display:block"></svg>
+        <div class="legend">
+          <span><i style="background:var(--cache)"></i>缓存读（命中的重复输入）</span>
+          <span><i style="background:var(--in)"></i>输入（新增）</span>
+          <span><i style="background:var(--out)"></i>输出</span>
+          <span><i style="display:inline-block;width:14px;height:0;border-top:2px solid var(--notice);border-radius:0"></i>调用次数</span>
+          <span style="color:var(--dim)">08-27/28 是四个报表重构的开发高峰，之后回落</span>
+        </div>
+      </div>
+
+      <div class="two" style="margin-top:14px">
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:16px">用量构成 <span class="hint">近 7 日 · 按来源与模型</span></h2>
+          <div style="font-size:12.5px;color:var(--dim);margin-bottom:2px">按来源</div>
+          <div class="stack" id="src-stack"></div>
+          <div class="comp" id="src-rows"></div>
+          <div style="font-size:12.5px;color:var(--dim);margin:14px 0 2px">按模型</div>
+          <div class="stack" id="model-stack"></div>
+          <div class="comp" id="model-rows"></div>
+        </div>
+        <div class="card">
+          <h2 style="margin:0 0 10px;font-size:16px">单次调用规模 <span class="hint">近 7 日 · 每次请求的 tokens（含缓存读）</span></h2>
+          <div class="dist" id="dist"></div>
+          <div style="font-size:13px;color:var(--sub);margin-top:10px;line-height:1.7">
+            87% 的调用落在 <b>10–30k</b>：每次都带着完整的 SOP 与工具定义，靠 prompt 缓存把这部分变成缓存读——所以
+            <b>缓存读占比越高越省</b>。超过 60k 的只有 9 次（长会话深挖）。
+          </div>
+        </div>
+      </div>
+
+      <h2>Top 会话 <span class="hint">近 7 日按 tokens 排序 · 点标题进入该会话</span></h2>
+      <div class="card" style="padding:4px 18px 8px">
+        <table id="top">
+          <thead><tr><th>会话</th><th>来源</th><th class="r">tokens</th><th class="r">调用</th><th class="r">平均每次</th><th>模型</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="notes">
+        口径：数字来自会话事件 <span class="mono">assistant/message.usage</span>（<span class="mono">inputTokens</span> /
+        <span class="mono">outputTokens</span> / <span class="mono">cacheReadTokens</span> / <span class="mono">reasoningTokens</span>），
+        按事件时间归日。「总量」= 输入 + 输出 + 缓存读；缓存读是命中缓存的重复输入，计费远低于新增输入，所以单独成色。
+        来源按会话标题归类：<span class="mono">【任务运行】</span> = 定时/手动触发的任务，<span class="mono">【…】</span> 其余方括号 = 报告里的深挖会话，其余 = 人工会话。
+        <b>不做费用换算</b>：平台不存单价，要看钱请按各模型官方价自行折算（也可以在设置里填单价，届时这里再加一张成本卡）。
+      </div>
+      <div class="foot">R1 设计稿 · 待 user 评审 · 实现落点：platform-status 的 <span class="mono">overview</span> 端点扩四分量与来源/模型/规模分组（现在只回 input/output/calls）· 面板并入 <span class="mono">ui-cluster</span> 同款风格并以 key <span class="mono">usage</span> 注册（现有 platform-status 的资源大盘随之下线，pod 拓扑已由 k8s 集群状态承担）。</div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+  // ── 真实数据（平台 PG 实测，2026-08-25 → 08-31）
+  const DAILY = [
+    { d: '08-25', i: 154954, o: 125937, c: 1549568, n: 83 },
+    { d: '08-26', i: 785058, o: 1097775, c: 7176192, n: 550 },
+    { d: '08-27', i: 1737157, o: 2471245, c: 19160704, n: 1168 },
+    { d: '08-28', i: 1340438, o: 2306895, c: 21863040, n: 1206 },
+    { d: '08-29', i: 340335, o: 163293, c: 2464054, n: 195 },
+    { d: '08-30', i: 83352, o: 24629, c: 558336, n: 42 },
+    { d: '08-31', i: 164692, o: 34791, c: 626688, n: 48 },
+  ];
+  const SRC = [
+    { name: '任务运行', tok: 58007441, calls: 3027, sess: 742, color: 'var(--task)', desc: '定时 / 手动触发的四类报表任务' },
+    { name: '人工会话', tok: 5283696, calls: 224, sess: 16, color: 'var(--manual)', desc: '你在会话里直接问的' },
+    { name: '报告深挖', tok: 937996, calls: 41, sess: 6, color: 'var(--dig)', desc: '从报告里点「深挖」开的会话' },
+  ];
+  const MODELS = [
+    { name: 'deepseek-v4-pro', tok: 59768963, calls: 3007, color: 'var(--in)', desc: '主力模型（任务与会话）' },
+    { name: 'k3', tok: 4460170, calls: 285, color: 'var(--out)', desc: '备用模型' },
+  ];
+  const DIST = [
+    { b: '< 10k', n: 60 }, { b: '10–30k', n: 2849 }, { b: '30–60k', n: 374 }, { b: '60–100k', n: 9 }, { b: '> 100k', n: 0 },
+  ];
+  const TOP = [
+    { t: '看下最近10分钟og5最慢的那条 SQL', src: '人工会话', tok: 1395467, n: 38, m: 'deepseek-v4-pro' },
+    { t: '当前 og5 上是否有慢 SQL', src: '人工会话', tok: 863020, n: 31, m: 'deepseek-v4-pro' },
+    { t: '看下 og5 最近几分钟有没有慢 SQL', src: '人工会话', tok: 770157, n: 27, m: 'deepseek-v4-pro' },
+    { t: '【任务运行】og5慢SQL Top3跟踪', src: '任务运行', tok: 721065, n: 17, m: 'deepseek-v4-pro' },
+    { t: 'og5 过载状态查询', src: '人工会话', tok: 583196, n: 25, m: 'deepseek-v4-pro' },
+    { t: '【任务运行】og5慢SQL Top3跟踪', src: '任务运行', tok: 498052, n: 11, m: 'deepseek-v4-pro' },
+  ];
+  const fmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)} M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)} k` : String(n));
+  const tot = (x) => x.i + x.o + x.c;
+  const tip = document.getElementById('tip');
+  const showTip = (html, x, y) => { tip.innerHTML = html; tip.style.display = 'block'; tip.style.left = Math.min(x + 14, innerWidth - 300) + 'px'; tip.style.top = (y + 14) + 'px'; };
+  const hideTip = () => { tip.style.display = 'none'; };
+
+  // ── 趋势（堆叠柱 + 调用次数折线）
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const cs = getComputedStyle(document.documentElement);
+  const col = (v) => cs.getPropertyValue(v).trim();
+  let range = 7, mode = 'tok';
+  function drawTrend() {
+    const svg = document.getElementById('trend'); while (svg.firstChild) svg.removeChild(svg.firstChild);
+    // 近 30 日：只有 7 天有数据，其余按 0 补（诚实：平台 08-25 才开始记 usage）
+    const days = range === 7 ? DAILY : [...Array(23).fill(null).map((_, k) => ({ d: `08-${String(2 + k).padStart(2, '0')}`, i: 0, o: 0, c: 0, n: 0 })), ...DAILY];
+    const W = 900, H = 240, L = 58, R = 46, T = 14, B = 30, iw = W - L - R, ih = H - T - B;
+    const maxTok = Math.max(...days.map(tot), 1) * 1.12;
+    const maxCall = Math.max(...days.map((x) => x.n), 1) * 1.12;
+    const max = mode === 'tok' ? maxTok : maxCall;
+    const Y = (v) => T + ih - (v / max) * ih;
+    for (let k = 0; k <= 4; k += 1) {
+      const v = max * k / 4, y = Y(v);
+      svg.appendChild(el('line', { x1: L, x2: W - R, y1: y, y2: y, stroke: '#EEF0F3' }));
+      const t = el('text', { x: L - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: col('--dim') });
+      t.textContent = mode === 'tok' ? fmt(Math.round(v)) : String(Math.round(v)); svg.appendChild(t);
+    }
+    const bw = iw / days.length;
+    days.forEach((x, k) => {
+      const bx = L + k * bw + bw * 0.18, w = bw * 0.64;
+      if (mode === 'tok') {
+        let y = T + ih;
+        [[x.c, '--cache'], [x.i, '--in'], [x.o, '--out']].forEach(([v, c]) => {
+          const h = (v / max) * ih; y -= h;
+          if (h > 0.4) svg.appendChild(el('rect', { x: bx, y, width: w, height: h, fill: col(c), rx: 2 }));
+        });
+      } else {
+        const h = (x.n / max) * ih;
+        if (h > 0.4) svg.appendChild(el('rect', { x: bx, y: T + ih - h, width: w, height: h, fill: col('--notice'), rx: 2 }));
+      }
+      const hit = el('rect', { x: L + k * bw, y: T, width: bw, height: ih, fill: 'transparent' });
+      hit.addEventListener('mousemove', (e) => showTip(
+        `<b>${x.d}</b><br>缓存读 ${fmt(x.c)}<br>输入 ${fmt(x.i)}<br>输出 ${fmt(x.o)}<br>合计 <b>${fmt(tot(x))}</b> · ${x.n} 次调用`, e.clientX, e.clientY));
+      hit.addEventListener('mouseleave', hideTip);
+      svg.appendChild(hit);
+      if (range === 7 || k % 5 === 0) {
+        const t = el('text', { x: L + k * bw + bw / 2, y: H - 10, 'text-anchor': 'middle', 'font-size': 10.5, fill: col('--dim') });
+        t.textContent = x.d; svg.appendChild(t);
+      }
+    });
+    if (mode === 'tok') {   // 调用次数折线（右轴）
+      const yc = (v) => T + ih - (v / maxCall) * ih;
+      let d = '';
+      days.forEach((x, k) => { d += (k === 0 ? 'M' : 'L') + (L + k * bw + bw / 2).toFixed(1) + ' ' + yc(x.n).toFixed(1) + ' '; });
+      svg.appendChild(el('path', { d, fill: 'none', stroke: col('--notice'), 'stroke-width': 1.8, opacity: '.85' }));
+      for (let k = 0; k <= 2; k += 1) {
+        const v = maxCall * k / 2;
+        const t = el('text', { x: W - R + 8, y: yc(v) + 4, 'font-size': 11, fill: col('--notice') });
+        t.textContent = Math.round(v); svg.appendChild(t);
+      }
+    }
+    const sum = days.reduce((a, x) => a + tot(x), 0), calls = days.reduce((a, x) => a + x.n, 0);
+    document.getElementById('sum').textContent = `合计 ${fmt(sum)} tokens · ${calls.toLocaleString()} 次调用`;
+    document.getElementById('sum').style.color = col('--dim');
+  }
+  drawTrend();
+  document.querySelectorAll('.f[data-r]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.f[data-r]').forEach((x) => x.classList.remove('on')); b.classList.add('on'); range = Number(b.dataset.r); drawTrend();
+  }));
+  document.querySelectorAll('.f[data-m]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.f[data-m]').forEach((x) => x.classList.remove('on')); b.classList.add('on'); mode = b.dataset.m; drawTrend();
+  }));
+
+  // ── 构成
+  function comp(stackId, rowsId, items) {
+    const total = items.reduce((a, x) => a + x.tok, 0);
+    document.getElementById(stackId).innerHTML = items.map((x) => `<i style="width:${(x.tok / total * 100).toFixed(2)}%;background:${x.color}" title="${x.name} ${fmt(x.tok)}"></i>`).join('');
+    document.getElementById(rowsId).innerHTML = items.map((x) => `<div class="r">
+      <i style="width:10px;height:10px;border-radius:3px;background:${x.color};display:inline-block"></i>
+      <span class="n">${x.name}<small>${x.desc}${x.sess !== undefined ? ` · ${x.sess} 个会话` : ''} · ${x.calls.toLocaleString()} 次调用</small></span>
+      <span class="num" style="text-align:right;font-weight:600">${fmt(x.tok)}</span>
+      <span class="num" style="text-align:right;color:var(--dim);font-size:12.5px">${(x.tok / total * 100).toFixed(1)}%</span></div>`).join('');
+  }
+  comp('src-stack', 'src-rows', SRC);
+  comp('model-stack', 'model-rows', MODELS);
+
+  // ── 分布
+  const maxN = Math.max(...DIST.map((x) => x.n));
+  const totN = DIST.reduce((a, x) => a + x.n, 0);
+  document.getElementById('dist').innerHTML = DIST.map((x) => `<div class="r">
+    <span style="color:var(--sub);font-family:var(--mono);font-size:12.5px">${x.b}</span>
+    <span class="bar"><i style="width:${x.n === 0 ? 0 : Math.max(1.5, x.n / maxN * 100)}%"></i></span>
+    <span class="num" style="text-align:right;white-space:nowrap">${x.n.toLocaleString()}<span style="color:var(--dim);font-size:11.5px"> · ${(x.n / totN * 100).toFixed(0)}%</span></span></div>`).join('');
+
+  // ── Top 会话
+  document.querySelector('#top tbody').innerHTML = TOP.map((x) => `<tr>
+    <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${x.t}">${x.t}</td>
+    <td><span class="chip grey" style="font-size:12px">${x.src}</span></td>
+    <td class="r num" style="font-weight:600">${fmt(x.tok)}</td>
+    <td class="r num">${x.n}</td>
+    <td class="r num">${fmt(Math.round(x.tok / x.n))}</td>
+    <td class="mono" style="font-size:12.5px;color:var(--sub)">${x.m}</td>
+    <td><span class="link">打开会话 →</span></td></tr>`).join('');
+</script>
+</body>
+</html>

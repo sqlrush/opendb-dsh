@@ -1117,3 +1117,37 @@ ui-node-monitor / ui-task-inline / ui-cluster 六个包全部具备。
 **验收**：`scripts/browser/cluster-check.mjs` 21 项，真机 **21/21**（侧栏结构、Pod 全量 9 张、连线 15 条带 5 条关系标注、
 点 Pod 出详情、三个 tab、console 零错误）。断言只在**架构图与事件表各自的 DOM 范围内**判定——最初用整页文本匹配，
 被别的页面内容（图表刻度、Top SQL 正文里的 Killing/Started）蒙混过关，功能坏了也可能过。
+
+## 资源 › 模型用量（R2 上线，2026-08-31，user 通过 `docs/prototypes/usage-r2.html` 后开发）
+
+「资源」一级目录下的第二项，回答"这些报告到底烧了多少 token、烧在哪"。面板并入 `ui-cluster`
+（`registerResourcePanel(Panel, 'usage')`），server 半边是 platform-status 的 `usage` 端点。
+platform-status 自带的旧资源大盘 client 面板同时下线（pod 拓扑归集群页、token 用量归本页），
+`makePanel` 保留未删作应急挂点；server 半边照旧提供数据。
+
+**口径（页脚原文写死，别再改口径不改文案）**：数字来自会话事件 `assistant/message.usage`，四个字段全部由模型 API
+原样返回（`@earendil-works/pi-ai` 的 `parseChunkUsage`）——缓存读取自 `prompt_tokens_details.cached_tokens`（OpenAI 系）/
+`prompt_cache_hit_tokens`（DeepSeek）/ `cache_read_input_tokens`（Anthropic），提供方不返回就是 0，**平台不估算**；
+`inputTokens` 已由 SDK 扣掉缓存与缓存写，所以「总量 = 输入 + 输出 + 缓存读」不双算；`reasoningTokens` 已含在
+`outputTokens` 里，只单独展示不再计入总量。**不做费用换算**——我们落库的 usage 只有这四个字段，没有单价也没有
+cacheWrite，硬折算就是编数字。来源按会话标题归类：`【任务运行】…` = 任务、其余 `【…` 开头 = 报告深挖、其余 = 人工会话。
+
+**图表两处刻意的设计**（user 第一版反馈"用量趋势的图标不够美观"后重做）：调用次数**不与 tokens 抢轴**——不画右轴折线，
+另起一条与柱子同坐标系、同宽度对齐的细带并标峰值（切到"调用次数"口径时细带自动隐藏，避免重复表达）；柱子只圆上面两角
+（`barPath`，堆叠段之间不断开），整列悬停高亮而不是逐段 hover。
+
+**性能：首屏 5s → 0.1s（migration 020 + 改写查询）**
+`dsh_session_events` 已到 **630 万行 / 2.5 GB**，只有 `(session_id, seq)` 主键：
+- 每条聚合都全表扫（单条 ~100ms × 7 条并发）；
+- Top 会话/来源分组里取标题写成了**逐行相关子查询**，而标题事件在会话最早期、`ORDER BY seq DESC` 等于从末尾反扫整个会话
+  → 单条 **2.4s**，是 5s 首屏的主因。
+改法两条：① 先按 `session_id` 聚合，再对聚合后的少量会话 `LEFT JOIN LATERAL` 取一次标题；② migration 020 加两条**部分索引**
+（带 usage 的 `assistant/message` 按 `time`；`session/title` 按 `(session_id, seq DESC)`），各几千行、实测 96 KB，
+建索引 0.2s。实测 Top 会话 2.4s→46ms、单条聚合 101ms→22ms、页面首屏 0.1s。
+顺带修了逐日序列按 `'MM-DD'` **字符串**排序的隐患（跨年窗口会把 01-05 排到 12-30 前面），改按 `min(time)`。
+
+**验收**：`scripts/browser/usage-check.mjs` 24 项，真机 **24/24**（侧栏进入、面板出数耗时、6 张摘要卡、堆叠柱与柱顶数值、
+调用次数是独立细带而非折线、7/30 日与 tokens/次数四向切换都真的重取数据、构成与规模、Top 会话可打开、口径说明、console 零错误）。
+两个教训写进脚本：① 断言前必须 `waitForFunction` 等真数据落地，固定 `sleep` 会在慢查询时假失败；
+② 认药丸按钮要按 `cursor:pointer` 过滤——正文里的「合计 … tokens」文字同样能被 `textContent === 'tokens'` 匹配到，
+第一版就点了个假按钮却仍然"通过"。

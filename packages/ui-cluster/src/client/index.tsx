@@ -7,10 +7,11 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { Diagram, Meter } from './diagram.tsx';
 import { Fleet } from './fleet.tsx';
+import { UsagePanel } from './usage.tsx';
 import { T, FONT, mono, tnum, LVCN, RANK, BAD, fmtCpu, fmtMem, fmtPct, fmtInt, mmddhhmm, age, displayNames } from './format.ts';
 import type { Cluster, Pod, Node, Db } from './types.ts';
 
-export const inject = ['connection', 'slots'];
+export const inject = ['connection', 'slots', 'sessions'];
 
 const card: any = { background: '#fff', border: `1px solid ${T.line}`, borderRadius: 10, padding: '12px 14px', boxShadow: '0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)', minWidth: 0 };
 
@@ -286,7 +287,14 @@ export function apply(ctx: any): void {
     if (!r.ok) throw new Error(r.error?.message ?? 'request failed');
     return r.value;
   };
+  // 会话跳转：优先走 ui-harness 的桥（能带着主区一起切回会话），没有桥时退回 sessions.open
+  const openSession = (id: string) => {
+    const bridge = (window as any).__opendbHarness__;
+    if (typeof bridge?.openSession === 'function') bridge.openSession(id);
+    else ctx.sessions?.open?.(id);
+  };
   registerResourcePanelSafe('cluster', makePanel(call));
+  registerResourcePanelSafe('usage', () => <UsagePanel call={call} openSession={openSession} />);
 }
 
 export { RANK, BAD };
