@@ -111,6 +111,7 @@ export function listResourcePanels(): { key: string; label: string }[] {
 export type KnowledgePanelComponent = () => any;
 export const KNOWLEDGE_ITEMS: { key: string; label: string }[] = [
   { key: 'dashboard', label: '知识库大盘' },
+  { key: 'import', label: '导入知识' },
 ];
 const knowledgePanels = new Map<string, KnowledgePanelComponent>();
 export function registerKnowledgePanel(panel: KnowledgePanelComponent, key = 'dashboard'): () => void {

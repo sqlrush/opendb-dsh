@@ -6,7 +6,9 @@
  */
 import { Component, useEffect, useState } from 'react';
 
-export const inject = ['connection', 'slots'];
+export const inject = ['connection', 'slots', 'sessions', 'workspaces'];
+
+let clientCtx: any;
 
 const T = {
   ink: '#0f1115', sub: '#61666b', dim: '#81858c', blue: '#4176e6',
@@ -26,7 +28,7 @@ const SRC_CN = (s: string): string => (s === 'sop-backup-v2' ? '备份规程' : 
 interface Dash {
   memory: { total: number; withVec: number; agents: number; oldest: string | null; newest: string | null; last24: number; byKind: { kind: string; n: number }[] };
   vector: { docs: number; chunks: number; withVec: number; bySource: { source: string; n: number }[] };
-  graph: { edges: number; entities: number; linkedMemories: number; byKind: { kind: string; n: number }[]; typed: boolean };
+  graph: { edges: number; entities: number; linkedMemories: number; byKind: { kind: string; n: number }[]; typed: boolean; kgEdges: number; kgNodes: number; pendingReview: number };
   updatedAt: string | null;
 }
 
@@ -113,8 +115,9 @@ function Dashboard({ call }: { call: (endpoint: string, payload?: unknown) => Pr
   // 健康自检项（数据驱动，降级即发现）
   const issues: { lv: string; t: string; d: string; act?: string }[] = [];
   if (vecMiss > 0) issues.push({ lv: 'warn', t: `向量缺失 ${vecMiss} 块`, d: '这些切块未 embed，检索退化为关键词（ILIKE）——嵌入慢/失败所致，需补齐', act: '补齐向量（P3）' });
-  if (d.graph.typed === false && d.graph.edges > 0) issues.push({ lv: 'notice', t: `图边尚未定型 ${fmtInt(d.graph.edges)} 条`, d: '现为记忆实体共现边（无类型/来源/版本）；导入客户资料后升级为强类型边', act: '了解（P3）' });
-  if (d.vector.docs <= 2) issues.push({ lv: 'crit', t: '客户专属知识为空', d: '尚未导入客户规范 / 工单 / 故障总结——导入工具（P2）上线后大盘三库将充实', act: '导入知识（P2）' });
+  if ((d.graph.pendingReview ?? 0) > 0) issues.push({ lv: 'notice', t: `图候选待人审 ${fmtInt(d.graph.pendingReview)} 条`, d: '导入抽取的关系候选在人审队列中，确认后才进确定性图', act: '去导入知识审核' });
+  if (d.graph.typed === false && d.graph.edges > 0 && (d.graph.kgEdges ?? 0) === 0) issues.push({ lv: 'notice', t: `图边尚未定型 ${fmtInt(d.graph.edges)} 条`, d: '现为记忆实体共现边（无类型/来源/版本）；导入客户资料人审入图后成为强类型边', act: '导入知识' });
+  if (d.vector.docs <= 2 && (d.graph.kgEdges ?? 0) === 0) issues.push({ lv: 'crit', t: '客户专属知识为空', d: '尚未导入客户规范 / 工单 / 故障总结——用「导入知识」把材料分流进三库', act: '导入知识' });
   const hIcon: Record<string, [string, string, string]> = { warn: [T.warnSoft, T.warn, '!'], notice: [T.noticeSoft, T.notice, '◔'], crit: [T.critSoft, T.crit, '○'] };
 
   const h2: any = { fontSize: 15, fontWeight: 600, margin: '24px 0 10px' };
@@ -165,8 +168,9 @@ function Dashboard({ call }: { call: (endpoint: string, payload?: unknown) => Pr
             { label: '约束', n: 0, c: T.graph }, { label: '导致', n: 0, c: '#a98be6' }, { label: '处置', n: 0, c: '#c0abef' },
             { label: '共现(旧)', n: d.graph.edges, c: T.rest },
           ]} />
+          <KV k="强类型边（已入图）" v={`${fmtInt(d.graph.kgEdges ?? 0)} 条 · ${fmtInt(d.graph.kgNodes ?? 0)} 节点`} color={(d.graph.kgEdges ?? 0) > 0 ? T.graph : undefined} />
+          <KV k="待人审候选" v={`${fmtInt(d.graph.pendingReview ?? 0)} 条`} color={(d.graph.pendingReview ?? 0) > 0 ? T.notice : undefined} />
           <KV k="关联记忆" v={`${fmtInt(d.graph.linkedMemories)} 条`} />
-          <KV k="实体类型" v={d.graph.byKind.map((k) => `${KIND_CN[k.kind] ?? k.kind} ${k.n}`).join(' · ') || '—'} />
         </StoreCard>
       </div>
 
@@ -197,6 +201,150 @@ function Dashboard({ call }: { call: (endpoint: string, payload?: unknown) => Pr
   );
 }
 
+// ── 导入向导（P2）───────────────────────────────────────────────────────────
+const REL_CN: Record<string, string> = { constrains: '约束', causes: '导致', handled_by: '处置为', depends_on: '依赖', references: '引用', triggers: '触发' };
+const KIND_OPTS = ['规范', '工单', '故障总结', '手册', '预案'];
+
+// 图线：触发一次会话让模型把关系候选写进已建好的批次（向量线已由服务端确定性完成，不在此）。
+async function extractEdgesInSession(text: string, importId: string): Promise<string> {
+  if (clientCtx === undefined) throw new Error('客户端上下文未就绪');
+  const ws = clientCtx.workspaces?.list?.getSnapshot?.()?.items?.[0];
+  const sessionId: string = await clientCtx.sessions.create(ws?.workspaceId !== undefined ? { workspaceId: ws.workspaceId } : {});
+  // 不 openSession——那会把主区切到会话、离开向导，人审界面就消失了。
+  // 抽取轮次经 mode:'queue' 入队，Runtime 后台自会处理，向导留在原地轮询 staging。
+  const prompt = [
+    `导入批次 ${importId} 的向量已入库。现在请你调用一次 kb_extract 工具，从下面 <材料> 里抽取关系候选边写进该批次的人审队列。`,
+    `调用参数：import_id="${importId}"，edges=从材料抽取的三元组（rel 用 causes/constrains/handled_by/depends_on/references/triggers；只抽材料明确写到的关系，不要凭常识编造；抽不出就传空数组）。`,
+    `必须真正调用 kb_extract 工具，不要只回复文字。调用后一句话报告条数。`,
+    ``,
+    `<材料>`,
+    text.slice(0, 12000),
+    `</材料>`,
+  ].join('\n');
+  const r = await clientCtx.connection.rpc.call('/api', 'session.prompt', { sessionId, mode: 'queue', content: [{ type: 'text', text: prompt }], clientTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+  if (r?.ok === false) throw new Error(String(r.error?.message ?? 'prompt rejected'));
+  return sessionId;
+}
+
+function ImportWizard({ call }: { call: (endpoint: string, payload?: unknown) => Promise<any> }) {
+  const [text, setText] = useState('');
+  const [title, setTitle] = useState('');
+  const [kind, setKind] = useState('');
+  const [engine, setEngine] = useState('');
+  const [env, setEnv] = useState('');
+  const [phase, setPhase] = useState<'input' | 'analyzing' | 'review'>('input');
+  const [msg, setMsg] = useState('');
+  const [importId, setImportId] = useState('');
+  const [staging, setStaging] = useState<any[]>([]);
+  const [imp, setImp] = useState<any>(null);
+
+  const loadStaging = async (id: string) => {
+    const s = await call('staging/list', { importId: id }).then((v) => v.staging).catch(() => []);
+    setStaging(s);
+    const list = await call('imports/list').then((v) => v.imports).catch(() => []);
+    setImp((list as any[]).find((x) => x.id === id) ?? null);
+  };
+
+  const analyze = async () => {
+    if (text.trim() === '') { setMsg('请先粘贴材料正文'); return; }
+    setPhase('analyzing'); setMsg('向量线入库中（切块 + 嵌入，服务端确定性完成）…');
+    // 1) 向量线：服务端直接入库，确定性、不依赖模型
+    let r: any;
+    try { r = await call('imports/create', { title: title || '未命名材料', text, source: title || undefined, materialKind: kind || undefined, engine: engine || undefined, env: env || undefined }); }
+    catch (e) { setPhase('input'); setMsg(`向量入库失败：${String((e as any)?.message ?? e)}`); return; }
+    const id = r.importId; setImportId(id); await loadStaging(id);
+    setPhase('review'); setMsg(`向量线已入库 ${r.vectorChunks} 段。图线：正在让智能体从材料抽取关系候选…`);
+    // 2) 图线：best-effort 让模型抽候选边（模型不配合也不影响向量入库与人审）
+    void (async () => {
+      try { await extractEdgesInSession(text, id); } catch { setMsg('向量线已入库。图线抽取触发失败——可稍后在会话里让智能体用 kb_extract 补充。'); return; }
+      for (let i = 0; i < 70; i += 1) {
+        await new Promise((rr) => setTimeout(rr, 3000));
+        const s = await call('staging/list', { importId: id }).then((v) => v.staging).catch(() => []);
+        if ((s as any[]).length > 0) { setStaging(s); setMsg(`向量线已入库 ${r.vectorChunks} 段；图线抽出 ${(s as any[]).length} 条候选关系,请人审。`); return; }
+      }
+      setMsg(`向量线已入库 ${r.vectorChunks} 段；图线未抽到候选关系（材料里可能没有明确关系,或模型未配合）。`);
+    })();
+  };
+
+  const decide = async (id: string, decision: 'accept' | 'reject') => {
+    await call('staging/decide', { id, decision }).catch(() => {});
+    await loadStaging(importId);
+  };
+  const commit = async () => {
+    const r = await call('imports/commit', { importId }).catch((e) => ({ error: String(e?.message ?? e) }));
+    setMsg(`已入库：${r.edges ?? 0} 条关系进入确定性图（confidence=1.0）。向量线已在分析阶段入库。`);
+    await loadStaging(importId);
+  };
+
+  const box: any = { border: `1px solid ${T.line}`, borderRadius: 8, padding: '8px 11px', font: `13.5px ${FONT}`, width: '100%', background: '#fff', color: T.ink, outline: 'none' };
+  const btn = (primary: boolean): any => ({ border: `1px solid ${T.blue}`, background: primary ? T.blue : '#fff', color: primary ? '#fff' : T.blue, borderRadius: 8, padding: '7px 16px', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' });
+  const mini = (c: string): any => ({ border: `1px solid ${c}`, color: c, background: '#fff', borderRadius: 6, padding: '1px 9px', fontSize: 12.5, cursor: 'pointer' });
+  const willImport = staging.filter((s) => s.decision !== 'reject').length;   // 默认纳入，否决除外
+
+  return (
+    <div style={{ fontFamily: FONT, color: T.ink, lineHeight: 1.6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 2 }}>
+        <span style={{ fontSize: 20, fontWeight: 600 }}>导入知识</span>
+        <span style={{ fontSize: 13.5, color: T.dim }}>把文本材料分析后分流进三库 · 模型提议 / 人审确认 / 确定性入库</span>
+      </div>
+
+      {phase !== 'review' ? (
+        <div style={{ ...card, padding: 16, marginTop: 14, maxWidth: 860 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 10, marginBottom: 10 }}>
+            <input style={box} placeholder="材料标题（如 工行 openGauss 变更管理规范 v3）" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <select style={box} value={kind} onChange={(e) => setKind(e.target.value)}><option value="">类型（自动判定）</option>{KIND_OPTS.map((k) => <option key={k} value={k}>{k}</option>)}</select>
+            <input style={box} placeholder="适用引擎（openGauss）" value={engine} onChange={(e) => setEngine(e.target.value)} />
+            <input style={box} placeholder="适用环境（生产）" value={env} onChange={(e) => setEnv(e.target.value)} />
+          </div>
+          <textarea style={{ ...box, minHeight: 200, resize: 'vertical', lineHeight: 1.6 }} placeholder="粘贴材料正文（规范 / 工单 / 故障总结 / 预案，纯文本或 markdown）……" value={text} onChange={(e) => setText(e.target.value)} />
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 12 }}>
+            <button type="button" style={btn(true)} disabled={phase === 'analyzing'} onClick={() => void analyze()}>{phase === 'analyzing' ? '分析中…' : '分析并导入'}</button>
+            <span style={{ fontSize: 13, color: phase === 'analyzing' ? T.blue : T.dim }}>{msg || '向量线（切块+embed）自动入库；图线由模型抽候选关系，进人审队列'}</span>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ ...card, padding: '12px 16px', marginBottom: 14, display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontWeight: 600 }}>《{imp?.filename ?? '材料'}》</span>
+            <span style={{ fontSize: 13, color: T.sub }}>向量 <b style={{ color: T.vec }}>{imp?.vector_chunks ?? 0}</b> 段已入库 · 图候选 <b style={{ color: T.graph }}>{staging.length}</b> 条待人审</span>
+            <span style={{ marginLeft: 'auto', fontSize: 13, color: T.dim }}>{msg}</span>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 600, margin: '4px 0 8px' }}>人审：图候选关系<span style={{ fontSize: 13, color: T.dim, fontWeight: 400, marginLeft: 8 }}>向量线已自动入库，此处只审图。<b>默认纳入</b>，点「否决」剔除错的；确认入库后未否决的边 confidence=1.0 进确定性推理</span></div>
+          <div style={{ ...card, padding: '4px 16px 8px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
+              <thead><tr>{['候选关系', '置信', '出处', '处置'].map((h, i) => <th key={h} style={{ textAlign: i === 1 ? 'right' : 'left', fontSize: 12.5, color: T.dim, fontWeight: 500, padding: '9px 10px', borderBottom: `1px solid ${T.line}`, whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+              <tbody>
+                {staging.map((s) => (
+                  <tr key={s.id} style={{ opacity: s.decision === 'reject' ? 0.45 : 1 }}>
+                    <td style={{ padding: '9px 10px', borderTop: `1px solid ${T.line}` }}><b>{s.src_name}</b> <span style={{ font: `600 12px ${mono}`, borderRadius: 5, padding: '1px 7px', background: T.graph + '18', color: T.graph }}>{REL_CN[s.rel_type] ?? s.rel_type}</span> <b>{s.dst_name}</b></td>
+                    <td style={{ padding: '9px 10px', borderTop: `1px solid ${T.line}`, textAlign: 'right', ...tnum }}>{Number(s.confidence).toFixed(2)}</td>
+                    <td style={{ padding: '9px 10px', borderTop: `1px solid ${T.line}`, fontFamily: mono, fontSize: 12, color: T.sub }}>{s.source_locator ?? '—'}</td>
+                    <td style={{ padding: '9px 10px', borderTop: `1px solid ${T.line}`, whiteSpace: 'nowrap' }}>
+                      <span style={{ ...mini(s.decision !== 'reject' ? T.ok : T.line), color: s.decision !== 'reject' ? T.ok : T.sub }} onClick={() => void decide(s.id, 'accept')}>{s.decision === 'reject' ? '纳入' : '✓ 纳入'}</span>{' '}
+                      <span style={{ ...mini(s.decision === 'reject' ? T.crit : T.line), color: s.decision === 'reject' ? T.crit : T.sub }} onClick={() => void decide(s.id, 'reject')}>否决</span>
+                    </td>
+                  </tr>
+                ))}
+                {staging.length === 0 ? <tr><td colSpan={4} style={{ padding: '12px 10px', color: T.dim }}>本材料未抽出关系候选（仅向量线入库）。</td></tr> : null}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14 }}>
+            <button type="button" style={btn(true)} onClick={() => void commit()}>确认入库（图 {willImport} 条将入图）</button>
+            <button type="button" style={btn(false)} onClick={() => { setPhase('input'); setText(''); setTitle(''); setStaging([]); setMsg(''); }}>再导一份</button>
+            <span style={{ marginLeft: 'auto', fontSize: 13, color: T.dim }}>入库写引用台账：每条边可追到材料与出处</span>
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 13, color: T.dim, border: `1px dashed ${T.line}`, borderRadius: 8, padding: '10px 16px', marginTop: 18, lineHeight: 1.8 }}>
+        <b>两条线不对称</b>：向量线是纯管线（切块 → 嵌入 → 入库），不需人审、错了可重灌；图线是模型抽候选 → 你确认 → confidence=1.0 才进确定性推理。
+        <b>拓扑/依赖/变更史不在此</b>——那些由采集器直写图，不经导入。
+      </div>
+    </div>
+  );
+}
+
 /** 注册知识库面板：桥已在就直接注册，否则排进 __pending 由后到的 ui-harness 兑现（同 ui-cluster）。 */
 function registerKnowledgePanelSafe(key: string, Comp: any): void {
   if (typeof window === 'undefined') return;
@@ -207,10 +355,12 @@ function registerKnowledgePanelSafe(key: string, Comp: any): void {
 }
 
 export function apply(ctx: any): void {
+  clientCtx = ctx;
   const call = async (endpoint: string, payload: unknown = {}): Promise<any> => {
     const r = await ctx.connection.rpc.call('/opendb-knowledge', endpoint, payload);
     if (!r.ok) throw new Error(r.error?.message ?? 'request failed');
     return r.value;
   };
   registerKnowledgePanelSafe('dashboard', () => <Boundary><Dashboard call={call} /></Boundary>);
+  registerKnowledgePanelSafe('import', () => <Boundary><ImportWizard call={call} /></Boundary>);
 }

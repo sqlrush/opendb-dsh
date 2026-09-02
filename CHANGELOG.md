@@ -8,6 +8,15 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ## [Unreleased]
 
 ### Added
+- **知识库导入工具（P2）+ 强类型知识图谱（P3 落点）**：知识库新增第二项「导入知识」向导——投喂文本材料 → **向量线服务端确定性入库**
+  （切块 + 嵌入,不依赖模型）→ **图线由模型抽关系候选**（`kb_extract` 工具,后台会话运行不抢主区视图）落人审队列 →
+  **人审默认纳入、点否决剔除** → 确认入库把未否决的边写进强类型图 `opendb_kg_nodes/kg_edges`（confidence=1.0,带来源与生效期,
+  按 canonical 归一节点）。数据模型 migration 021（imports/staging/kg 四表 + 知识文档 material_kind/engine/env/生效期列）；
+  服务端 `knowledge-pg` 加 createImport/stageEdges/decideStaging/commitImport,`ui-knowledge` 加 imports/staging/commit 端点,
+  `tool-knowledge` 加 kb_import（会话式一步导入）与 kb_extract（向导图线）。大盘的图知识分区/健康自检随之显示强类型边数与待人审数。
+  真机 e2e `scripts/browser/kb-import-check.mjs` **10/10**（投喂工行样例规范→模型抽 7 条关系→入库 7 条强类型边 constrains/causes/handled_by/depends_on）。
+- **向量补齐后台任务（P3）**：`knowledge-pg` 周期扫 `embedding IS NULL` 的知识切块与记忆,批量 embed 补齐(advisory-lock 选主,
+  host/runtime 只一个实例跑)。修掉"ingest 时 embed 失败落 NULL 且永不补、检索永久退化成 ILIKE"（og5 知识切块向量覆盖从 1/7 → 7/7）。
 - **知识库 › 知识库大盘（P1，新面板插件 `ui-kb`，user 2026-09-01 通过 `docs/prototypes/knowledge-r1.html`）**：侧栏新增与「工作区」「资源」
   同级的**一级目录「知识库」**。大盘一眼看全三类知识——**记忆**（平台经历，849 条）/ **向量**（导入资料，2 文档 7 切块）/ **图**
   （客户专属关系，878 边 19 实体）：概览 4 卡（知识总量 / 向量覆盖率 / 健康度 / 最近更新）→ 三库分区卡（类型分布 · 向量覆盖 ·

@@ -38,6 +38,27 @@ export function apply(ctx: Context): void {
         case 'dashboard':
           // 知识库大盘（P1）：只读聚合记忆/向量/图三库
           return { ok: true, value: await knowledge.dashboard() };
+        // ── 导入工具（P2）───────────────────────────────────────────────
+        case 'imports/create':
+          // 向量线：服务端确定性入库（不依赖模型），返回批次 id 供图线追加候选
+          return { ok: true, value: await knowledge.createImport({
+            title: String(payload.title ?? ''), text: String(payload.text ?? ''),
+            source: typeof payload.source === 'string' && payload.source !== '' ? payload.source : undefined,
+            materialKind: typeof payload.materialKind === 'string' ? payload.materialKind : undefined,
+            engine: typeof payload.engine === 'string' ? payload.engine : undefined,
+            env: typeof payload.env === 'string' ? payload.env : undefined,
+            edges: [],
+          }) };
+        case 'imports/list':
+          return { ok: true, value: { imports: await knowledge.listImports(50) } };
+        case 'staging/list':
+          return { ok: true, value: { staging: await knowledge.listStaging(typeof payload.importId === 'string' ? payload.importId : undefined) } };
+        case 'staging/decide':
+          await knowledge.decideStaging(String(payload.id ?? ''), payload.decision === 'accept' ? 'accept' : 'reject',
+            payload.edit as { src?: string; rel?: string; dst?: string } | undefined);
+          return { ok: true, value: { ok: true } };
+        case 'imports/commit':
+          return { ok: true, value: await knowledge.commitImport(String(payload.importId ?? '')) };
         default:
           return { ok: false, error: { code: 'bad-request', message: `unknown endpoint ${endpoint}`, details: {} } };
       }

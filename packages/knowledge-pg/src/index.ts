@@ -15,6 +15,9 @@ function docRow(r: any): KnowledgeDoc {
   return { id: r.id, agentId: r.agent_id ?? undefined, title: r.title, source: r.source ?? undefined, chunks: r.chunks, createdAt: r.created_at };
 }
 
+/** 向量补齐任务的 leader advisory-lock key（host+runtime 都装本服务，只一个实例真正跑补齐）。 */
+const KB_BACKFILL_LOCK = 7_204_211_034;
+
 function toVectorLiteral(vec: number[]): string {
   return `[${vec.map((v) => (Number.isFinite(v) ? v : 0)).join(',')}]`;
 }
@@ -65,6 +68,8 @@ export default class KnowledgeService extends Service {
   private readonly embeddings: any;
   private readonly maxDocBytes: number;
 
+  private backfillClient: pg.PoolClient | undefined;
+
   constructor(ctx: Context, config: { connectionString: string; defaultTenant?: string; maxDocBytes?: number }) {
     super(ctx, 'opendbKnowledge');
     this.pool = createPool(config.connectionString);
@@ -74,10 +79,57 @@ export default class KnowledgeService extends Service {
     this.ready = runMigrations(this.pool);
     this.ready.catch(() => { /* surfaced on first call */ });
     ctx.effect(() => async () => { await this.ready.catch(() => {}); await this.pool.end(); }, 'opendbKnowledge.pool');
+
+    // 向量补齐后台任务（P3，2026-09-02）：ingest 时 embed 失败会落 NULL 且无补齐 → 检索永久退化成 ILIKE
+    // （og5 实测 6/7 切块缺向量）。这里周期性扫 NULL 补齐。host+runtime 都装本服务，用 advisory lock 选主，只一个实例跑。
+    // bge-m3 在 CPU 上 5-6s/次，每轮只补一小批，别拖垮嵌入服务。
+    if (this.embeddings?.available === true) {
+      const timer = setInterval(() => { void this.backfillEmbeddings(8).catch(() => {}); }, 45_000);
+      ctx.effect(() => () => { clearInterval(timer); if (this.backfillClient !== undefined) { try { this.backfillClient.release(); } catch { /* closing */ } } }, 'opendbKnowledge.backfill');
+    }
+  }
+
+  private async backfillLeader(): Promise<boolean> {
+    if (this.backfillClient !== undefined) {
+      try { await this.backfillClient.query('SELECT 1'); return true; }
+      catch { try { this.backfillClient.release(true as any); } catch { /* gone */ } this.backfillClient = undefined; }
+    }
+    const c = await this.pool.connect();
+    try {
+      const r = await c.query('SELECT pg_try_advisory_lock($1) AS ok', [KB_BACKFILL_LOCK]);
+      if (r.rows[0].ok === true) { this.backfillClient = c; return true; }
+      c.release(); return false;
+    } catch (cause) { c.release(true as any); throw cause; }
+  }
+
+  /**
+   * 补齐缺失向量：扫 opendb_knowledge_chunks 与 opendb_memories 里 embedding IS NULL 的行，批量 embed 后 UPDATE。
+   * 返回本轮补齐条数（大盘"向量缺失"会随之下降）。只在持有 leader 锁的实例上真正执行。
+   */
+  async backfillEmbeddings(limit = 8): Promise<{ chunks: number; memories: number }> {
+    await this.ready;
+    if (this.embeddings?.available !== true) return { chunks: 0, memories: 0 };
+    if (!(await this.backfillLeader())) return { chunks: 0, memories: 0 };
+    const out = { chunks: 0, memories: 0 };
+    for (const tbl of ['opendb_knowledge_chunks', 'opendb_memories'] as const) {
+      const rows = (await this.pool.query(
+        `SELECT id, content FROM ${tbl} WHERE embedding IS NULL AND content <> '' ORDER BY id LIMIT $1`, [limit],
+      )).rows as { id: string; content: string }[];
+      if (rows.length === 0) continue;
+      let vecs: number[][];
+      try { vecs = await this.embeddings.embed(rows.map((r) => r.content)); }
+      catch { continue; }   // 嵌入服务临时不可用：下一轮再试，不阻塞
+      for (let i = 0; i < rows.length; i += 1) {
+        if (vecs[i] === undefined) continue;
+        await this.pool.query(`UPDATE ${tbl} SET embedding = $1::vector WHERE id = $2`, [toVectorLiteral(vecs[i]), rows[i].id]);
+        if (tbl === 'opendb_knowledge_chunks') out.chunks += 1; else out.memories += 1;
+      }
+    }
+    return out;
   }
 
   /** 灌入一篇文档：切块 → 尽力批量 embed（失败落 NULL，检索回退 ILIKE）→ 事务替换同源旧版。 */
-  async ingest(input: { agentId?: string; title: string; source?: string; text: string }): Promise<KnowledgeDoc> {
+  async ingest(input: { agentId?: string; title: string; source?: string; text: string; materialKind?: string; engine?: string; env?: string }): Promise<KnowledgeDoc> {
     await this.ready;
     const text = input.text.slice(0, this.maxDocBytes);
     const pieces = chunkText(text);
@@ -102,9 +154,10 @@ export default class KnowledgeService extends Service {
       }
       const docId = `doc-${randomUUID().slice(0, 8)}`;
       const doc = await c.query(
-        `INSERT INTO opendb_knowledge_docs (id, tenant_id, agent_id, title, source, chunks)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [docId, this.tenant, input.agentId ?? null, input.title.slice(0, 200), input.source ?? null, pieces.length],
+        `INSERT INTO opendb_knowledge_docs (id, tenant_id, agent_id, title, source, chunks, material_kind, engine, env)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [docId, this.tenant, input.agentId ?? null, input.title.slice(0, 200), input.source ?? null, pieces.length,
+          input.materialKind ?? null, input.engine ?? null, input.env ?? null],
       );
       for (let i = 0; i < pieces.length; i += 1) {
         await c.query(
@@ -194,6 +247,122 @@ export default class KnowledgeService extends Service {
     await this.pool.query('DELETE FROM opendb_knowledge_docs WHERE id = $1', [id]);   // chunks ON DELETE CASCADE
   }
 
+  // ── 导入工具（P2）：模型提议 → staging → 人审 → commit 进强类型图 ──────────────
+  /** 建导入批次：先跑向量线（确定性 ingest），再登记图候选边到 staging（人审前不进图）。 */
+  async createImport(input: {
+    filename?: string; materialKind?: string; engine?: string; env?: string;
+    title: string; source?: string; text: string; sessionId?: string;
+    edges?: { src: string; rel: string; dst: string; srcKind?: string; dstKind?: string; locator?: string; confidence?: number }[];
+  }): Promise<{ importId: string; vectorChunks: number; edgeCandidates: number }> {
+    await this.ready;
+    const doc = await this.ingest({ title: input.title, source: input.source, text: input.text, materialKind: input.materialKind, engine: input.engine, env: input.env });
+    const importId = `imp-${randomUUID().slice(0, 8)}`;
+    const edges = input.edges ?? [];
+    await this.pool.query(
+      `INSERT INTO opendb_kb_imports (id, tenant_id, filename, material_kind, engine, env, status, vector_chunks, edge_candidates, session_id)
+       VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8,$9)`,
+      [importId, this.tenant, input.filename ?? input.title, input.materialKind ?? null, input.engine ?? null, input.env ?? null, doc.chunks, edges.length, input.sessionId ?? null],
+    );
+    for (const e of edges) {
+      await this.pool.query(
+        `INSERT INTO opendb_kb_edge_staging (id, import_id, src_name, rel_type, dst_name, src_kind, dst_kind, source_locator, confidence)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [`stg-${randomUUID().slice(0, 10)}`, importId, String(e.src), String(e.rel), String(e.dst), e.srcKind ?? null, e.dstKind ?? null, e.locator ?? null, Number(e.confidence ?? 0.7)],
+      );
+    }
+    return { importId, vectorChunks: doc.chunks, edgeCandidates: edges.length };
+  }
+
+  /** 往已有批次追加候选边（模型 kb_extract 用；向量线已由 createImport/imports-create 确定性完成）。 */
+  async stageEdges(importId: string, edges: { src: string; rel: string; dst: string; srcKind?: string; dstKind?: string; locator?: string; confidence?: number }[]): Promise<{ added: number }> {
+    await this.ready;
+    const exists = await this.pool.query(`SELECT 1 FROM opendb_kb_imports WHERE id = $1`, [importId]);
+    if (exists.rowCount === 0) throw new Error(`导入批次 ${importId} 不存在`);
+    let added = 0;
+    for (const e of edges) {
+      if (!e.src || !e.rel || !e.dst) continue;
+      await this.pool.query(
+        `INSERT INTO opendb_kb_edge_staging (id, import_id, src_name, rel_type, dst_name, src_kind, dst_kind, source_locator, confidence)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [`stg-${randomUUID().slice(0, 10)}`, importId, String(e.src), String(e.rel), String(e.dst), e.srcKind ?? null, e.dstKind ?? null, e.locator ?? null, Number(e.confidence ?? 0.7)]);
+      added += 1;
+    }
+    if (added > 0) await this.pool.query(`UPDATE opendb_kb_imports SET edge_candidates = edge_candidates + $2 WHERE id = $1`, [importId, added]);
+    return { added };
+  }
+
+  async listImports(limit = 50): Promise<unknown[]> {
+    await this.ready;
+    const r = await this.pool.query(
+      `SELECT i.*, (SELECT count(*) FROM opendb_kb_edge_staging s WHERE s.import_id = i.id AND s.decision = 'pending') pending
+         FROM opendb_kb_imports i WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2`, [this.tenant, limit]);
+    return r.rows;
+  }
+
+  async listStaging(importId?: string): Promise<unknown[]> {
+    await this.ready;
+    const vals: unknown[] = importId !== undefined ? [importId] : [];
+    const cond = importId !== undefined ? 'WHERE s.import_id = $1' : "WHERE s.decision = 'pending'";
+    const r = await this.pool.query(
+      `SELECT s.*, i.material_kind, i.filename FROM opendb_kb_edge_staging s JOIN opendb_kb_imports i ON i.id = s.import_id
+        ${cond} ORDER BY s.confidence DESC`, vals);
+    return r.rows;
+  }
+
+  /** 人审一条候选边：accept / reject（可带 edit 覆盖 src/rel/dst）。 */
+  async decideStaging(id: string, decision: 'accept' | 'reject', edit?: { src?: string; rel?: string; dst?: string }): Promise<void> {
+    await this.ready;
+    if (edit !== undefined && (edit.src || edit.rel || edit.dst)) {
+      await this.pool.query(
+        `UPDATE opendb_kb_edge_staging SET decision = $2,
+           src_name = coalesce($3, src_name), rel_type = coalesce($4, rel_type), dst_name = coalesce($5, dst_name)
+         WHERE id = $1`, [id, decision, edit.src ?? null, edit.rel ?? null, edit.dst ?? null]);
+    } else {
+      await this.pool.query(`UPDATE opendb_kb_edge_staging SET decision = $2 WHERE id = $1`, [id, decision]);
+    }
+  }
+
+  /** 归一取/建节点：按 canonical 唯一（同名合并）。 */
+  private async upsertNode(c: pg.PoolClient, kind: string, name: string): Promise<string> {
+    const canonical = name.trim().toLowerCase();
+    const found = await c.query(`SELECT id FROM opendb_kg_nodes WHERE tenant_id = $1 AND canonical = $2`, [this.tenant, canonical]);
+    if (found.rows[0] !== undefined) return String(found.rows[0].id);
+    const id = `kgn-${randomUUID().slice(0, 10)}`;
+    await c.query(`INSERT INTO opendb_kg_nodes (id, tenant_id, kind, name, canonical) VALUES ($1,$2,$3,$4,$5)`,
+      [id, this.tenant, kind, name.trim(), canonical]);
+    return id;
+  }
+
+  /**
+   * 确认入库：把该批次所有「未否决」的候选边写进强类型图（confidence=1.0），标记批次 committed。
+   * 语义：人审默认纳入、点「否决」剔除——点了「确认入库」即人工确认（human-in-the-loop），
+   * 只有明确 reject 的不入图。这样审一批规范只需否决个别错的，不必逐条点采纳。
+   */
+  async commitImport(importId: string): Promise<{ edges: number }> {
+    await this.ready;
+    const accepted = (await this.pool.query(
+      `SELECT * FROM opendb_kb_edge_staging WHERE import_id = $1 AND decision <> 'reject'`, [importId])).rows;
+    const c = await this.pool.connect();
+    let edges = 0;
+    try {
+      await c.query('BEGIN');
+      const imp = (await c.query(`SELECT material_kind FROM opendb_kb_imports WHERE id = $1`, [importId])).rows[0];
+      for (const e of accepted) {
+        const src = await this.upsertNode(c, String(e.src_kind ?? 'object'), String(e.src_name));
+        const dst = await this.upsertNode(c, String(e.dst_kind ?? 'object'), String(e.dst_name));
+        await c.query(
+          `INSERT INTO opendb_kg_edges (id, tenant_id, src_id, dst_id, rel_type, source_kind, source_id, source_locator, confidence)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1.0)`,
+          [`kge-${randomUUID().slice(0, 10)}`, this.tenant, src, dst, String(e.rel_type), imp?.material_kind ?? 'import', importId, e.source_locator ?? null]);
+        edges += 1;
+      }
+      await c.query(`UPDATE opendb_kb_imports SET status = 'committed' WHERE id = $1`, [importId]);
+      await c.query('COMMIT');
+      c.release();
+    } catch (cause) { await rollbackAndRelease(c); throw cause; }
+    return { edges };
+  }
+
   /**
    * 知识库大盘（P1，只读聚合三库）：记忆 / 向量 / 图。共用同一 PG pool（同库），一次并发查完。
    * 只读、纯统计；任一子查询失败不拖垮整页（catch → 该块给空值，前端如实降级）。
@@ -204,7 +373,7 @@ export default class KnowledgeService extends Service {
     const q = <T = any>(sql: string, vals: unknown[] = t): Promise<T[]> =>
       this.pool.query(sql, vals).then((r) => r.rows as T[]).catch(() => [] as T[]);
 
-    const [mem, memKind, vecTot, vecDocs, vecSrc, graph, graphKind, updated] = await Promise.all([
+    const [mem, memKind, vecTot, vecDocs, vecSrc, graph, graphKind, updated, kg] = await Promise.all([
       // 记忆：总量 / 向量覆盖 / agent 数 / 时间跨度
       q(`SELECT count(*) total, count(*) FILTER (WHERE embedding IS NOT NULL) vec,
                 count(DISTINCT agent_id) agents, min(created_at) oldest, max(created_at) newest,
@@ -228,6 +397,11 @@ export default class KnowledgeService extends Service {
       q(`SELECT greatest(
                  (SELECT max(created_at) FROM opendb_memories WHERE tenant_id = $1),
                  (SELECT max(created_at) FROM opendb_knowledge_docs WHERE tenant_id = $1)) ts`),
+      // 强类型图（P2 commit 后）：kg 边/节点 + 人审队列待确认数
+      q(`SELECT (SELECT count(*) FROM opendb_kg_edges WHERE tenant_id = $1) kg_edges,
+                (SELECT count(*) FROM opendb_kg_nodes WHERE tenant_id = $1) kg_nodes,
+                (SELECT count(*) FROM opendb_kb_edge_staging s JOIN opendb_kb_imports i ON i.id = s.import_id
+                   WHERE i.tenant_id = $1 AND s.decision = 'pending') pending`),
     ]);
 
     const n = (v: unknown): number => Number(v ?? 0);
@@ -245,7 +419,9 @@ export default class KnowledgeService extends Service {
       graph: {
         edges: n(g0.edges), entities: n(g0.entities), linkedMemories: n(g0.linked),
         byKind: graphKind.map((r) => ({ kind: String(r.kind), n: n(r.n) })),
-        typed: false,   // 现均为记忆实体共现边，尚未定型为强类型关系（P3）
+        typed: false,   // opendb_memory_entities 均为共现边
+        // 强类型图（导入 commit 后）：kg 边/节点 + 人审待确认队列
+        kgEdges: n((kg[0] ?? {}).kg_edges), kgNodes: n((kg[0] ?? {}).kg_nodes), pendingReview: n((kg[0] ?? {}).pending),
       },
       updatedAt: (updated[0] ?? {}).ts ?? null,
     };
