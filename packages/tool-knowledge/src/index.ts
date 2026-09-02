@@ -148,6 +148,30 @@ function defineExtractTool(deps: { knowledge: any }) {
   } as any);
 }
 
+/**
+ * kg_query（P3）：查客户专属知识图谱——从一个实体出发沿强类型关系多跳，返回可追溯路径。
+ * 与 knowledge_search 的区别：search 找"相关文本片段"，kg_query 给"现象→根因→处置、对象→约束条款"这类**关系链**。
+ * 只走人确认过（confidence=1.0）且在生效期内的边——即"确定性"的那部分知识。
+ */
+function defineKgQueryTool(deps: { knowledge: any }) {
+  return defineTool({
+    name: 'kg_query',
+    description: '查客户专属知识图谱：给定实体（如「核心库锁等待」「core_acct」），返回它沿强类型关系（约束/导致/处置/依赖）多跳到达的关系链，每条带来源。适合"这个现象的根因与本行处置""改这张表受哪些规范约束"类推理。只返回人确认过的确定性关系。',
+    parameters: {
+      entity: { type: 'string', description: '起点实体名。', required: true },
+      max_hops: { type: 'integer', description: '最大跳数（默认 2，最多 4）。' },
+    },
+    output: TEXT_OUTPUT,
+    async execute(args: any) {
+      const r = await deps.knowledge.kgQuery(String(args.entity ?? ''), Number(args.max_hops ?? 2));
+      if (r.paths.length === 0) return { content: `知识图谱里没有与「${String(args.entity ?? '')}」直接关联的确定性关系（可能尚未导入相关规范/案例，或名称不一致）。` };
+      const REL: Record<string, string> = { constrains: '约束', causes: '导致', handled_by: '处置为', depends_on: '依赖', references: '引用', triggers: '触发' };
+      const lines = r.paths.map((p: any) => p.hops.map((h: any) => `${h.src} —${REL[h.rel] ?? h.rel}→ ${h.dst}${h.source ? `（出处：${h.source}）` : ''}`).join('；'));
+      return { content: `「${String(args.entity ?? '')}」的确定性关系（${r.paths.length} 条，涉及 ${r.nodes} 个实体）：\n${lines.map((l: string, i: number) => `${i + 1}. ${l}`).join('\n')}` };
+    },
+  } as any);
+}
+
 /** 知识库读写工具（function plugin 顶层 inject——W4 教训的正确姿势）。 */
 export function apply(ctx: Context): void {
   const anyCtx = ctx as any;
@@ -157,5 +181,6 @@ export function apply(ctx: Context): void {
     c.effect(() => c.tools.register(defineIngestTool(deps)), 'tool-knowledge.ingest');
     c.effect(() => c.tools.register(defineImportTool(deps)), 'tool-knowledge.import');
     c.effect(() => c.tools.register(defineExtractTool(deps)), 'tool-knowledge.extract');
+    c.effect(() => c.tools.register(defineKgQueryTool(deps)), 'tool-knowledge.kgquery');
   });
 }

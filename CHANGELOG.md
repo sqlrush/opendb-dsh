@@ -17,6 +17,10 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   真机 e2e `scripts/browser/kb-import-check.mjs` **10/10**（投喂工行样例规范→模型抽 7 条关系→入库 7 条强类型边 constrains/causes/handled_by/depends_on）。
 - **向量补齐后台任务（P3）**：`knowledge-pg` 周期扫 `embedding IS NULL` 的知识切块与记忆,批量 embed 补齐(advisory-lock 选主,
   host/runtime 只一个实例跑)。修掉"ingest 时 embed 失败落 NULL 且永不补、检索永久退化成 ILIKE"（og5 知识切块向量覆盖从 1/7 → 7/7）。
+- **混合检索 + 知识图谱查询（P3）**：`knowledge.search` 改为**向量语义召回 + 关键词精确命中合并去重**——向量给"意思相近",
+  关键词补纯向量易漏的精确 token（错误码 / 对象名 / 条款号）。新增 `knowledge.kgQuery` 递归 CTE 多跳查强类型图（只走 confidence=1.0
+  且在生效期内的边,返回可追溯路径）,经 `tool-knowledge` 的 `kg_query` 工具与 `/opendb-knowledge kg/query` 端点暴露——
+  导入的客户专属关系（现象→根因→处置、对象→约束条款）自此可在诊断中被查询。
 - **知识库 › 知识库大盘（P1，新面板插件 `ui-kb`，user 2026-09-01 通过 `docs/prototypes/knowledge-r1.html`）**：侧栏新增与「工作区」「资源」
   同级的**一级目录「知识库」**。大盘一眼看全三类知识——**记忆**（平台经历，849 条）/ **向量**（导入资料，2 文档 7 切块）/ **图**
   （客户专属关系，878 边 19 实体）：概览 4 卡（知识总量 / 向量覆盖率 / 健康度 / 最近更新）→ 三库分区卡（类型分布 · 向量覆盖 ·

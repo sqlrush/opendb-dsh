@@ -35,6 +35,8 @@ export function apply(ctx: Context): void {
           const hits = await knowledge.search({ agentId: payload.agentId, query: String(payload.query ?? ''), topK: 5 });
           return { ok: true, value: { hits } };
         }
+        case 'kg/query':
+          return { ok: true, value: await knowledge.kgQuery(String(payload.entity ?? ''), Number(payload.maxHops ?? 2)) };
         case 'dashboard':
           // 知识库大盘（P1）：只读聚合记忆/向量/图三库
           return { ok: true, value: await knowledge.dashboard() };

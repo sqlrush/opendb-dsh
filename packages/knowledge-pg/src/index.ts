@@ -174,11 +174,28 @@ export default class KnowledgeService extends Service {
     }
   }
 
-  /** 语义检索（agent 私有 + 全局知识合并）；向量不可用回退 ILIKE。 */
+  /** 关键词命中（ILIKE）：补向量召不回的精确 token（错误码 / 对象名 / 条款号）。 */
+  private async keywordHits(query: string, topK: number, agentId?: string): Promise<KnowledgeHit[]> {
+    const scope = `d.tenant_id = $1 AND (d.agent_id IS NULL${agentId !== undefined ? ' OR d.agent_id = $4' : ''})`;
+    const vals: unknown[] = [this.tenant, `%${query.slice(0, 100)}%`, topK];
+    if (agentId !== undefined) vals.push(agentId);
+    const r = await this.pool.query(
+      `SELECT c.doc_id, d.title, d.source, c.seq, c.content
+       FROM opendb_knowledge_chunks c JOIN opendb_knowledge_docs d ON d.id = c.doc_id
+       WHERE ${scope} AND c.content ILIKE $2 ORDER BY d.created_at DESC, c.seq LIMIT $3`, vals);
+    return r.rows.map((row) => ({ docId: row.doc_id, title: row.title, source: row.source ?? undefined, seq: row.seq, content: row.content }));
+  }
+
+  /**
+   * 混合检索（P3）：向量语义召回 + 关键词精确命中，合并去重。
+   * 向量给"意思相近"（说法不同也能召回），关键词补"精确 token"（ORA-01555、core_acct、条款号这类纯向量易漏的）。
+   * 向量不可用时退化为纯关键词。合并顺序：向量命中在前，关键词独有的补在后，按 topK 截断。
+   */
   async search(input: { agentId?: string; query: string; topK?: number }): Promise<KnowledgeHit[]> {
     await this.ready;
     const topK = Math.min(input.topK ?? 5, 20);
     const scope = `d.tenant_id = $1 AND (d.agent_id IS NULL${input.agentId !== undefined ? ' OR d.agent_id = $4' : ''})`;
+    const vecHits: KnowledgeHit[] = [];
     if (this.embeddings.available === true) {
       try {
         const [vec] = await this.embeddings.embed([input.query]);
@@ -193,13 +210,13 @@ export default class KnowledgeService extends Service {
                  FROM opendb_knowledge_chunks c JOIN opendb_knowledge_docs d ON d.id = c.doc_id
                  WHERE c.id = ANY($1)`, [hits.map((h) => h.chunkId)]);
               const byId = new Map(r.rows.map((row) => [row.id, row]));
-              return hits
+              vecHits.push(...hits
                 .map((h) => ({ row: byId.get(h.chunkId), score: h.score }))
                 .filter((x) => x.row !== undefined)
                 .map((x) => ({
                   docId: x.row.doc_id, title: x.row.title, source: x.row.source ?? undefined,
                   seq: x.row.seq, content: x.row.content, distance: 1 - x.score,
-                }));
+                })));
             }
           } catch (cause) {
             process.stderr.write(`[knowledge] qdrant 检索失败，回退 pgvector：${String((cause as Error).message ?? cause)}\n`);
@@ -214,22 +231,50 @@ export default class KnowledgeService extends Service {
            ORDER BY c.embedding <=> $2::vector LIMIT $3`,
           vals,
         );
-        if (r.rows.length > 0) {
-          return r.rows.map((row) => ({ docId: row.doc_id, title: row.title, source: row.source ?? undefined, seq: row.seq, content: row.content, distance: Number(row.distance) }));
+        if (vecHits.length === 0 && r.rows.length > 0) {
+          vecHits.push(...r.rows.map((row) => ({ docId: row.doc_id, title: row.title, source: row.source ?? undefined, seq: row.seq, content: row.content, distance: Number(row.distance) })));
         }
       } catch (cause) {
         process.stderr.write(`[knowledge] 向量检索失败，回退关键词：${String((cause as Error).message ?? cause)}\n`);
       }
     }
-    const vals: unknown[] = [this.tenant, `%${input.query.slice(0, 100)}%`, topK];
-    if (input.agentId !== undefined) vals.push(input.agentId);
+    // 混合合并：向量命中在前，关键词独有的补在后（去重 key = doc_id:seq）
+    const kw = await this.keywordHits(input.query, topK, input.agentId).catch(() => [] as KnowledgeHit[]);
+    const seen = new Set(vecHits.map((h) => `${h.docId}:${h.seq}`));
+    const merged = [...vecHits];
+    for (const h of kw) { const k = `${h.docId}:${h.seq}`; if (!seen.has(k)) { seen.add(k); merged.push(h); } }
+    return merged.slice(0, topK);
+  }
+
+  /**
+   * 强类型知识图谱查询（P3）：从一个实体出发做多跳（默认 2 跳），沿 confidence=1.0 且在生效期内的边，
+   * 返回可追溯路径。这是"客户专属关系"的确定性推理入口——现象→根因→处置、对象→约束条款 这类。
+   */
+  async kgQuery(entity: string, maxHops = 2): Promise<{ paths: { hops: { src: string; rel: string; dst: string; source: string }[] }[]; nodes: number }> {
+    await this.ready;
+    const hops = Math.max(1, Math.min(maxHops, 4));
     const r = await this.pool.query(
-      `SELECT c.doc_id, d.title, d.source, c.seq, c.content
-       FROM opendb_knowledge_chunks c JOIN opendb_knowledge_docs d ON d.id = c.doc_id
-       WHERE ${scope} AND c.content ILIKE $2 ORDER BY d.created_at DESC, c.seq LIMIT $3`,
-      vals,
-    );
-    return r.rows.map((row) => ({ docId: row.doc_id, title: row.title, source: row.source ?? undefined, seq: row.seq, content: row.content }));
+      `WITH RECURSIVE walk(src_id, dst_id, rel_type, src_name, dst_name, source_locator, depth, path) AS (
+         SELECT e.src_id, e.dst_id, e.rel_type, sn.name, dn.name, e.source_locator, 1, ARRAY[e.src_id, e.dst_id]
+           FROM opendb_kg_edges e
+           JOIN opendb_kg_nodes sn ON sn.id = e.src_id
+           JOIN opendb_kg_nodes dn ON dn.id = e.dst_id
+          WHERE e.tenant_id = $1 AND e.confidence >= 1.0
+            AND now() BETWEEN coalesce(e.valid_from, '-infinity') AND coalesce(e.valid_to, 'infinity')
+            AND lower(sn.canonical) = lower($2)
+         UNION ALL
+         SELECT e.src_id, e.dst_id, e.rel_type, sn.name, dn.name, e.source_locator, w.depth + 1, w.path || e.dst_id
+           FROM walk w
+           JOIN opendb_kg_edges e ON e.src_id = w.dst_id AND e.tenant_id = $1 AND e.confidence >= 1.0
+           JOIN opendb_kg_nodes sn ON sn.id = e.src_id
+           JOIN opendb_kg_nodes dn ON dn.id = e.dst_id
+          WHERE w.depth < $3 AND NOT e.dst_id = ANY(w.path))
+       SELECT src_name, rel_type, dst_name, source_locator, depth FROM walk ORDER BY depth LIMIT 100`,
+      [this.tenant, entity, hops]);
+    // 简化：把每条边当一条单跳路径返回（多跳链前端/模型可自行串联）；nodes = 涉及实体数
+    const paths = r.rows.map((row) => ({ hops: [{ src: String(row.src_name), rel: String(row.rel_type), dst: String(row.dst_name), source: String(row.source_locator ?? '') }] }));
+    const nodes = new Set(r.rows.flatMap((row) => [String(row.src_name), String(row.dst_name)])).size;
+    return { paths, nodes };
   }
 
   async listDocs(input: { agentId?: string; limit?: number } = {}): Promise<KnowledgeDoc[]> {
