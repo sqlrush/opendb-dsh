@@ -1,6 +1,6 @@
 /** Tiny external store shared between HarnessSidebar and HarnessMain (same plugin). */
 
-export type HarnessView = 'chat' | 'tasks' | 'databases' | 'resources' | 'newAgent';
+export type HarnessView = 'chat' | 'tasks' | 'databases' | 'resources' | 'knowledge' | 'newAgent';
 
 export interface HarnessState {
   view: HarnessView;
@@ -17,11 +17,13 @@ export interface HarnessState {
   selectedRunId: string;
   /** 资源页当前子项（侧栏「资源」分组下选中的那一项）：cluster / usage。 */
   resourceKey: string;
+  /** 知识库页当前子项（侧栏「知识库」分组下选中的那一项）：dashboard（P2 增 import）。 */
+  knowledgeKey: string;
   /** 侧栏右缘 px —— 主区页面贴齐它渲染（侧栏收展实时跟随），不盖侧栏。 */
   sidebarRight: number;
 }
 
-let state: HarnessState = { view: 'chat', agentId: '', agentName: '', selectedTaskId: '', selectedNodeId: '', selectedRunId: '', resourceKey: 'cluster', sidebarRight: 260 };
+let state: HarnessState = { view: 'chat', agentId: '', agentName: '', selectedTaskId: '', selectedNodeId: '', selectedRunId: '', resourceKey: 'cluster', knowledgeKey: 'dashboard', sidebarRight: 260 };
 const listeners = new Set<() => void>();
 
 export function getState(): HarnessState {
@@ -66,12 +68,13 @@ export function getTaskPanel(typeKey: string): TaskPanelComponent | undefined {
  * 慢机器上必然复现。改为双向排队：谁先到谁建桥，晚到的一方消费对方留下的 __pending。
  */
 /** 排队项：三类面板共用一条队列，kind 决定兑现时调哪个 register。 */
-export type PendingPanel = { kind: 'task' | 'resource' | 'node'; key?: string; comp: any };
+export type PendingPanel = { kind: 'task' | 'resource' | 'node' | 'knowledge'; key?: string; comp: any };
 
 declare global {
   interface Window {
     __opendbHarness__?: {
       registerTaskPanel?: typeof registerTaskPanel;
+      registerKnowledgePanel?: typeof registerKnowledgePanel;
       __pending?: PendingPanel[];
       [k: string]: unknown;
     };
@@ -100,6 +103,26 @@ export function listResourcePanels(): { key: string; label: string }[] {
   return RESOURCE_ITEMS.filter((i) => resourcePanels.has(i.key));
 }
 
+/**
+ * 知识库页面板（2026-09-01 起，与「资源」同款按 key 多面板）：侧栏「知识库」是与「工作区」「资源」
+ * 同级的一级目录，下面每项一个 key（dashboard = 知识库大盘；P2 增 import = 导入知识）。
+ * 独立于资源面板注册表——知识库是客户数据资产，比只读资源视图重，单列一级目录（设计 2026-09-01）。
+ */
+export type KnowledgePanelComponent = () => any;
+export const KNOWLEDGE_ITEMS: { key: string; label: string }[] = [
+  { key: 'dashboard', label: '知识库大盘' },
+];
+const knowledgePanels = new Map<string, KnowledgePanelComponent>();
+export function registerKnowledgePanel(panel: KnowledgePanelComponent, key = 'dashboard'): () => void {
+  knowledgePanels.set(key, panel);
+  for (const fn of listeners) fn();
+  return () => { knowledgePanels.delete(key); };
+}
+export function getKnowledgePanel(key = 'dashboard'): KnowledgePanelComponent | undefined { return knowledgePanels.get(key); }
+export function listKnowledgePanels(): { key: string; label: string }[] {
+  return KNOWLEDGE_ITEMS.filter((i) => knowledgePanels.has(i.key));
+}
+
 /** 节点监控详情面板（ui-node-monitor 插件注册；W6 拆包——ui-harness 内置实现降级备用）。 */
 export type NodePanelComponent = (props: { nodeId: string }) => any;
 let nodePanel: NodePanelComponent | undefined;
@@ -117,12 +140,13 @@ if (typeof window !== 'undefined') {
   const queued: PendingPanel[] = Array.isArray(prior?.__pending) ? prior.__pending : [];
   window.__opendbHarness__ = {
     ...(prior ?? {}),
-    registerTaskPanel, registerResourcePanel, registerNodePanel,
+    registerTaskPanel, registerResourcePanel, registerKnowledgePanel, registerNodePanel,
     __pending: [],
   };
   for (const p of queued) {
     if (p.kind === 'task' && typeof p.key === 'string') registerTaskPanel(p.key, p.comp);
     else if (p.kind === 'resource') registerResourcePanel(p.comp, typeof p.key === 'string' ? p.key : undefined);
+    else if (p.kind === 'knowledge') registerKnowledgePanel(p.comp, typeof p.key === 'string' ? p.key : undefined);
     else if (p.kind === 'node') registerNodePanel(p.comp);
   }
 }

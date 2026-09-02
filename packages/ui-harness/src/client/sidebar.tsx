@@ -9,7 +9,7 @@
  * （opendb_archived_tasks 旁路表），数据库无菜单。
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { getState, setState, subscribe, listResourcePanels } from './state.ts';
+import { getState, setState, subscribe, listResourcePanels, listKnowledgePanels } from './state.ts';
 
 const BLUE = '#4D6BFE';   // dsh 文件夹图标同款蓝
 
@@ -180,6 +180,8 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
     const hs = useSyncExternalStore(subscribe, getState);
     // 资源分组的子项 = 已注册的资源面板（插件注册会触发 subscribe 重渲染，所以这里直接读）
     const resourceItems = listResourcePanels();
+    // 知识库分组的子项 = 已注册的知识库面板（同款机制）
+    const knowledgeItems = listKnowledgePanels();
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const [agents, setAgents] = useState<any[]>([]);
     const [sessions, setSessions] = useState<any[]>([]);
@@ -406,6 +408,22 @@ export function makeSidebar(ctx: any, call: (endpoint: string, payload?: unknown
           {secHead('db', I.db(BLUE, 15), '数据库', nodes.length)}
           {open.db && indent(nodeRows(nodes))}
         </div>
+
+        {/*
+          知识库：与「工作区」「资源」同级的一级目录（设计 2026-09-01）——下挂已注册的知识库面板
+          （知识库大盘；P2 增导入知识）。无子项注册时不显示（P1 只读大盘由 ui-kb 插件注册）。
+        */}
+        {knowledgeItems.length > 0 ? (
+          <div style={{ paddingTop: 6, paddingBottom: 2 }}>
+            <div style={S.secRow}><span style={S.secTitle}>知识库</span></div>
+            {indent(knowledgeItems.map((it) => (
+              <Row key={it.key} onClick={() => setState({ view: 'knowledge', knowledgeKey: it.key })}>
+                {I.chart(BLUE)}
+                <span className="odbTitle">{it.label}</span>
+              </Row>
+            )))}
+          </div>
+        ) : null}
 
         {/*
           资源：与「工作区」同级的一级目录（user 2026-08-31 定）——同款小节头 + 下挂子项，

@@ -135,6 +135,10 @@
 - insert:
     - id: ui-cluster
       name: '@opendb-dsh/ui-cluster'
+# ── 知识库 › 知识库大盘（client-only；server 半边在 ui-knowledge 的 dashboard 端点）──────
+- insert:
+    - id: ui-kb
+      name: '@opendb-dsh/ui-kb'
 # ── 默认模型（user 2026-08-22：v4-flash → v4-pro）───────────────────────────
 - id: agent-default-model
   config:

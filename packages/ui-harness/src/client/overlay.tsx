@@ -5,7 +5,7 @@
  * 经 registerTaskPanel(typeKey, Panel) 注册专属 UI；未注册的类型用默认面板（运行历史+报告）。
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { getState, setState, subscribe, getTaskPanel, getResourcePanel, getNodePanel, listResourcePanels } from './state.ts';
+import { getState, setState, subscribe, getTaskPanel, getResourcePanel, getNodePanel, listResourcePanels, getKnowledgePanel, listKnowledgePanels } from './state.ts';
 
 
 export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown) => Promise<any>) {
@@ -542,6 +542,14 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
     );
   }
 
+  function KnowledgePage() {
+    // 知识库是一级分组，下面每项一个面板（dashboard = 知识库大盘）；插件未加载时显示加载提示。
+    const hs = getState();
+    const Panel = getKnowledgePanel(hs.knowledgeKey) ?? getKnowledgePanel(listKnowledgePanels()[0]?.key);
+    if (Panel !== undefined) return <Panel />;
+    return <div style={S.h2}>知识库面板加载中……（ui-kb 插件未注册时显示此提示）</div>;
+  }
+
   function ResourcesPage() {
     // 资源是一级分组，下面每项一个面板（cluster = k8s 集群状态、usage = 模型用量）；
     // 选中的项没有插件注册时退回任一已注册面板，再没有才显示内置降级页。
@@ -641,7 +649,11 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
       );
     }
     const resItem = listResourcePanels().find((i) => i.key === hs.resourceKey);
-    const title = hs.view === 'tasks' ? '任务' : hs.view === 'databases' ? '数据库' : resItem !== undefined ? `资源 › ${resItem.label}` : '资源';
+    const kbItem = listKnowledgePanels().find((i) => i.key === hs.knowledgeKey);
+    const title = hs.view === 'tasks' ? '任务'
+      : hs.view === 'databases' ? '数据库'
+      : hs.view === 'knowledge' ? (kbItem !== undefined ? `知识库 › ${kbItem.label}` : '知识库')
+      : resItem !== undefined ? `资源 › ${resItem.label}` : '资源';
     return (
       <div style={{
         position: 'fixed', top: 0, bottom: 0, right: 0, left: hs.sidebarRight,
@@ -650,13 +662,14 @@ export function makeOverlay(ctx: any, call: (endpoint: string, payload?: unknown
       }}>
         <div style={S.head}>
           <span style={S.title}>{title}</span>
-          {hs.view !== 'resources' && <span style={S.dim}>agent：{hs.agentName || '…'}</span>}
+          {hs.view !== 'resources' && hs.view !== 'knowledge' && <span style={S.dim}>agent：{hs.agentName || '…'}</span>}
           <button style={{ ...S.btn, marginLeft: 'auto' }} onClick={() => setState({ view: 'chat' })}>返回会话</button>
         </div>
         <div style={S.body}>
           {hs.view === 'tasks' && <TasksPage />}
           {hs.view === 'databases' && <DatabasesPage />}
           {hs.view === 'resources' && <ResourcesPage />}
+          {hs.view === 'knowledge' && <KnowledgePage />}
         </div>
       </div>
     );

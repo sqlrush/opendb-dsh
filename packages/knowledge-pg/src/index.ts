@@ -193,5 +193,62 @@ export default class KnowledgeService extends Service {
     await this.ready;
     await this.pool.query('DELETE FROM opendb_knowledge_docs WHERE id = $1', [id]);   // chunks ON DELETE CASCADE
   }
+
+  /**
+   * 知识库大盘（P1，只读聚合三库）：记忆 / 向量 / 图。共用同一 PG pool（同库），一次并发查完。
+   * 只读、纯统计；任一子查询失败不拖垮整页（catch → 该块给空值，前端如实降级）。
+   */
+  async dashboard(): Promise<unknown> {
+    await this.ready;
+    const t = [this.tenant];
+    const q = <T = any>(sql: string, vals: unknown[] = t): Promise<T[]> =>
+      this.pool.query(sql, vals).then((r) => r.rows as T[]).catch(() => [] as T[]);
+
+    const [mem, memKind, vecTot, vecDocs, vecSrc, graph, graphKind, updated] = await Promise.all([
+      // 记忆：总量 / 向量覆盖 / agent 数 / 时间跨度
+      q(`SELECT count(*) total, count(*) FILTER (WHERE embedding IS NOT NULL) vec,
+                count(DISTINCT agent_id) agents, min(created_at) oldest, max(created_at) newest,
+                count(*) FILTER (WHERE created_at > now() - interval '24 hours') last24
+           FROM opendb_memories WHERE tenant_id = $1`),
+      q(`SELECT kind, count(*) n FROM opendb_memories WHERE tenant_id = $1 GROUP BY 1`),
+      // 向量：切块总量与向量覆盖
+      q(`SELECT count(*) chunks, count(*) FILTER (WHERE c.embedding IS NOT NULL) vec
+           FROM opendb_knowledge_chunks c JOIN opendb_knowledge_docs d ON d.id = c.doc_id
+          WHERE d.tenant_id = $1`),
+      q(`SELECT count(*) docs FROM opendb_knowledge_docs WHERE tenant_id = $1`),
+      // 向量：按来源前缀粗分类（source 形如 sop-* / task:* …）
+      q(`SELECT coalesce(split_part(source, ':', 1), '未标注') src, count(*) n
+           FROM opendb_knowledge_docs WHERE tenant_id = $1 GROUP BY 1 ORDER BY 2 DESC`),
+      // 图：边 / 实体 / 关联记忆（表无 tenant 列，且 SQL 无占位符 → 必须传空参数数组，
+      //   否则 pg 报「bind message supplies 1 parameters, but requires 0」被 catch 吞成 0）
+      q(`SELECT count(*) edges, count(DISTINCT entity) entities, count(DISTINCT memory_id) linked
+           FROM opendb_memory_entities`, []),
+      q(`SELECT kind, count(DISTINCT entity) n FROM opendb_memory_entities GROUP BY 1`, []),
+      // 全局最近更新时间（三库取最大）
+      q(`SELECT greatest(
+                 (SELECT max(created_at) FROM opendb_memories WHERE tenant_id = $1),
+                 (SELECT max(created_at) FROM opendb_knowledge_docs WHERE tenant_id = $1)) ts`),
+    ]);
+
+    const n = (v: unknown): number => Number(v ?? 0);
+    const m0 = mem[0] ?? {}; const v0 = vecTot[0] ?? {}; const g0 = graph[0] ?? {};
+    return {
+      memory: {
+        total: n(m0.total), withVec: n(m0.vec), agents: n(m0.agents),
+        oldest: m0.oldest ?? null, newest: m0.newest ?? null, last24: n(m0.last24),
+        byKind: memKind.map((r) => ({ kind: String(r.kind), n: n(r.n) })).sort((a, b) => b.n - a.n),
+      },
+      vector: {
+        docs: n((vecDocs[0] ?? {}).docs), chunks: n(v0.chunks), withVec: n(v0.vec),
+        bySource: vecSrc.map((r) => ({ source: String(r.src), n: n(r.n) })),
+      },
+      graph: {
+        edges: n(g0.edges), entities: n(g0.entities), linkedMemories: n(g0.linked),
+        byKind: graphKind.map((r) => ({ kind: String(r.kind), n: n(r.n) })),
+        typed: false,   // 现均为记忆实体共现边，尚未定型为强类型关系（P3）
+      },
+      updatedAt: (updated[0] ?? {}).ts ?? null,
+    };
+  }
 }
 export { KnowledgeService };

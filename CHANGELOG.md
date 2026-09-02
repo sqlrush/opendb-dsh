@@ -7,6 +7,20 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Added
+- **知识库 › 知识库大盘（P1，新面板插件 `ui-kb`，user 2026-09-01 通过 `docs/prototypes/knowledge-r1.html`）**：侧栏新增与「工作区」「资源」
+  同级的**一级目录「知识库」**。大盘一眼看全三类知识——**记忆**（平台经历，849 条）/ **向量**（导入资料，2 文档 7 切块）/ **图**
+  （客户专属关系，878 边 19 实体）：概览 4 卡（知识总量 / 向量覆盖率 / 健康度 / 最近更新）→ 三库分区卡（类型分布 · 向量覆盖 ·
+  按来源 · 关联实体）→ **健康自检**（向量缺失几块、图边尚未定型、客户知识为空——降级即发现，每项带处理入口）。
+  server 半边为 `knowledge-pg` 新增 `dashboard()` 只读聚合三库（同一 PG pool），经 `ui-knowledge` 的 `/opendb-knowledge dashboard`
+  端点暴露;`ui-harness` 侧栏/主区加「知识库」分组（`registerKnowledgePanel` 按 key，与资源面板同款机制）。纯只读——导入工具（P2）
+  与强类型图 + 报告接入（P3）后续。验收 `scripts/browser/kb-check.mjs`（真机 17/17）。
+
+### Fixed
+- **知识库大盘图知识恒显 0 条边**（本轮 P1 自测抓到）：`dashboard()` 里查 `opendb_memory_entities`（表无 tenant 列、SQL 无占位符）
+  却传了 `[tenant]` 参数，pg 报 “bind message supplies 1 parameters, but requires 0” 被 catch 吞成空 → 边数/实体数显示 0。
+  改成对无占位符的查询显式传空参数数组 `[]`,现正确显示 878 边 / 19 实体。
+
 ## [0.3.1] - 2026-09-01
 
 ### Fixed

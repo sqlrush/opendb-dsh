@@ -35,6 +35,9 @@ export function apply(ctx: Context): void {
           const hits = await knowledge.search({ agentId: payload.agentId, query: String(payload.query ?? ''), topK: 5 });
           return { ok: true, value: { hits } };
         }
+        case 'dashboard':
+          // 知识库大盘（P1）：只读聚合记忆/向量/图三库
+          return { ok: true, value: await knowledge.dashboard() };
         default:
           return { ok: false, error: { code: 'bad-request', message: `unknown endpoint ${endpoint}`, details: {} } };
       }
