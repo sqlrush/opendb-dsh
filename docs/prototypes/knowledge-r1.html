@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知识库大盘 · R1 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C;
+    --blue:#4176E6; --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC;
+    --mem:#2FA79A; --mem-soft:#E4F5F2; --vec:#4176E6; --vec-soft:#EEF3FF; --graph:#8B6BE0; --graph-soft:#F3EEFC;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  .num{font-variant-numeric:tabular-nums}.mono{font-family:var(--mono)}
+  .ribbon{background:#EEF3FF;color:#2F55B3;font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF}
+  .app{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:calc(100vh - 31px)}
+  .side{border-right:1px solid var(--line);padding:14px 12px;font-size:14px;background:#fff}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:2px 8px 14px}
+  .brand i{display:inline-block;width:20px;height:20px;border-radius:5px;background:var(--ink);flex:none}
+  .newbtn{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:7px;color:var(--ink);margin-bottom:14px}
+  .sec{font-size:12.5px;color:var(--dim);padding:8px 8px 4px;display:flex;align-items:center;gap:6px;font-weight:600}
+  .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;color:var(--ink);cursor:pointer}
+  .row:hover{background:var(--fill)}.row.on{background:var(--fill2);font-weight:500}
+  .row .n{margin-left:auto;font-size:12.5px;color:var(--dim)}
+  .row.sub{padding-left:24px;font-size:13.5px}
+  .main{min-width:0}
+  .top{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 24px;font-size:14px}
+  .top b{font-weight:600}.top .dim{color:var(--dim)}
+  .page{padding:18px 24px 48px;min-width:0}
+  .title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px}
+  .title h1{font-size:20px;font-weight:600;margin:0}
+  .title .meta{font-size:13.5px;color:var(--dim)}
+  .lead{font-size:14px;color:var(--sub);margin:5px 0 0}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;border-radius:6px;padding:1px 9px;font-weight:500;white-space:nowrap}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.grey{background:var(--fill2);color:var(--sub)}
+  .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:8px;padding:6px 14px;font-size:13.5px;font-weight:500;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--blue)}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:14px 0 8px}
+  .stat{background:var(--fill);border-radius:10px;padding:12px 14px;min-width:0}
+  .stat .l{font-size:12.5px;color:var(--dim)}
+  .stat .v{font-size:24px;font-weight:600;line-height:1.3;margin-top:2px}
+  .stat .v small{font-size:12.5px;font-weight:500;color:var(--dim);margin-left:5px}
+  .stat .d{font-size:12px;color:var(--dim);line-height:1.5;margin-top:2px}
+
+  h2{font-size:15px;font-weight:600;margin:24px 0 10px}
+  .three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .kcard{border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);overflow:hidden;background:#fff;display:flex;flex-direction:column}
+  .kcard .hd{padding:14px 16px 12px;border-top:4px solid var(--c)}
+  .kcard .hd .t{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .kcard .hd .t .dot{width:10px;height:10px;border-radius:3px;background:var(--c)}
+  .kcard .hd .big{font-size:30px;font-weight:700;line-height:1.1;margin-top:8px}
+  .kcard .hd .big small{font-size:13px;font-weight:500;color:var(--dim);margin-left:6px}
+  .kcard .hd .sub{font-size:12.5px;color:var(--sub);margin-top:2px}
+  .kcard .bd{padding:4px 16px 14px;font-size:13px;flex:1}
+  .kcard .foot{padding:10px 16px;border-top:1px solid var(--line);display:flex;gap:14px;align-items:center;font-size:13px}
+  .kcard .foot a{color:var(--blue);cursor:pointer}
+  .kv{display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid var(--line)}
+  .kv:first-child{border-top:none}
+  .kv .k{color:var(--sub)}.kv .v2{font-weight:600;...}
+  /* 分布条 */
+  .bar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:8px 0 4px;background:var(--fill2)}
+  .bar i{display:block;height:100%}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:var(--sub);margin-top:2px}
+  .legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+  /* 覆盖率环/条 */
+  .cov{display:flex;align-items:center;gap:10px;margin:6px 0}
+  .cov .track{flex:1;height:10px;border-radius:5px;background:var(--fill2);overflow:hidden}
+  .cov .track i{display:block;height:100%}
+  .cov .pct{font-weight:600;white-space:nowrap}
+  /* 健康自检 */
+  .health{border:1px solid var(--line);border-radius:12px;padding:6px 16px;margin-top:4px}
+  .hrow{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line);font-size:13.5px}
+  .hrow:first-child{border-top:none}
+  .hrow .ic{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;flex:none}
+  .hrow .desc{flex:1}.hrow .desc small{color:var(--dim);display:block;font-size:12px}
+  .hrow .act{color:var(--blue);cursor:pointer;font-size:13px;white-space:nowrap}
+
+  /* 导入向导 */
+  .wiz{display:none}
+  .steps{display:flex;gap:0;margin:6px 0 18px}
+  .step{flex:1;text-align:center;position:relative;font-size:13px;color:var(--dim)}
+  .step .no{width:26px;height:26px;border-radius:50%;background:var(--fill2);color:var(--sub);display:inline-flex;align-items:center;justify-content:center;font-weight:600;margin-bottom:5px}
+  .step.on .no{background:var(--blue);color:#fff}.step.on{color:var(--ink);font-weight:600}
+  .step.done .no{background:var(--ok);color:#fff}
+  .step::after{content:"";position:absolute;top:13px;left:60%;right:-40%;height:2px;background:var(--fill2)}
+  .step:last-child::after{display:none}
+  .drop{border:2px dashed var(--rest);border-radius:12px;padding:34px;text-align:center;color:var(--dim);background:var(--fill)}
+  .flist{margin-top:14px}
+  .frow{display:grid;grid-template-columns:1fr 120px 130px 150px;gap:10px;align-items:center;padding:11px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;font-size:13px}
+  .frow .fn{font-weight:500;display:flex;align-items:center;gap:8px}
+  .tag{font-size:11.5px;border-radius:5px;padding:1px 7px;background:var(--fill2);color:var(--sub)}
+  .split{font-size:12.5px;color:var(--sub)}
+  .split b.vec{color:var(--vec)}.split b.graph{color:var(--graph)}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{font-size:12.5px;color:var(--dim);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--fill)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  .rel{font:600 12px var(--mono);border-radius:5px;padding:1px 7px;background:var(--graph-soft);color:var(--graph);white-space:nowrap}
+  .mini-btn{border:1px solid var(--line);border-radius:6px;padding:1px 9px;font-size:12.5px;cursor:pointer;background:#fff;color:var(--sub)}
+  .mini-btn.acc{border-color:var(--ok);color:var(--ok)}.mini-btn.rej{border-color:var(--crit);color:var(--crit)}
+  .foot-note{font-size:13px;color:var(--dim);border:1px dashed var(--line);border-radius:8px;padding:10px 16px;margin-top:18px;line-height:1.8}
+</style>
+</head>
+<body>
+<div class="ribbon">设计稿 R1 · 知识库大盘 + 导入工具——数字为 og5 实测（2026-09-01）；顶部「大盘 / 导入」可切换预览；待 user 评审</div>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><i></i>opendb<span style="font-weight:600">HARNESS</span></div>
+    <div class="newbtn">⊕ 新会话</div>
+    <div class="sec">工作区</div>
+    <div class="row">◇ 会话 <span class="n">10</span></div>
+    <div class="row">▤ 任务 <span class="n">5</span></div>
+    <div class="row">▤ 数据库 <span class="n">1</span></div>
+    <div class="sec" style="margin-top:8px">知识库</div>
+    <div class="row on" onclick="show('dash')">📊 知识库大盘</div>
+    <div class="row" onclick="show('wiz')">⤵ 导入知识</div>
+    <div class="sec" style="margin-top:8px">资源</div>
+    <div class="row">k8s 集群状态</div>
+    <div class="row">模型用量</div>
+  </aside>
+
+  <main class="main">
+    <div class="top"><b id="crumb">知识库 › 知识库大盘</b><span class="dim">tenant: 工行 / 公有云内部环境</span>
+      <span style="margin-left:auto"><span class="btn" onclick="show('wiz')">⤵ 导入知识</span></span></div>
+
+    <!-- ============ 大盘 ============ -->
+    <div class="page" id="dash">
+      <div class="title"><h1>知识库大盘</h1>
+        <span class="chip ok">✓ 写入归确定性层 · 引用必有出处</span>
+        <span class="meta">记忆 · 向量 · 图 三类知识全貌</span>
+      </div>
+      <p class="lead">平台"懂多少"：平台自己的经历（记忆）、导入的非结构化资料（向量）、客户专属的关系网（图）——一眼看清有多少、健不健康、覆盖了哪些库。</p>
+
+      <div class="stats">
+        <div class="stat"><div class="l">知识总量</div><div class="v num">1,734<small>条 · 三库合计</small></div><div class="d">记忆 849 · 向量 7 · 图边 878</div></div>
+        <div class="stat"><div class="l">覆盖引擎 / 环境</div><div class="v num">1<small>套 · og5</small></div><div class="d">openGauss · 生产（客户侧知识尚未导入）</div></div>
+        <div class="stat"><div class="l">健康度</div><div class="v" style="color:var(--warn)">3 项待处理</div><div class="d">向量缺失 6 · 图边未定型 878 · 客户知识为空</div></div>
+        <div class="stat"><div class="l">最近更新</div><div class="v num" style="font-size:19px">09-01<small>今天</small></div><div class="d">24h 新增记忆 12 条 · 未导入资料</div></div>
+      </div>
+
+      <h2>三类知识</h2>
+      <div class="three">
+        <!-- 记忆 -->
+        <div class="kcard" style="--c:var(--mem)">
+          <div class="hd"><div class="t"><span class="dot"></span>记忆知识</div>
+            <div class="sub">平台在这套环境里做过什么、上次结论是什么</div>
+            <div class="big num">849<small>条 · 覆盖 08-18 → 09-01</small></div>
+          </div>
+          <div class="bd">
+            <div class="bar"><i style="width:92.3%;background:var(--mem)"></i><i style="width:6.7%;background:#7FC9BE"></i><i style="width:0.8%;background:#B8E0D9"></i><i style="width:0.2%;background:#DDF0EC"></i></div>
+            <div class="legend"><span><i style="background:var(--mem)"></i>报告 784</span><span><i style="background:#7FC9BE"></i>事实 57</span><span><i style="background:#B8E0D9"></i>情景 7</span><span><i style="background:#DDF0EC"></i>偏好 1</span></div>
+            <div class="cov"><span style="color:var(--sub);white-space:nowrap">向量覆盖</span><span class="track"><i style="width:100%;background:var(--ok)"></i></span><span class="pct" style="color:var(--ok)">100%</span></div>
+            <div class="kv"><span class="k">关联智能体</span><span>1（og-lab）</span></div>
+            <div class="kv"><span class="k">来源</span><span>任务报告自动沉淀为主</span></div>
+          </div>
+          <div class="foot"><a>查看记忆列表 →</a></div>
+        </div>
+
+        <!-- 向量 -->
+        <div class="kcard" style="--c:var(--vec)">
+          <div class="hd"><div class="t"><span class="dot"></span>向量知识</div>
+            <div class="sub">导入的非结构化资料：规范 / 工单 / 故障 / 手册</div>
+            <div class="big num">2<small>文档 · 7 切块</small></div>
+          </div>
+          <div class="bd">
+            <div class="cov"><span style="color:var(--sub);white-space:nowrap">向量覆盖</span><span class="track"><i style="width:14%;background:var(--warn)"></i></span><span class="pct" style="color:var(--warn)">14%</span></div>
+            <div style="font-size:12px;color:var(--warn);margin:2px 0 8px">⚠ 6/7 切块缺向量 → 退化为关键词检索，需补齐</div>
+            <div class="kv"><span class="k">按来源类型</span><span>规范 1 · 优化案例 1</span></div>
+            <div class="kv"><span class="k">覆盖引擎</span><span>openGauss</span></div>
+            <div class="kv"><span class="k">接入报告</span><span style="color:var(--crit)">未接（参考不改判待落地）</span></div>
+          </div>
+          <div class="foot"><a>查看文档列表 →</a><a>补齐向量</a></div>
+        </div>
+
+        <!-- 图 -->
+        <div class="kcard" style="--c:var(--graph)">
+          <div class="hd"><div class="t"><span class="dot"></span>图知识</div>
+            <div class="sub">客户专属关系：现象 / 根因 / 处置 / 条款 / 对象</div>
+            <div class="big num">878<small>条边 · 19 实体</small></div>
+          </div>
+          <div class="bd">
+            <div style="font-size:12px;color:var(--notice);margin:2px 0 8px">当前均为「记忆实体共现」边，尚未定型为强类型关系</div>
+            <div class="bar"><i style="width:100%;background:var(--rest)"></i></div>
+            <div class="legend">
+              <span><i style="background:var(--graph)"></i>约束 0</span><span><i style="background:#A98BE6"></i>导致 0</span><span><i style="background:#C0ABEF"></i>处置 0</span><span><i style="background:var(--rest)"></i>共现（旧）878</span>
+            </div>
+            <div class="kv"><span class="k">待确认边（人审队列）</span><span style="color:var(--notice)">0（导入后产生）</span></div>
+            <div class="kv"><span class="k">已确认占比</span><span>—</span></div>
+          </div>
+          <div class="foot"><a>浏览图谱 →</a><a>人审队列</a></div>
+        </div>
+      </div>
+
+      <h2>健康自检 · 降级即发现</h2>
+      <div class="health">
+        <div class="hrow"><span class="ic" style="background:var(--warn-soft);color:var(--warn)">!</span><div class="desc">向量缺失 6 块<small>og5 优化案例文档的切块未 embed，检索退化为 ILIKE</small></div><span class="act">补齐向量 →</span></div>
+        <div class="hrow"><span class="ic" style="background:var(--notice-soft);color:var(--notice)">◔</span><div class="desc">图边尚未定型 878 条<small>现为共现边（无类型/来源/版本），导入客户资料后升级为强类型边</small></div><span class="act">了解 →</span></div>
+        <div class="hrow"><span class="ic" style="background:var(--crit-soft);color:var(--crit)">○</span><div class="desc">客户专属知识为空<small>尚未导入工行规范 / 工单 / 故障总结——导入后大盘三库将充实</small></div><span class="act">导入知识 →</span></div>
+      </div>
+
+      <div class="foot-note">
+        📥 <b>知识从哪来</b>：记忆由平台任务报告自动沉淀；向量与图由「导入知识」把用户提供的文本材料分析后分流写入（拓扑/依赖/变更史另由采集器直写图，不经导入）。<br>
+        🔒 <b>写入纪律</b>：向量线自动入库；图线由模型抽候选、经人审确认（confidence=1.0）才进确定性推理——模型只提议，写库归确定性管线。
+      </div>
+    </div>
+
+    <!-- ============ 导入向导 ============ -->
+    <div class="page wiz" id="wiz">
+      <div class="title"><h1>导入知识</h1><span class="meta">把文本材料分析后分流进三个库 · 模型提议 / 人审确认 / 确定性入库</span></div>
+      <div class="steps">
+        <div class="step done"><div class="no">✓</div>投喂材料</div>
+        <div class="step on"><div class="no">2</div>分析分流</div>
+        <div class="step"><div class="no">3</div>人审确认</div>
+        <div class="step"><div class="no">4</div>入库</div>
+      </div>
+
+      <div class="drop">拖拽或选择文件：docx / pdf / txt / md / csv / 工单导出 —— 也可直接粘贴文本 <div style="margin-top:8px"><span class="btn ghost">选择文件</span></div></div>
+
+      <h2>分析分流预览 · 模型提议（尚未写库）</h2>
+      <div class="flist">
+        <div class="frow"><div class="fn">📄 工行 openGauss 变更管理规范 v3.docx</div><span class="tag">规范</span><span class="tag">openGauss·生产</span><div class="split">向量 <b class="vec">12 块</b> · 图候选 <b class="graph">8 条</b></div></div>
+        <div class="frow"><div class="fn">📄 20260815-核心库锁等待故障总结.docx</div><span class="tag">故障总结</span><span class="tag">openGauss·生产</span><div class="split">向量 <b class="vec">6 块</b> · 图候选 <b class="graph">5 条</b></div></div>
+        <div class="frow"><div class="fn">📊 慢SQL处理工单导出_2026H1.csv</div><span class="tag">工单×326</span><span class="tag">多引擎</span><div class="split">向量 <b class="vec">326 块</b> · 图候选 <b class="graph">41 条</b></div></div>
+        <div class="frow"><div class="fn">📄 刀片服务器应急预案.docx</div><span class="tag">预案</span><span class="tag">全环境</span><div class="split">向量 <b class="vec">9 块</b> · 图候选 <b class="graph">6 条</b></div></div>
+      </div>
+
+      <h2>人审：图候选关系（向量线自动入库，此处只审图 + 分流）</h2>
+      <table>
+        <thead><tr><th>来源材料</th><th>候选关系</th><th style="width:80px">置信</th><th style="width:150px">出处</th><th style="width:150px">处置</th></tr></thead>
+        <tbody>
+          <tr><td>变更管理规范 v3</td><td><b>DDL 变更</b> <span class="rel">受约束于</span> <b>23:00–06:00 窗口（强制）</b></td><td class="num">0.86</td><td class="mono" style="font-size:12px">§4.2 第3页</td><td><span class="mini-btn acc">采纳</span> <span class="mini-btn">改</span> <span class="mini-btn rej">否决</span></td></tr>
+          <tr><td>锁等待故障总结</td><td><b>核心库锁等待</b> <span class="rel">导致</span> <b>交易超时</b></td><td class="num">0.79</td><td class="mono" style="font-size:12px">现象段</td><td><span class="mini-btn acc">采纳</span> <span class="mini-btn">改</span> <span class="mini-btn rej">否决</span></td></tr>
+          <tr><td>锁等待故障总结</td><td><b>核心库锁等待</b> <span class="rel">处置为</span> <b>杀阻塞会话 + 迁移批量作业</b></td><td class="num">0.82</td><td class="mono" style="font-size:12px">处置段</td><td><span class="mini-btn acc">采纳</span> <span class="mini-btn">改</span> <span class="mini-btn rej">否决</span></td></tr>
+          <tr><td>刀片应急预案</td><td><b>刀片 IO 抖动</b> <span class="rel">处置为</span> <b>先迁 VIP → 报变更单 → 厂商到场</b></td><td class="num">0.74</td><td class="mono" style="font-size:12px">流程段</td><td><span class="mini-btn acc">采纳</span> <span class="mini-btn">改</span> <span class="mini-btn rej">否决</span></td></tr>
+        </tbody>
+      </table>
+
+      <div style="display:flex;gap:10px;margin-top:16px;align-items:center">
+        <span class="btn">确认并入库（向量 353 块 + 图 已采纳 3 条）</span>
+        <span class="btn ghost">全部采纳</span>
+        <span style="color:var(--dim);font-size:13px;margin-left:auto">入库后写引用台账：每条边/块可追到材料版本与出处</span>
+      </div>
+
+      <div class="foot-note">
+        <b>两条线不对称</b>：向量线是纯管线（切块 → 嵌入 → 入库），不需人审、错了可重灌；图线是模型抽候选 → 你确认 → confidence=1.0 才进确定性推理。<b>拓扑/依赖/变更史不在此</b>——那些由采集器直写图。
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+function show(v){
+  document.getElementById('dash').style.display = v === 'dash' ? 'block' : 'none';
+  document.getElementById('wiz').style.display = v === 'wiz' ? 'block' : 'none';
+  document.getElementById('crumb').textContent = '知识库 › ' + (v === 'dash' ? '知识库大盘' : '导入知识');
+  document.querySelectorAll('.side .row').forEach((r) => r.classList.remove('on'));
+  document.querySelectorAll('.side .row').forEach((r) => { if ((v==='dash'&&/大盘/.test(r.textContent))||(v==='wiz'&&/导入/.test(r.textContent))) r.classList.add('on'); });
+}
+</script>
+</body>
+</html>
