@@ -336,6 +336,31 @@ export default class KnowledgeService extends Service {
     return { added };
   }
 
+  /** 按插入顺序取某批次的候选边（会话导入用它给候选编号，供用户按编号剔除）。 */
+  async stagingOrdered(importId: string): Promise<{ id: string; src_name: string; rel_type: string; dst_name: string; confidence: number; source_locator: string | null }[]> {
+    await this.ready;
+    const r = await this.pool.query(
+      `SELECT id, src_name, rel_type, dst_name, confidence, source_locator
+         FROM opendb_kb_edge_staging WHERE import_id = $1 ORDER BY created_at, id`, [importId]);
+    return r.rows;
+  }
+
+  /**
+   * 会话导入的"确认入库"：把用户按编号剔除的候选标 reject，其余（= 用户确认保留的）写进强类型图。
+   * rejectNumbers 是 1 基编号，对应 stagingOrdered 的顺序（会话里展示给用户的那个顺序）。
+   */
+  async commitWithReject(importId: string, rejectNumbers: number[] = []): Promise<{ edges: number; rejected: number; total: number }> {
+    await this.ready;
+    const rows = await this.stagingOrdered(importId);
+    const rej = new Set(rejectNumbers.map((n) => Math.trunc(n)));
+    let rejected = 0;
+    for (let i = 0; i < rows.length; i += 1) {
+      if (rej.has(i + 1)) { await this.decideStaging(rows[i].id, 'reject'); rejected += 1; }
+    }
+    const r = await this.commitImport(importId);
+    return { edges: r.edges, rejected, total: rows.length };
+  }
+
   async listImports(limit = 50): Promise<unknown[]> {
     await this.ready;
     const r = await this.pool.query(

@@ -109,9 +109,10 @@ export function listResourcePanels(): { key: string; label: string }[] {
  * 独立于资源面板注册表——知识库是客户数据资产，比只读资源视图重，单列一级目录（设计 2026-09-01）。
  */
 export type KnowledgePanelComponent = () => any;
+// 导入不走页面（纲领 §15：一切交互尽量在会话完成）——大盘只读展示全貌，
+// 导入在会话里说「把 xxx 导入知识库」，模型解析→逐条提问确认→入库，结果在会话里展示。
 export const KNOWLEDGE_ITEMS: { key: string; label: string }[] = [
   { key: 'dashboard', label: '知识库大盘' },
-  { key: 'import', label: '导入知识' },
 ];
 const knowledgePanels = new Map<string, KnowledgePanelComponent>();
 export function registerKnowledgePanel(panel: KnowledgePanelComponent, key = 'dashboard'): () => void {

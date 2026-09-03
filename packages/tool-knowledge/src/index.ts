@@ -58,14 +58,14 @@ function defineIngestTool(deps: { knowledge: any; registry: any }) {
 }
 
 /**
- * kb_import（P2 导入工具的模型半边）：模型读一份材料，判类型 + 抽候选关系三元组，调本工具入库。
- * 写入纪律——向量线自动入库（确定性切块+embed）；图线只落「待确认」暂存(staging)，人审确认后才进强类型图。
- * 模型只 propose 候选边，绝不直接写图。拓扑/依赖/变更史不走这里（采集器直写）。
+ * kb_import（会话式导入的第一步）：用户说"把 xxx 导入知识库"时，模型读材料、判类型、抽候选关系，调本工具。
+ * 本工具只做「向量线确定性入库 + 候选关系落暂存」，**不入图**；返回候选清单与待确认问题，
+ * 由模型逐条问用户，确认后再调 kb_commit 入图。模型只 propose，绝不自行写图。拓扑/依赖/变更史不走这里（采集器直写）。
  */
 function defineImportTool(deps: { knowledge: any }) {
   return defineTool({
     name: 'kb_import',
-    description: '把一份文本材料导入知识库：自动切块向量化（向量线，直接入库）+ 登记你抽取的关系三元组为候选边（图线，进人审队列，确认后才入图）。适用：用户提供的规范/工单/故障总结/预案。你要判材料类型并尽力抽出 现象→根因、条款→约束对象、故障→处置 这类关系。',
+    description: '会话式导入知识库第一步：用户说"把这份 X 导入知识库"时调用。把材料切块向量化（直接入库）并登记你抽取的关系候选（暂存、未入图）。返回候选清单和需要向用户确认的问题——你要据此逐条问用户，用户确认后再调 kb_commit。适用：用户提供的规范/工单/故障总结/预案，尽力抽出 现象→根因、条款→约束对象、故障→处置 这类关系。',
     parameters: {
       title: { type: 'string', description: '材料标题。', required: true },
       text: { type: 'string', description: '材料正文（纯文本/markdown）。', required: true },
@@ -96,54 +96,52 @@ function defineImportTool(deps: { knowledge: any }) {
         locator: typeof e.locator === 'string' ? e.locator : undefined,
         confidence: typeof e.confidence === 'number' ? e.confidence : undefined,
       })).filter((e: any) => e.src !== '' && e.rel !== '' && e.dst !== '') : [];
+      const mk = typeof args.material_kind === 'string' && args.material_kind !== '' ? args.material_kind : '';
+      const eng = typeof args.engine === 'string' && args.engine !== '' ? args.engine : '';
+      const env = typeof args.env === 'string' && args.env !== '' ? args.env : '';
       const r = await deps.knowledge.createImport({
         title: String(args.title ?? ''), text: String(args.text ?? ''),
         source: typeof args.source === 'string' && args.source !== '' ? args.source : undefined,
-        materialKind: typeof args.material_kind === 'string' ? args.material_kind : undefined,
-        engine: typeof args.engine === 'string' ? args.engine : undefined,
-        env: typeof args.env === 'string' ? args.env : undefined,
-        edges,
+        materialKind: mk || undefined, engine: eng || undefined, env: env || undefined, edges,
       });
-      return { content: `已受理导入《${String(args.title ?? '')}》：向量线切成 ${r.vectorChunks} 段（已入库）；图线登记 ${r.edgeCandidates} 条候选关系（进人审队列，确认后才入图）。批次 ${r.importId}。` };
+      const rows = await deps.knowledge.stagingOrdered(r.importId);
+      const REL: Record<string, string> = { constrains: '约束', causes: '导致', handled_by: '处置为', depends_on: '依赖', references: '引用', triggers: '触发' };
+      const listed = rows.map((e: any, i: number) => `${i + 1}. ${e.src_name} —${REL[e.rel_type] ?? e.rel_type}→ ${e.dst_name}（置信 ${Number(e.confidence).toFixed(2)}${e.source_locator ? `，出处 ${e.source_locator}` : ''}）`).join('\n');
+      const lowConf = rows.map((e: any, i: number) => (Number(e.confidence) < 0.7 ? i + 1 : 0)).filter((n: number) => n > 0);
+      const asks: string[] = [];
+      if (mk === '') asks.push('材料类型（规范 / 工单 / 故障总结 / 手册 / 预案）你判定为什么？');
+      if (eng === '' || env === '') asks.push('适用范围（数据库引擎 / 环境）材料没写全，请与用户确认。');
+      if (lowConf.length > 0) asks.push(`第 ${lowConf.join('、')} 条置信度偏低，请逐条与用户确认是否保留。`);
+      asks.push('是否有实体名重复/歧义需要合并或改名。');
+      return { content: [
+        `已解析《${String(args.title ?? '')}》：向量线切成 ${r.vectorChunks} 段（已入库、可检索）。`,
+        `抽到 ${rows.length} 条关系候选（**尚未入图，等你和用户确认**）：`,
+        listed || '（未抽到关系候选）',
+        ``,
+        `【必须先向用户逐条确认，再入库】请就以下问题向用户提问，等用户回答/确认后再调用 kb_commit：`,
+        ...asks.map((a, i) => `${i + 1}) ${a}`),
+        ``,
+        `确认完成后调用 kb_commit(import_id="${r.importId}"，reject=[要剔除的候选编号列表，没有就空])。`,
+        `不要跳过确认、不要自行 kb_commit——先把上面的问题抛给用户并结束本轮。`,
+      ].join('\n') };
     },
   } as any);
 }
 
-/**
- * kb_extract（导入向导的图线）：向导已在服务端确定性完成向量入库并给出批次号，模型只负责从材料抽关系
- * 候选边、写进该批次的人审队列。与 kb_import 的区别：不再切块入库，只补候选边——向量线不依赖模型是否配合。
- */
-function defineExtractTool(deps: { knowledge: any }) {
+/** kb_commit：用户确认后把该批次未剔除的候选边写进强类型图（confidence=1.0）。会话导入的收尾一步。 */
+function defineCommitTool(deps: { knowledge: any }) {
   return defineTool({
-    name: 'kb_extract',
-    description: '为一个已存在的知识导入批次补充关系候选边（图线人审队列）。向导已完成向量入库并给你 import_id；你从材料里抽取明确写到的关系三元组填 edges。抽不出就传空数组。',
+    name: 'kb_commit',
+    description: '把一次导入（kb_import 返回的 import_id）里用户已确认的关系候选写进确定性知识图谱。必须在向用户逐条确认过分类/范围/低置信关系之后才调用。reject 传用户明确要剔除的候选编号（对应 kb_import 列出的序号）。',
     parameters: {
-      import_id: { type: 'string', description: '导入批次号（向导在提示词里给出，形如 imp-xxxxxxxx）。', required: true },
-      edges: {
-        type: 'array',
-        description: '关系候选三元组，只抽材料明确写到的（不要凭常识编造）。',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            src: { type: 'string', description: '源实体名。', required: true },
-            rel: { type: 'string', description: 'constrains(约束)/causes(导致)/handled_by(处置为)/depends_on(依赖)/references(引用)/triggers(触发)。', required: true },
-            dst: { type: 'string', description: '目标实体名。', required: true },
-            locator: { type: 'string', description: '出自材料哪一段。' },
-            confidence: { type: 'number', description: '置信度 0~1。' },
-          },
-        },
-      },
+      import_id: { type: 'string', description: 'kb_import 返回的批次号（imp-xxxxxxxx）。', required: true },
+      reject: { type: 'array', description: '用户要剔除的候选编号（1 基，对应 kb_import 列表）；全部保留就传空数组。', items: { type: 'integer' } },
     },
     output: TEXT_OUTPUT,
     async execute(args: any) {
-      const edges = Array.isArray(args.edges) ? args.edges.map((e: any) => ({
-        src: String(e.src ?? ''), rel: String(e.rel ?? ''), dst: String(e.dst ?? ''),
-        locator: typeof e.locator === 'string' ? e.locator : undefined,
-        confidence: typeof e.confidence === 'number' ? e.confidence : undefined,
-      })).filter((e: any) => e.src !== '' && e.rel !== '' && e.dst !== '') : [];
-      const r = await deps.knowledge.stageEdges(String(args.import_id ?? ''), edges);
-      return { content: `已为批次 ${String(args.import_id ?? '')} 登记 ${r.added} 条候选关系（进人审队列，确认后入图）。` };
+      const reject = Array.isArray(args.reject) ? args.reject.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n)) : [];
+      const r = await deps.knowledge.commitWithReject(String(args.import_id ?? ''), reject);
+      return { content: `✅ 导入完成：${r.edges} 条关系已进入确定性知识图谱（confidence=1.0）${r.rejected > 0 ? `，按用户意见剔除 ${r.rejected} 条` : ''}（候选共 ${r.total} 条）。向量已在解析阶段入库。` };
     },
   } as any);
 }
@@ -180,7 +178,7 @@ export function apply(ctx: Context): void {
     c.effect(() => c.tools.register(defineSearchTool(deps)), 'tool-knowledge.search');
     c.effect(() => c.tools.register(defineIngestTool(deps)), 'tool-knowledge.ingest');
     c.effect(() => c.tools.register(defineImportTool(deps)), 'tool-knowledge.import');
-    c.effect(() => c.tools.register(defineExtractTool(deps)), 'tool-knowledge.extract');
+    c.effect(() => c.tools.register(defineCommitTool(deps)), 'tool-knowledge.commit');
     c.effect(() => c.tools.register(defineKgQueryTool(deps)), 'tool-knowledge.kgquery');
   });
 }
