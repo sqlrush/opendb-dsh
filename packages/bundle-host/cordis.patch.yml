@@ -107,6 +107,12 @@
 # ── W5.5 批次1: opendb-harness 产品壳（自研侧栏替换官方工作区区块 + 主区页面）──
 - id: ui-workspace
   disabled: true
+# ── 交付冲刺（user 2026-09-05 定）：去掉输入框上 dsh 原生「权限预设」下拉（Read Only / Full Access / Workspace Write / Custom）。
+#    预设只控制文件沙箱模式 + shell 工具审批策略；Runtime 零本地执行（tool-bash/fs/沙箱/permission 全禁用）后它对本平台没有任何效果，
+#    还会误导用户以为它管数据库读写（平台立场：数据库权限由数据库授权决定）。服务端 permission 插件在 Host 保留
+#   （apiproxy 依赖它；会话头默认 read-only/ask 三件套照旧写入）。id 见 dsh-web-app/cordis.patch.yml。
+- id: ui-permission
+  disabled: true
 - insert:
     - id: ui-harness
       name: '@opendb-dsh/ui-harness'

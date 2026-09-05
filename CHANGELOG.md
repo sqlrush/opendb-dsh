@@ -7,6 +7,15 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Removed
+- **去掉会话输入框上的 dsh 原生「权限预设」下拉（Read Only / Full Access / Workspace Write / Custom；user 2026-09-05 交付冲刺定）**：
+  该预设只控制**文件沙箱模式 + shell 工具审批策略**，而 opendb-harness 的 Runtime 是零本地执行（tool-bash/fs/编辑器/沙箱/permission
+  插件全部禁用，见 bundle-runtime），切换它对本平台没有任何效果，还会误导用户以为它管数据库读写——平台立场是数据库权限由数据库授权决定。
+  做法：输入框上那个「访问模式」选择器是官方 conversation 组件自带的（禁用 `dsh-client-ui-permission-presets` 插件后实测下拉仍在），
+  由 `ui-harness` 纯 CSS 隐藏（`button[aria-label^="访问模式"]`，零 DOM 改动）；bundle-host 同时禁用 `dsh-client-ui-permission-presets`
+  （命令面板/设置里的预设入口）；服务端 `dsh-permission-presets` 在 Host 保留（apiproxy 依赖它、会话头默认 `read-only` 三件套照旧写入）。
+  真机验证：选择器不可见、页面无 Read Only/Full access 字样、会话正常收发、console 零错误。
+
 ### Fixed
 - **知识库前后对比实测暴露的两处检索缺口（2026-09-04/05 演示，记录见 `docs/2026-09-04-kb-before-after-demo.md`）**：
   ① `kg_query` 起点只按 canonical 精确匹配——导入时模型把整句当实体（「绝对不能杀·联系批处理调度组(分机8250)…」），

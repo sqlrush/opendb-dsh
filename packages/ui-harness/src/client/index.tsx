@@ -95,6 +95,11 @@ function takeOverBranding(): void {
       //    bundle-runtime 里全部 disabled，四种预设在本平台一个都跑不动，留着是错误入口。
       // 以后要做面向 DBA 的自有预设（巡检/优化/应急）时，去掉这条即可放出选择器。
       `[class*="heroWorkspaceRow"]{display:none !important}`,
+      // 交付冲刺（user 2026-09-05）：隐藏输入框上的「访问模式」选择器（Read Only / Workspace Write / Full access）。
+      // 它设置的是 dsh 文件沙箱模式 + shell 审批策略，Runtime 零本地执行（tool-bash/fs/沙箱全禁用）后对本平台无任何效果，
+      // 还会误导用户以为它管数据库读写（平台立场：数据库权限由数据库授权决定）。该选择器是官方 conversation 组件自带，
+      // 禁用 ui-permission 插件去不掉（实测下拉仍在），只能 CSS 隐藏；按 aria-label 前缀匹配（中/英文各一），零 DOM 改动。
+      `button[aria-label^="访问模式"],button[aria-label^="Access mode"]{display:none !important}`,
       // 例外（user 2026-08-25 报障）：草稿未绑定工作区时原生会禁用输入框并提示「选择一个工作区开始」，
       // 此时必须让原生的工作区选择行露出来，否则用户没有任何自救入口（只藏"正常态"那一行）
       `body:has(textarea:disabled) [class*="heroWorkspaceRow"]{display:flex !important}`,

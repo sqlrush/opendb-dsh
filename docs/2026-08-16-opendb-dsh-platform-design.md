@@ -362,7 +362,7 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `dsh-commands` `dsh-command-compact` `dsh-command-feedback` `dsh-message-feedback` | 人类命令注册表 / compact / feedback / 消息评分 | 原样 | H（compact 也 R） |
 | `dsh-user-questions` `dsh-tool-ask-user` | 向人提问 seam + 工具 | 原样（Host UI 应答；Runtime 上的提问经 rollout 回到 Host UI——P0 验证跨 pod 提问回路） | HR |
 | `dsh-user-approval` | `ctx.approval` seam（一次性权限决策） | 原样 Definition；provider = `@opendb-dsh/approval-platform` | HR |
-| `dsh-permission-presets` | 用户可见的权限预设 | 原样（Host 设置页） | H |
+| `dsh-permission-presets` | 用户可见的权限预设 | Host 保留（apiproxy 依赖；会话头默认 read-only/ask 三件套照旧）；Runtime 禁用；**用户可见的下拉已去掉**（见客户端表） | H |
 | `dsh-anonymous-user-id` | 遥测匿名 id | 禁用 | — |
 
 ### 6.3 持久化 seam（22）
@@ -444,7 +444,8 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `dsh-client-ui-sidebar` | 会话树侧栏（多级树/分组/搜索） | 原样；分组改为"agent → 对话 / 任务"（配置或小改造，P1 验证） |
 | `dsh-client-ui-workspace` | 工作区（目录）选择器 | 替换 → `@opendb-dsh/ui-agent-workspace`（agent 图标、名称/节点数/preset 徽标、配置入口） |
 | `dsh-client-ui-conversation` `dsh-client-ui-tool` `dsh-client-ui-trajectory` `dsh-client-ui-plan` `dsh-client-ui-goal` `dsh-client-ui-jobs` `dsh-client-ui-subagent` `dsh-client-ui-skill` `dsh-client-ui-workflow-run` `dsh-client-ui-deliverables` `dsh-client-ui-attachment` `dsh-client-ui-user-questions` `dsh-client-ui-message-feedback` | 对话、工具调用树、轨迹、计划、目标、任务、子代理、技能、工作流、产出文件、附件、提问、评分 | 原样（远端 turn 事件回灌后全部照常渲染） |
-| `dsh-client-ui-commands` `dsh-client-ui-input-trigger` `dsh-client-ui-model-selection` `dsh-client-ui-permission-presets` `dsh-client-ui-agent-preset` | 命令面板、`/` `@` 触发、模型选择、权限预设、preset 编辑 | 原样（preset 编辑 P2 接 `agent-presets-pg`） |
+| `dsh-client-ui-commands` `dsh-client-ui-input-trigger` `dsh-client-ui-model-selection` `dsh-client-ui-agent-preset` | 命令面板、`/` `@` 触发、模型选择、preset 编辑 | 原样（preset 编辑 P2 接 `agent-presets-pg`） |
+| `dsh-client-ui-permission-presets` | 权限预设的命令面板/设置入口 | **禁用（2026-09-05 交付冲刺，user 定）**：预设只控制文件沙箱模式 + shell 审批策略，Runtime 零本地执行后它对本平台无任何效果，且误导用户以为它管数据库读写（数据库权限由数据库控制）。输入框上的「访问模式」选择器（Read Only / Workspace Write / Full access）是官方 conversation 组件自带，禁用插件去不掉，由 `ui-harness` 纯 CSS 隐藏（`button[aria-label^="访问模式"]`）。服务端 `dsh-permission-presets` 在 Host 保留 |
 | `dsh-client-ui-settings` `-general` `-models` `-plugins` `-plugin-inventory` | 设置域 | 原样（settings/credentials 页在远程浏览器受 dsh loopback 限制——由 `connection-auth` 按管理员角色放行或隐藏） |
 | `dsh-client-ui-directory-picker-browse` `-native` | 目录选择 UI | 禁用（由 `directory-picker-agent` 的 UI 替代） |
 | `dsh-client-ui-cordis` | 动态插件卡片 | 调试 |
