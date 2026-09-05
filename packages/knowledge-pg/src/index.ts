@@ -18,6 +18,45 @@ function docRow(r: any): KnowledgeDoc {
 /** 向量补齐任务的 leader advisory-lock key（host+runtime 都装本服务，只一个实例真正跑补齐）。 */
 const KB_BACKFILL_LOCK = 7_204_211_034;
 
+/** kg_query 起点模糊匹配：打分下限、起点上限、参与打分的节点上限（2026-09-05 演示实测短词「核心库锁等待」查不到长实体后加）。 */
+const KG_SEED_MIN_SCORE = 0.45;
+const KG_SEED_LIMIT = 6;
+const KG_SEED_SCAN_LIMIT = 5000;
+const KG_BIGRAM_CAP = 0.85;
+/** knowledge_search 命中段附带的相邻段上限（防长文档把上下文撑爆；工具侧另有 18000 字截断）。 */
+const KB_NEIGHBOR_MAX = 6;
+
+/** 实体名归一：小写、去空白与标点，让「P1 事故」「p1事故」「BATCH_EOD_*」这类写法差异不影响匹配。 */
+function normalizeEntity(s: string): string {
+  return s.toLowerCase().replace(/[\s\/·()（）_\-+*,.，。、:：;；「」【】[\]"'“”]/g, '');
+}
+
+function bigrams(s: string): Set<string> {
+  return new Set(Array.from({ length: Math.max(0, s.length - 1) }, (_, i) => s.slice(i, i + 2)));
+}
+
+/**
+ * 起点实体打分（纯函数便于单测）：精确 1.0 → 任一方向包含 0.9 → 查询词的字二元组被实体名覆盖的比例（封顶 0.85）。
+ * 用字二元组而不用 pg_trgm：trigram 在本库 locale 下对中文打分为 0（实测），二元组不依赖扩展与 locale。
+ */
+export function entityMatchScore(query: string, name: string): number {
+  const q = normalizeEntity(query);
+  const n = normalizeEntity(name);
+  if (q === '' || n === '') return 0;
+  if (q === n) return 1;
+  if (n.includes(q) || q.includes(n)) return 0.9;
+  const qb = bigrams(q);
+  if (qb.size === 0) return 0;
+  const nb = bigrams(n);
+  const shared = [...qb].filter((b) => nb.has(b)).length;
+  return (shared / qb.size) * KG_BIGRAM_CAP;
+}
+
+export interface KgHop { src: string; rel: string; dst: string; source: string }
+export interface KgQueryResult { paths: { hops: KgHop[] }[]; nodes: number; matched: { name: string; score: number }[] }
+/** 会话导入确认时按编号改候选边（用户说"第 15 条改名为核心库锁等待"）；只填要改的字段。 */
+export interface StagingEdit { number: number; src?: string; rel?: string; dst?: string }
+
 function toVectorLiteral(vec: number[]): string {
   return `[${vec.map((v) => (Number.isFinite(v) ? v : 0)).join(',')}]`;
 }
@@ -191,6 +230,25 @@ export default class KnowledgeService extends Service {
    * 向量给"意思相近"（说法不同也能召回），关键词补"精确 token"（ORA-01555、core_acct、条款号这类纯向量易漏的）。
    * 向量不可用时退化为纯关键词。合并顺序：向量命中在前，关键词独有的补在后，按 topK 截断。
    */
+  /**
+   * 命中段的相邻段（同文档 seq±1）：规范常被切块切在条款/表格中间——2026-09-05 用户实测只命中第 2 段，
+   * 模型把「BATCH_EOD 绝对不能杀」误读成「三板斧后可杀」。带上相邻段后小文档等于整篇带上，条款不再被切断。
+   */
+  private async neighborChunks(hits: KnowledgeHit[]): Promise<KnowledgeHit[]> {
+    if (hits.length === 0) return [];
+    const docIds = [...new Set(hits.map((h) => h.docId))];
+    const r = await this.pool.query(
+      `SELECT c.doc_id, d.title, d.source, c.seq, c.content
+         FROM opendb_knowledge_chunks c JOIN opendb_knowledge_docs d ON d.id = c.doc_id
+        WHERE c.doc_id = ANY($1) ORDER BY c.doc_id, c.seq`, [docIds]);
+    const have = new Set(hits.map((h) => `${h.docId}:${h.seq}`));
+    const wanted = new Set(hits.flatMap((h) => [`${h.docId}:${h.seq - 1}`, `${h.docId}:${h.seq + 1}`]));
+    return r.rows
+      .filter((row) => { const k = `${row.doc_id}:${row.seq}`; return wanted.has(k) && !have.has(k); })
+      .map((row) => ({ docId: row.doc_id, title: row.title, source: row.source ?? undefined, seq: row.seq, content: row.content }))
+      .slice(0, KB_NEIGHBOR_MAX);
+  }
+
   async search(input: { agentId?: string; query: string; topK?: number }): Promise<KnowledgeHit[]> {
     await this.ready;
     const topK = Math.min(input.topK ?? 5, 20);
@@ -243,16 +301,38 @@ export default class KnowledgeService extends Service {
     const seen = new Set(vecHits.map((h) => `${h.docId}:${h.seq}`));
     const merged = [...vecHits];
     for (const h of kw) { const k = `${h.docId}:${h.seq}`; if (!seen.has(k)) { seen.add(k); merged.push(h); } }
-    return merged.slice(0, topK);
+    // 命中段之后附带同文档相邻段（相关度排序不变，只是补全被切断的条款上下文）
+    const primary = merged.slice(0, topK);
+    const neighbors = await this.neighborChunks(primary).catch(() => [] as KnowledgeHit[]);
+    return [...primary, ...neighbors];
   }
 
   /**
-   * 强类型知识图谱查询（P3）：从一个实体出发做多跳（默认 2 跳），沿 confidence=1.0 且在生效期内的边，
-   * 返回可追溯路径。这是"客户专属关系"的确定性推理入口——现象→根因→处置、对象→约束条款 这类。
+   * kg_query 的起点匹配（2026-09-05 演示实测：短词「核心库锁等待」查不到导入时模型起名的长实体
+   * 「核心账务库在线锁等待/阻塞事件」）：全量节点在应用侧按 entityMatchScore 三档打分，低于下限不算起点。
+   * 节点到十万级再改成 SQL 侧预筛（首字/二元组倒排）。
    */
-  async kgQuery(entity: string, maxHops = 2): Promise<{ paths: { hops: { src: string; rel: string; dst: string; source: string }[] }[]; nodes: number }> {
+  private async kgSeeds(q: string): Promise<{ id: string; name: string; score: number }[]> {
+    const r = await this.pool.query(`SELECT id, name FROM opendb_kg_nodes WHERE tenant_id = $1 LIMIT $2`, [this.tenant, KG_SEED_SCAN_LIMIT]);
+    return r.rows
+      .map((row) => ({ id: String(row.id), name: String(row.name), score: entityMatchScore(q, String(row.name)) }))
+      .filter((s) => s.score >= KG_SEED_MIN_SCORE)
+      .sort((a, b) => b.score - a.score || a.name.length - b.name.length)
+      .slice(0, KG_SEED_LIMIT);
+  }
+
+  /**
+   * 强类型知识图谱查询（P3）：从匹配到的起点实体出发做多跳（默认 2 跳），沿 confidence=1.0 且在生效期内的边，
+   * 返回可追溯路径。这是"客户专属关系"的确定性推理入口——现象→根因→处置、对象→约束条款 这类。
+   * 起点第一跳同时取入边与出边（"什么约束 X"和"X 处置为什么"都要能查），之后只沿出边走；
+   * matched 回显起点实体，让模型知道实际按什么在查。
+   */
+  async kgQuery(entity: string, maxHops = 2): Promise<KgQueryResult> {
     await this.ready;
     const hops = Math.max(1, Math.min(maxHops, 4));
+    const q = entity.trim();
+    const seeds = q === '' ? [] : await this.kgSeeds(q);
+    if (seeds.length === 0) return { paths: [], nodes: 0, matched: [] };
     const r = await this.pool.query(
       `WITH RECURSIVE walk(src_id, dst_id, rel_type, src_name, dst_name, source_locator, depth, path) AS (
          SELECT e.src_id, e.dst_id, e.rel_type, sn.name, dn.name, e.source_locator, 1, ARRAY[e.src_id, e.dst_id]
@@ -261,7 +341,7 @@ export default class KnowledgeService extends Service {
            JOIN opendb_kg_nodes dn ON dn.id = e.dst_id
           WHERE e.tenant_id = $1 AND e.confidence >= 1.0
             AND now() BETWEEN coalesce(e.valid_from, '-infinity') AND coalesce(e.valid_to, 'infinity')
-            AND lower(sn.canonical) = lower($2)
+            AND (e.src_id = ANY($2::text[]) OR e.dst_id = ANY($2::text[]))
          UNION ALL
          SELECT e.src_id, e.dst_id, e.rel_type, sn.name, dn.name, e.source_locator, w.depth + 1, w.path || e.dst_id
            FROM walk w
@@ -269,12 +349,14 @@ export default class KnowledgeService extends Service {
            JOIN opendb_kg_nodes sn ON sn.id = e.src_id
            JOIN opendb_kg_nodes dn ON dn.id = e.dst_id
           WHERE w.depth < $3 AND NOT e.dst_id = ANY(w.path))
-       SELECT src_name, rel_type, dst_name, source_locator, depth FROM walk ORDER BY depth LIMIT 100`,
-      [this.tenant, entity, hops]);
-    // 简化：把每条边当一条单跳路径返回（多跳链前端/模型可自行串联）；nodes = 涉及实体数
-    const paths = r.rows.map((row) => ({ hops: [{ src: String(row.src_name), rel: String(row.rel_type), dst: String(row.dst_name), source: String(row.source_locator ?? '') }] }));
-    const nodes = new Set(r.rows.flatMap((row) => [String(row.src_name), String(row.dst_name)])).size;
-    return { paths, nodes };
+       SELECT DISTINCT ON (src_id, dst_id, rel_type) src_name, rel_type, dst_name, source_locator, depth
+         FROM walk ORDER BY src_id, dst_id, rel_type, depth LIMIT 100`,
+      [this.tenant, seeds.map((s) => s.id), hops]);
+    // 简化：把每条边当一条单跳路径返回（多跳链前端/模型可自行串联），按跳数排序；nodes = 涉及实体数
+    const rows = [...r.rows].sort((a, b) => Number(a.depth) - Number(b.depth));
+    const paths = rows.map((row) => ({ hops: [{ src: String(row.src_name), rel: String(row.rel_type), dst: String(row.dst_name), source: String(row.source_locator ?? '') }] }));
+    const nodes = new Set(rows.flatMap((row) => [String(row.src_name), String(row.dst_name)])).size;
+    return { paths, nodes, matched: seeds.map((s) => ({ name: s.name, score: s.score })) };
   }
 
   async listDocs(input: { agentId?: string; limit?: number } = {}): Promise<KnowledgeDoc[]> {
@@ -346,19 +428,23 @@ export default class KnowledgeService extends Service {
   }
 
   /**
-   * 会话导入的"确认入库"：把用户按编号剔除的候选标 reject，其余（= 用户确认保留的）写进强类型图。
-   * rejectNumbers 是 1 基编号，对应 stagingOrdered 的顺序（会话里展示给用户的那个顺序）。
+   * 会话导入的"确认入库"：把用户按编号剔除的候选标 reject，按编号改名/修正的先改再纳入，
+   * 其余（= 用户确认保留的）写进强类型图。编号都是 1 基，对应 stagingOrdered 的顺序（会话里展示给用户的那个顺序）。
    */
-  async commitWithReject(importId: string, rejectNumbers: number[] = []): Promise<{ edges: number; rejected: number; total: number }> {
+  async commitWithReject(importId: string, rejectNumbers: number[] = [], edits: StagingEdit[] = []): Promise<{ edges: number; rejected: number; edited: number; total: number }> {
     await this.ready;
     const rows = await this.stagingOrdered(importId);
     const rej = new Set(rejectNumbers.map((n) => Math.trunc(n)));
     let rejected = 0;
+    let edited = 0;
     for (let i = 0; i < rows.length; i += 1) {
-      if (rej.has(i + 1)) { await this.decideStaging(rows[i].id, 'reject'); rejected += 1; }
+      const n = i + 1;
+      if (rej.has(n)) { await this.decideStaging(rows[i].id, 'reject'); rejected += 1; continue; }
+      const edit = edits.find((e) => Math.trunc(e.number) === n);
+      if (edit !== undefined) { await this.decideStaging(rows[i].id, 'accept', edit); edited += 1; }
     }
     const r = await this.commitImport(importId);
-    return { edges: r.edges, rejected, total: rows.length };
+    return { edges: r.edges, rejected, edited, total: rows.length };
   }
 
   async listImports(limit = 50): Promise<unknown[]> {

@@ -5,6 +5,10 @@ import { resolvePlatformAgent, clampText } from '@opendb-dsh/tool-db';
 export const name = 'tool-knowledge';
 export const inject = ['opendbKnowledge', 'opendbRegistry', 'tools'];
 
+/** 图谱实体名上限：超过就在 kb_import 里让模型向用户提议短名词（图谱按实体名匹配，整句实体日后查不到）。 */
+const KB_ENTITY_MAX_LEN = 16;
+const strOrUndef = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+
 const TEXT_OUTPUT = {
   schema: {
     type: 'object',
@@ -80,9 +84,9 @@ function defineImportTool(deps: { knowledge: any }) {
           type: 'object',
           additionalProperties: false,
           properties: {
-            src: { type: 'string', description: '源实体名，如「核心库锁等待」。', required: true },
+            src: { type: 'string', description: '源实体名：短名词或编号（≤12 字），如「核心库锁等待」「BATCH_EOD 日终批」「P1 事故」。条件、动作、分机号等细节放 locator 或拆成多条边，不要把整句当实体（图谱按实体名匹配，长句日后查不到）。', required: true },
             rel: { type: 'string', description: '关系类型：constrains(约束)/causes(导致)/handled_by(处置为)/depends_on(依赖)/references(引用)/triggers(触发)。', required: true },
-            dst: { type: 'string', description: '目标实体名，如「交易超时」。', required: true },
+            dst: { type: 'string', description: '目标实体名：同样是短名词（≤12 字），如「交易超时」「运行值班室」「禁止杀会话」。', required: true },
             locator: { type: 'string', description: '出自材料哪一段（如 §4.2 第3页 / 现象段）。' },
             confidence: { type: 'number', description: '你的置信度 0~1。' },
           },
@@ -108,8 +112,10 @@ function defineImportTool(deps: { knowledge: any }) {
       const REL: Record<string, string> = { constrains: '约束', causes: '导致', handled_by: '处置为', depends_on: '依赖', references: '引用', triggers: '触发' };
       const listed = rows.map((e: any, i: number) => `${i + 1}. ${e.src_name} —${REL[e.rel_type] ?? e.rel_type}→ ${e.dst_name}（置信 ${Number(e.confidence).toFixed(2)}${e.source_locator ? `，出处 ${e.source_locator}` : ''}）`).join('\n');
       const lowConf = rows.map((e: any, i: number) => (Number(e.confidence) < 0.7 ? i + 1 : 0)).filter((n: number) => n > 0);
+      const longNames = rows.map((e: any, i: number) => (String(e.src_name).length > KB_ENTITY_MAX_LEN || String(e.dst_name).length > KB_ENTITY_MAX_LEN ? i + 1 : 0)).filter((n: number) => n > 0);
       const asks: string[] = [];
       if (mk === '') asks.push('材料类型（规范 / 工单 / 故障总结 / 手册 / 预案）你判定为什么？');
+      if (longNames.length > 0) asks.push(`第 ${longNames.join('、')} 条的实体名超过 ${KB_ENTITY_MAX_LEN} 字（图谱按实体名匹配，长句日后查不到）：请给出短名词改法（如「BATCH_EOD 日终批」「运行值班室」）并与用户确认，确认后通过 kb_commit 的 rename 按编号改名。`);
       if (eng === '' || env === '') asks.push('适用范围（数据库引擎 / 环境）材料没写全，请与用户确认。');
       if (lowConf.length > 0) asks.push(`第 ${lowConf.join('、')} 条置信度偏低，请逐条与用户确认是否保留。`);
       asks.push('是否有实体名重复/歧义需要合并或改名。');
@@ -121,7 +127,7 @@ function defineImportTool(deps: { knowledge: any }) {
         `【必须先向用户逐条确认，再入库】请就以下问题向用户提问，等用户回答/确认后再调用 kb_commit：`,
         ...asks.map((a, i) => `${i + 1}) ${a}`),
         ``,
-        `确认完成后调用 kb_commit(import_id="${r.importId}"，reject=[要剔除的候选编号列表，没有就空])。`,
+        `确认完成后调用 kb_commit(import_id="${r.importId}"，reject=[要剔除的候选编号，没有就空]，rename=[用户同意改名/修正的候选，按编号只填要改的字段])。`,
         `不要跳过确认、不要自行 kb_commit——先把上面的问题抛给用户并结束本轮。`,
       ].join('\n') };
     },
@@ -136,12 +142,30 @@ function defineCommitTool(deps: { knowledge: any }) {
     parameters: {
       import_id: { type: 'string', description: 'kb_import 返回的批次号（imp-xxxxxxxx）。', required: true },
       reject: { type: 'array', description: '用户要剔除的候选编号（1 基，对应 kb_import 列表）；全部保留就传空数组。', items: { type: 'integer' } },
+      rename: {
+        type: 'array',
+        description: '用户同意改名/修正的候选（按编号），只填要改的字段。用它把过长的实体名改成短名词，或按用户指正修正关系。',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            number: { type: 'integer', description: '候选编号（1 基，对应 kb_import 列表）。', required: true },
+            src: { type: 'string', description: '新的源实体名。' },
+            rel: { type: 'string', description: '新的关系类型（constrains/causes/handled_by/depends_on/references/triggers）。' },
+            dst: { type: 'string', description: '新的目标实体名。' },
+          },
+        },
+      },
     },
     output: TEXT_OUTPUT,
     async execute(args: any) {
       const reject = Array.isArray(args.reject) ? args.reject.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n)) : [];
-      const r = await deps.knowledge.commitWithReject(String(args.import_id ?? ''), reject);
-      return { content: `✅ 导入完成：${r.edges} 条关系已进入确定性知识图谱（confidence=1.0）${r.rejected > 0 ? `，按用户意见剔除 ${r.rejected} 条` : ''}（候选共 ${r.total} 条）。向量已在解析阶段入库。` };
+      const rename = Array.isArray(args.rename) ? args.rename
+        .filter((e: any) => e !== null && typeof e === 'object' && Number.isFinite(Number(e.number)))
+        .map((e: any) => ({ number: Number(e.number), src: strOrUndef(e.src), rel: strOrUndef(e.rel), dst: strOrUndef(e.dst) })) : [];
+      const r = await deps.knowledge.commitWithReject(String(args.import_id ?? ''), reject, rename);
+      const notes = [r.rejected > 0 ? `按用户意见剔除 ${r.rejected} 条` : '', r.edited > 0 ? `改名/修正 ${r.edited} 条` : ''].filter((s) => s !== '');
+      return { content: `✅ 导入完成：${r.edges} 条关系已进入确定性知识图谱（confidence=1.0）${notes.length > 0 ? `，${notes.join('，')}` : ''}（候选共 ${r.total} 条）。向量已在解析阶段入库。` };
     },
   } as any);
 }
@@ -154,18 +178,20 @@ function defineCommitTool(deps: { knowledge: any }) {
 function defineKgQueryTool(deps: { knowledge: any }) {
   return defineTool({
     name: 'kg_query',
-    description: '查客户专属知识图谱：给定实体（如「核心库锁等待」「core_acct」），返回它沿强类型关系（约束/导致/处置/依赖）多跳到达的关系链，每条带来源。适合"这个现象的根因与本行处置""改这张表受哪些规范约束"类推理。只返回人确认过的确定性关系。',
+    description: '查客户专属知识图谱：给定实体（如「核心库锁等待」「BATCH_EOD」「P1」），返回它沿强类型关系（约束/导致/处置/依赖）多跳到达的关系链，每条带来源。起点按实体名模糊匹配（精确→包含→相似）并回显实际匹配到的实体；查不到就换更短的核心名词再试。适合"这个现象的根因与本行处置""改这张表受哪些规范约束"类推理。只返回人确认过的确定性关系。',
     parameters: {
       entity: { type: 'string', description: '起点实体名。', required: true },
       max_hops: { type: 'integer', description: '最大跳数（默认 2，最多 4）。' },
     },
     output: TEXT_OUTPUT,
     async execute(args: any) {
-      const r = await deps.knowledge.kgQuery(String(args.entity ?? ''), Number(args.max_hops ?? 2));
-      if (r.paths.length === 0) return { content: `知识图谱里没有与「${String(args.entity ?? '')}」直接关联的确定性关系（可能尚未导入相关规范/案例，或名称不一致）。` };
+      const entity = String(args.entity ?? '');
+      const r = await deps.knowledge.kgQuery(entity, Number(args.max_hops ?? 2));
+      if (r.paths.length === 0) return { content: `知识图谱里没有与「${entity}」相关的确定性关系（起点已按精确/包含/相似三档匹配仍未命中：可能尚未导入相关规范/案例；可换更短的核心名词再试，或改用 knowledge_search 找文本）。` };
       const REL: Record<string, string> = { constrains: '约束', causes: '导致', handled_by: '处置为', depends_on: '依赖', references: '引用', triggers: '触发' };
       const lines = r.paths.map((p: any) => p.hops.map((h: any) => `${h.src} —${REL[h.rel] ?? h.rel}→ ${h.dst}${h.source ? `（出处：${h.source}）` : ''}`).join('；'));
-      return { content: `「${String(args.entity ?? '')}」的确定性关系（${r.paths.length} 条，涉及 ${r.nodes} 个实体）：\n${lines.map((l: string, i: number) => `${i + 1}. ${l}`).join('\n')}` };
+      const matched = (r.matched ?? []).map((m: any) => `${m.name}${Number(m.score) < 1 ? `（相似 ${Number(m.score).toFixed(2)}）` : ''}`).join('、');
+      return { content: `「${entity}」匹配到起点实体：${matched}\n确定性关系（${r.paths.length} 条，涉及 ${r.nodes} 个实体）：\n${lines.map((l: string, i: number) => `${i + 1}. ${l}`).join('\n')}` };
     },
   } as any);
 }
