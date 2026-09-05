@@ -26,6 +26,11 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   （只含 command 来源时整体隐藏）。`ui-commands` / `ui-input-trigger` 保留——右下角模型下拉硬依赖 `commandUi`。
   实测发现：绑定会话后 `/` 里的 compact / plan 来自 **dsh 内置智能体预设**（`dsh/config/agent-presets/standard/agent.cordis.yml`
   按会话注入 agent 平面），bundle-host / bundle-runtime 禁不掉，故用 CSS 收口；`compaction-basic` 自动压缩同样由预设注入，保持不动。
+- **回答下方的整行操作按钮去掉（复制 / 好的回答 / 有问题的回答 / 在新对话中分支；user 2026-09-05「全部去掉，精简点」）**：
+  实测四个都能用（点赞落 storage-domain `message_feedback`、分支复制完整历史并带 `parentSession`），但评分在平台里没有任何
+  消费方，分支容易误点出「(1)(2)(3)」会话，交付版求精简。做法：Host 禁用 `message-feedback` / `ui-message-feedback`，
+  storage-domain 去掉 `message_feedback: redis` 路由；复制与分支是官方 conversation 组件自带，`ui-harness` CSS 隐藏
+  `[data-turn-tail]` 下的操作行。用户消息右侧的「复制」小图标未动。
 
 ### Fixed
 - **知识库前后对比实测暴露的两处检索缺口（2026-09-04/05 演示，记录见 `docs/2026-09-04-kb-before-after-demo.md`）**：

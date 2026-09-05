@@ -35,11 +35,11 @@
 - id: storage-domain
   config:
     backend: pg
-    # P3 storage-redis：低敏可重建 domain 走 redis（投影缓存丢了自动重算、feedback 量为零）；
+    # P3 storage-redis：低敏可重建 domain 走 redis（投影缓存丢了自动重算）；
     # workspace（sessionIds 真相）绝不离开 pg——正确性金贵（2026-08-19 裁剪事故）
+    # message_feedback 域随点赞/点踩下线（2026-09-05）不再路由。
     routes:
       session_projcache: redis
-      message_feedback: redis
 - id: attachment-local
   disabled: true
 - insert:
@@ -146,6 +146,13 @@
 - id: ui-goal
   disabled: true
 - id: ui-agent-preset
+  disabled: true
+# ── 交付冲刺（user 2026-09-05：「全部去掉，精简点」）：回答下方的 复制 / 好的回答 / 有问题的回答 / 在新对话中分支 整行去掉。
+#    点赞/点踩两个半边禁用（评分原本落 storage-domain 的 message_feedback，平台无任何消费方）；
+#    复制与分支是 conversation 组件自带，由 ui-harness CSS 隐藏整行（[data-turn-tail] 下的 _actions）。
+- id: message-feedback
+  disabled: true
+- id: ui-message-feedback
   disabled: true
 - insert:
     - id: ui-harness

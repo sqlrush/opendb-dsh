@@ -111,6 +111,10 @@ function takeOverBranding(): void {
       // 且都是空转命令（compact 需活 agent、plan 只规划不执行）。菜单只含 command 来源的条目时整体隐藏；
       // 以后若 `@` 触发（技能/子代理）真的有候选，data-source 不是 command，菜单照常显示。
       `[data-slot="conversation.input.overlay"] [role="listbox"]:not(:has([data-source]:not([data-source="command"]))){display:none !important}`,
+      // 交付冲刺（user 2026-09-05：「全部去掉，精简点」）：回答下方整行操作（复制 / 好的回答 / 有问题的回答 / 在新对话中分支）隐藏。
+      // 点赞点踩两个插件已在 bundle-host 禁用；复制与分支是官方 conversation 组件自带，只能 CSS 收。
+      // 容器 = 每轮回答尾部节点 [data-turn-tail] 下的 *_actions（CSS Modules 哈希前缀，按后缀匹配）。
+      `[data-turn-tail] [class*="_actions"]{display:none !important}`,
       // 例外（user 2026-08-25 报障）：草稿未绑定工作区时原生会禁用输入框并提示「选择一个工作区开始」，
       // 此时必须让原生的工作区选择行露出来，否则用户没有任何自救入口（只藏"正常态"那一行）
       `body:has(textarea:disabled) [class*="heroWorkspaceRow"]{display:flex !important}`,

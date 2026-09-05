@@ -365,6 +365,7 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `dsh-permission-presets` | 用户可见的权限预设（+ 命令面板 `permission` 命令） | **Host/Runtime 均禁用（2026-09-05 交付冲刺）**：预设只管文件沙箱 + shell 审批，本平台零本地执行；apiproxy 无硬依赖。输入框选择器另由 ui-harness CSS 隐藏（见客户端表） | — |
 | `dsh-command-feedback` `dsh-command-compact` `dsh-session-log-export`（web-app 层 id `session-log-download`） `dsh-command-goal` `dsh-plan-mode` | 命令面板 feedback / compact / export / goal / plan | **Host 全部禁用（2026-09-05 交付冲刺，user 批准）**：feedback 依赖已关闭的遥测；compact 需要 Host 上有活 agent（Host 不跑 agent-loop，compaction-basic 自动压缩兜底）；export 501（PG 持久化无 jsonl 原件）；goal/plan 是编码代理概念。注意 compact / plan 还会由 **dsh 内置智能体预设**（`dsh/config/agent-presets/standard/agent.cordis.yml`）按会话注入 agent 平面，bundle 层禁不掉——面板入口「+」、`/` 候选菜单（仅 command 来源时）与标题栏 Session log 由 ui-harness CSS 隐藏 | — |
 | `dsh-client-ui-plan` `dsh-client-ui-goal` `dsh-client-ui-agent-preset` | 计划面板 / 目标面板 / 标题栏「标准模式」预设徽标 | **禁用（2026-09-05）**：服务端已禁；预设徽标的四种编码预设在本平台都跑不动。`ui-commands`/`ui-input-trigger` 保留（模型下拉硬依赖 commandUi） | — |
+| `dsh-message-feedback` `dsh-client-ui-message-feedback` | 回答下方的 好的回答 / 有问题的回答（评分落 storage-domain `message_feedback`） | **禁用（2026-09-05，user「全部去掉，精简点」）**：功能可用但平台无消费方。同一行的 复制 / 在新对话中分支 是 conversation 组件自带，由 ui-harness CSS 隐藏整行 | — |
 | `dsh-anonymous-user-id` | 遥测匿名 id | 禁用 | — |
 
 ### 6.3 持久化 seam（22）
