@@ -121,6 +121,32 @@
 #    点了只回「Session sharing is not configured.」。保留 compact / export / model。
 - id: command-feedback
   disabled: true
+# ── 交付冲刺（user 2026-09-05 批准 1–4）：命令面板整体下线——剩下的命令没有一条既能用又不重复：
+#    compact：调 compaction.compactNow(agent) 需要 Host 上有活的 agent，我们 Host 不跑 agent-loop → 空转
+#            （Runtime 的 compaction-basic 自动压缩仍在：每步前量压力，超模型窗口 80% 自动摘要）；
+#    export：apiproxy 返回 501「persistence backend does not expose per-session raw artifacts」——会话日志在 PG，
+#            dsh 的导出需要 jsonl 原始文件（标题栏 Session log 按钮同一条路，一并隐藏）；
+#    goal / plan：编码代理概念（长任务目标 / 只规划不执行工具），与本平台无关；
+#    model：与输入框右下角模型下拉重复。
+- id: command-compact
+  disabled: true
+# session-log-export 包在 dsh-web-app 层的 id 是 session-log-download（不是 dsh-base 的命名），第一次用错 id 没生效。
+- id: session-log-download
+  disabled: true
+- id: command-goal
+  disabled: true
+- id: plan-mode
+  disabled: true
+#    对应的客户端半边一并禁：ui-plan（计划面板）、ui-goal（目标面板）、ui-agent-preset（标题栏「标准模式」徽标——
+#    dsh 四种编码预设在本平台一个都跑不动，徽标 tooltip 还写着"支持文件编辑、Shell…"）。
+#    注意：ui-commands / ui-input-trigger 必须保留——ui-model-selection（右下角模型下拉）硬依赖 commandUi，
+#    面板入口「+」由 ui-harness CSS 隐藏。
+- id: ui-plan
+  disabled: true
+- id: ui-goal
+  disabled: true
+- id: ui-agent-preset
+  disabled: true
 - insert:
     - id: ui-harness
       name: '@opendb-dsh/ui-harness'

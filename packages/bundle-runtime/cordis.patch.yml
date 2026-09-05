@@ -32,6 +32,9 @@
 # permission presets bundle sandbox mode + approval policy and inject the shell service — no shell in Runtime
 - id: permission
   disabled: true
+# ── 交付冲刺（2026-09-05）备注：绑定会话后命令面板里的 compact / plan 不是本层注册的——它们由 dsh 内置智能体预设
+#    （dsh/config/agent-presets/standard/agent.cordis.yml）按会话注入 agent 平面，这里加 disabled 实测无效（预设层重新 insert）。
+#    入口在 ui-harness 用 CSS 收掉；自动压缩 compaction-basic 同样由预设注入，保持不动。
 - insert:
     - id: session-persistence-pg
       name: '@opendb-dsh/session-persistence-pg'

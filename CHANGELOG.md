@@ -15,11 +15,17 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   由 `ui-harness` 纯 CSS 隐藏（`button[aria-label^="访问模式"]`，零 DOM 改动）；bundle-host 禁用客户端 `dsh-client-ui-permission-presets`
   与**服务端 `dsh-permission-presets`**（后者还往命令面板注册 `permission` 命令；apiproxy 对它无硬依赖）。
   真机验证：选择器不可见、页面无 Read Only/Full access 字样、命令面板无 permission 项、会话正常收发、console 零错误。
-- **去掉命令面板（输入框「+」/「/」）里的死命令 `feedback`**：它依赖 sessionTelemetry，本平台遥测关闭，点了只回
-  「Session sharing is not configured.」。面板保留 compact / export / model。
-  实测副作用：禁掉服务端 `permission` 后，面板里的 `plan`（计划模式：只规划不执行工具）与 `goal`（编码代理的长任务目标）
-  也一并消失——客户端把 permission / plan / goal 三个"会话模式"命令绑在一起注册，缺 permission 服务就整组不注册。
-  这两个在本平台同样不适用（平台价值全在工具执行），顺势接受；服务端 `plan-mode` / `command-goal` 插件仍加载但不可达。
+- **命令面板（输入框「+」/「/」）整体下线（user 2026-09-05 批准）**：逐条实测后没有一条既能用又不重复——
+  `feedback` 依赖已关闭的遥测（只回 Session sharing is not configured）；`compact` 调 `compaction.compactNow(agent)` 需要 Host 上有活的
+  agent，我们 Host 不跑 agent-loop，回车后零事件（Runtime 的 `compaction-basic` 自动压缩仍在：每步前量压力，超模型窗口 80% 自动摘要）；
+  `export` 返回 501「persistence backend does not expose per-session raw artifacts」（会话日志在 PG，dsh 导出要 jsonl 原件）；
+  `goal` / `plan` 是编码代理概念；`model` 与右下角模型下拉重复。
+  做法：Host 禁用 `command-feedback` / `command-compact` / `session-log-download`（dsh-session-log-export 在 web-app 层的 id）/
+  `command-goal` / `plan-mode` 与客户端 `ui-plan` / `ui-goal` / `ui-agent-preset`（标题栏「标准模式」徽标，tooltip 还写着
+  "支持文件编辑、Shell…"）；`ui-harness` CSS 隐藏输入框「+」、标题栏「Session log ⬇」（同一条 501 路径）和 `/` 候选菜单
+  （只含 command 来源时整体隐藏）。`ui-commands` / `ui-input-trigger` 保留——右下角模型下拉硬依赖 `commandUi`。
+  实测发现：绑定会话后 `/` 里的 compact / plan 来自 **dsh 内置智能体预设**（`dsh/config/agent-presets/standard/agent.cordis.yml`
+  按会话注入 agent 平面），bundle-host / bundle-runtime 禁不掉，故用 CSS 收口；`compaction-basic` 自动压缩同样由预设注入，保持不动。
 
 ### Fixed
 - **知识库前后对比实测暴露的两处检索缺口（2026-09-04/05 演示，记录见 `docs/2026-09-04-kb-before-after-demo.md`）**：
