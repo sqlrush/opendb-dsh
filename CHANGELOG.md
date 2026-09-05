@@ -12,9 +12,14 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   该预设只控制**文件沙箱模式 + shell 工具审批策略**，而 opendb-harness 的 Runtime 是零本地执行（tool-bash/fs/编辑器/沙箱/permission
   插件全部禁用，见 bundle-runtime），切换它对本平台没有任何效果，还会误导用户以为它管数据库读写——平台立场是数据库权限由数据库授权决定。
   做法：输入框上那个「访问模式」选择器是官方 conversation 组件自带的（禁用 `dsh-client-ui-permission-presets` 插件后实测下拉仍在），
-  由 `ui-harness` 纯 CSS 隐藏（`button[aria-label^="访问模式"]`，零 DOM 改动）；bundle-host 同时禁用 `dsh-client-ui-permission-presets`
-  （命令面板/设置里的预设入口）；服务端 `dsh-permission-presets` 在 Host 保留（apiproxy 依赖它、会话头默认 `read-only` 三件套照旧写入）。
-  真机验证：选择器不可见、页面无 Read Only/Full access 字样、会话正常收发、console 零错误。
+  由 `ui-harness` 纯 CSS 隐藏（`button[aria-label^="访问模式"]`，零 DOM 改动）；bundle-host 禁用客户端 `dsh-client-ui-permission-presets`
+  与**服务端 `dsh-permission-presets`**（后者还往命令面板注册 `permission` 命令；apiproxy 对它无硬依赖）。
+  真机验证：选择器不可见、页面无 Read Only/Full access 字样、命令面板无 permission 项、会话正常收发、console 零错误。
+- **去掉命令面板（输入框「+」/「/」）里的死命令 `feedback`**：它依赖 sessionTelemetry，本平台遥测关闭，点了只回
+  「Session sharing is not configured.」。面板保留 compact / export / model。
+  实测副作用：禁掉服务端 `permission` 后，面板里的 `plan`（计划模式：只规划不执行工具）与 `goal`（编码代理的长任务目标）
+  也一并消失——客户端把 permission / plan / goal 三个"会话模式"命令绑在一起注册，缺 permission 服务就整组不注册。
+  这两个在本平台同样不适用（平台价值全在工具执行），顺势接受；服务端 `plan-mode` / `command-goal` 插件仍加载但不可达。
 
 ### Fixed
 - **知识库前后对比实测暴露的两处检索缺口（2026-09-04/05 演示，记录见 `docs/2026-09-04-kb-before-after-demo.md`）**：

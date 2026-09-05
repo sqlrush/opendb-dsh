@@ -362,7 +362,8 @@ pod 列：H = Host，R = Runtime，HR = 两者，— = 不加载。
 | `dsh-commands` `dsh-command-compact` `dsh-command-feedback` `dsh-message-feedback` | 人类命令注册表 / compact / feedback / 消息评分 | 原样 | H（compact 也 R） |
 | `dsh-user-questions` `dsh-tool-ask-user` | 向人提问 seam + 工具 | 原样（Host UI 应答；Runtime 上的提问经 rollout 回到 Host UI——P0 验证跨 pod 提问回路） | HR |
 | `dsh-user-approval` | `ctx.approval` seam（一次性权限决策） | 原样 Definition；provider = `@opendb-dsh/approval-platform` | HR |
-| `dsh-permission-presets` | 用户可见的权限预设 | Host 保留（apiproxy 依赖；会话头默认 read-only/ask 三件套照旧）；Runtime 禁用；**用户可见的下拉已去掉**（见客户端表） | H |
+| `dsh-permission-presets` | 用户可见的权限预设（+ 命令面板 `permission` 命令） | **Host/Runtime 均禁用（2026-09-05 交付冲刺）**：预设只管文件沙箱 + shell 审批，本平台零本地执行；apiproxy 无硬依赖。输入框选择器另由 ui-harness CSS 隐藏（见客户端表） | — |
+| `dsh-command-feedback` | 命令面板 `feedback` | **禁用（2026-09-05）**：依赖 sessionTelemetry，遥测关闭后是死命令 | — |
 | `dsh-anonymous-user-id` | 遥测匿名 id | 禁用 | — |
 
 ### 6.3 持久化 seam（22）

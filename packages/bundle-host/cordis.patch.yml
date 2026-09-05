@@ -113,6 +113,14 @@
 #   （apiproxy 依赖它；会话头默认 read-only/ask 三件套照旧写入）。id 见 dsh-web-app/cordis.patch.yml。
 - id: ui-permission
   disabled: true
+#    服务端 permission 插件（dsh-permission-presets）也禁：它还往命令面板（输入框「+」/「/」）注册 `permission` 命令，
+#    apiproxy 对它无硬依赖（inject 里没有；实测禁用后会话正常收发）。Runtime 早已禁用。
+- id: permission
+  disabled: true
+# ── 交付冲刺：命令面板里的 `feedback` 是死命令——它依赖 sessionTelemetry，而本平台 DSH_TELEMETRY_MODE=DISABLED，
+#    点了只回「Session sharing is not configured.」。保留 compact / export / model。
+- id: command-feedback
+  disabled: true
 - insert:
     - id: ui-harness
       name: '@opendb-dsh/ui-harness'
