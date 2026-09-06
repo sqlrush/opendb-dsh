@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据库大盘 · og5 · R1 设计稿</title>
+<style>
+  :root{
+    --ink:#0F1115; --sub:#61666B; --dim:#81858C; --ph:#ADB2B8;
+    --blue:#4176E6; --blue-ink:#2F55B3; --blue-soft:#EEF3FF;
+    --line:rgba(0,0,0,.08); --fill:#F7F8FA; --fill2:#F2F3F5; --rest:#DDE0E5;
+    --ok:#3FA552; --ok-soft:#E8F5EC; --notice:#C9862D; --notice-soft:#FAF3E5;
+    --warn:#E07A1F; --warn-soft:#FDF0E3; --crit:#D64545; --crit-soft:#FDECEC; --stale:#9AA0A8; --stale-soft:#F2F3F5;
+    --c1:#4176E6; --c2:#3FA552; --c3:#C9862D; --c4:#8E6BD6; --c5:#2AA6B3; --c6:#E07A1F; --c7:#7F8790;
+    --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Helvetica,Arial,sans-serif}
+  .num{font-variant-numeric:tabular-nums}.mono{font-family:var(--mono)}
+  .ribbon{background:var(--blue-soft);color:var(--blue-ink);font-size:13px;padding:6px 24px;border-bottom:1px solid #DCE6FF;display:flex;gap:18px;align-items:center}
+  .ribbon b{font-weight:600}
+  .app{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:calc(100vh - 31px)}
+  /* ── 侧栏（原版 chrome 体系 14/13）── */
+  .side{border-right:1px solid var(--line);padding:14px 12px;font-size:14px;background:#fff}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:2px 8px 14px}
+  .brand i{display:inline-block;width:20px;height:20px;border-radius:5px;background:var(--ink);flex:none}
+  .brand em{font-style:normal;background:var(--ink);color:#fff;font-size:9px;letter-spacing:.12em;border-radius:4px;padding:1px 6px}
+  .newbtn{display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);border-radius:10px;padding:7px;color:var(--ink);margin-bottom:10px}
+  .sec{font-size:12.5px;color:var(--dim);padding:8px 8px 4px;display:flex;align-items:center;gap:6px;font-weight:600}
+  .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px;color:var(--ink);cursor:pointer}
+  .row:hover{background:var(--fill)}.row.on{background:var(--fill2);font-weight:500}
+  .row .n{margin-left:auto;font-size:12.5px;color:var(--dim)}
+  .row.sub{padding-left:24px;font-size:13.5px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+  /* ── 主区 ── */
+  .main{min-width:0}
+  .top{height:52px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 24px;font-size:14px}
+  .top b{font-weight:600}.top .dim{color:var(--dim)}.top a{color:var(--blue);text-decoration:none;font-size:13px;margin-left:auto}
+  .page{padding:18px 24px 56px;min-width:0;max-width:1240px;font-size:16px;line-height:1.75}
+  /* 页头 */
+  .head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .head h1{font-size:24px;font-weight:600;margin:0;display:flex;align-items:center;gap:10px}
+  .head h1 .st{width:10px;height:10px;border-radius:50%;background:var(--ok)}
+  .head .meta{font-size:13.5px;color:var(--dim);margin-top:2px}
+  .head .meta b{color:var(--sub);font-weight:500}
+  .verdict{margin-left:auto;border:1px solid var(--line);border-radius:12px;padding:10px 16px;display:flex;gap:16px;align-items:center;background:#fff;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04)}
+  .verdict .lv{font-size:22px;font-weight:700;color:var(--warn);display:flex;align-items:center;gap:8px}
+  .verdict .lv i{width:12px;height:12px;border-radius:3px;background:var(--warn)}
+  .verdict .why{font-size:13.5px;color:var(--sub);line-height:1.5}
+  .verdict .why b{color:var(--ink);font-weight:500}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;border-radius:6px;padding:1px 9px;font-weight:500;white-space:nowrap;line-height:1.7}
+  .chip.ok{background:var(--ok-soft);color:var(--ok)}.chip.notice{background:var(--notice-soft);color:var(--notice)}.chip.warn{background:var(--warn-soft);color:var(--warn)}.chip.crit{background:var(--crit-soft);color:var(--crit)}.chip.stale{background:var(--stale-soft);color:var(--stale)}.chip.grey{background:var(--fill2);color:var(--sub)}
+  .lead{font-size:14px;color:var(--sub);margin:6px 0 0}
+  h2{font-size:18px;font-weight:600;margin:28px 0 12px;display:flex;align-items:baseline;gap:12px}
+  h2 .m{font-size:13.5px;color:var(--dim);font-weight:400}
+  h2 .tabs{margin-left:auto;font-size:13.5px;color:var(--dim);display:flex;gap:14px;font-weight:400}
+  h2 .tabs span{padding-bottom:2px;cursor:pointer}
+  h2 .tabs span.on{color:var(--ink);border-bottom:2px solid var(--blue)}
+  .dig{color:var(--blue);font-size:12.5px;text-decoration:none;white-space:nowrap}
+  .dig:hover{text-decoration:underline}
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  @media (max-width:1100px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .kpi{background:var(--fill);border-radius:12px;padding:14px 16px 10px;min-width:0;border-left:3px solid transparent}
+  .kpi.notice{border-left-color:var(--notice)}.kpi.warn{border-left-color:var(--warn)}.kpi.crit{border-left-color:var(--crit)}
+  .kpi .l{font-size:13px;color:var(--dim);display:flex;align-items:center;gap:8px}
+  .kpi .v{font-size:26px;font-weight:600;line-height:1.25;margin-top:2px}
+  .kpi .v small{font-size:13px;font-weight:500;color:var(--dim);margin-left:5px}
+  .kpi svg{display:block;width:100%;height:44px;margin-top:6px}
+  .kpi .d{font-size:12.5px;color:var(--dim);line-height:1.5;margin-top:2px}
+  /* 卡片 */
+  .grid2{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px}
+  @media (max-width:1100px){.grid2{grid-template-columns:1fr}}
+  .card{border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);background:#fff;padding:16px 20px;min-width:0}
+  .card .t{font-size:16px;font-weight:600;display:flex;align-items:baseline;gap:10px}
+  .card .t .m{font-size:13px;color:var(--dim);font-weight:400}
+  .card .t .dig{margin-left:auto}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--sub);margin-top:8px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  .stack{display:flex;height:22px;border-radius:6px;overflow:hidden;margin-top:12px}
+  .stack div{height:100%}
+  .rows{margin-top:10px;font-size:14px}
+  .rows .r{display:grid;grid-template-columns:110px 1fr 84px;gap:12px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)}
+  .rows .r:last-child{border-bottom:0}
+  .rows .bar{height:8px;border-radius:4px;background:var(--fill2);overflow:hidden}
+  .rows .bar i{display:block;height:100%;border-radius:4px}
+  .rows .v{text-align:right;color:var(--sub);font-size:13.5px}
+  .gauges{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:10px}
+  .g{background:var(--fill);border-radius:10px;padding:12px 14px}
+  .g .l{font-size:13px;color:var(--dim)}.g .v{font-size:22px;font-weight:600;margin-top:2px}.g .v small{font-size:12.5px;color:var(--dim);font-weight:500;margin-left:4px}
+  .g .track{height:6px;border-radius:3px;background:var(--rest);margin-top:8px;overflow:hidden}.g .track i{display:block;height:100%;border-radius:3px;background:var(--blue)}
+  .g .d{font-size:12.5px;color:var(--dim);margin-top:4px}
+  /* 五项巡检 */
+  .five{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+  @media (max-width:1200px){.five{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  .kcard{border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.02),0 2px 8px rgba(0,0,0,.04);overflow:hidden;background:#fff;display:flex;flex-direction:column;min-width:0}
+  .kcard .hd{padding:12px 16px 8px;border-top:4px solid var(--c)}
+  .kcard .hd .n{font-size:14px;font-weight:600;color:var(--sub)}
+  .kcard .hd .lv{font-size:22px;font-weight:700;color:var(--c);line-height:1.2;margin-top:2px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;white-space:nowrap}
+  .kcard .hd .lv small{font-size:12.5px;color:var(--dim);font-weight:400}
+  .kcard .bd{padding:2px 16px 12px;font-size:13.5px;color:var(--sub);line-height:1.55;flex:1}
+  .kcard .bd b{color:var(--ink);font-weight:500}
+  .kcard .kv{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:12.5px;color:var(--dim)}
+  .kcard .kv b{color:var(--ink);font-weight:600;font-size:14px}
+  .kcard .foot{padding:9px 16px;border-top:1px solid var(--line);display:flex;gap:14px;align-items:center;font-size:12.5px;color:var(--dim)}
+  .kcard .foot .dig{margin-left:auto}
+  /* 时间轴 */
+  .tl{margin-top:8px}
+  .tl .e{display:grid;grid-template-columns:96px 12px 1fr;gap:12px;padding:8px 0}
+  .tl .e .when{font-size:13px;color:var(--dim)}
+  .tl .e .pt{position:relative}.tl .e .pt::before{content:"";position:absolute;left:5px;top:8px;width:2px;bottom:-16px;background:var(--line)}
+  .tl .e:last-child .pt::before{display:none}
+  .tl .e .pt i{position:absolute;left:1px;top:6px;width:10px;height:10px;border-radius:50%;background:var(--c)}
+  .tl .e .what{font-size:14px}.tl .e .what b{font-weight:600}.tl .e .what .s{font-size:13px;color:var(--dim);display:block}
+  /* 表格（内容区体系 14） */
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+  th{text-align:left;font-weight:500;color:var(--dim);font-size:13px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:var(--fill)}
+  td .s{font-size:12.5px;color:var(--dim)}
+  .kn{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .kn .k{background:var(--fill);border-radius:10px;padding:12px 14px;font-size:14px}
+  .kn .k .v{font-size:22px;font-weight:600}.kn .k .d{font-size:12.5px;color:var(--dim)}
+  /* 设计说明 */
+  .notes{margin-top:40px;border-top:1px dashed var(--line);padding-top:18px;font-size:14px;color:var(--sub)}
+  .notes h3{font-size:15px;color:var(--ink);margin:14px 0 6px}
+  .notes ol,.notes ul{margin:4px 0 0 20px;padding:0}.notes li{margin:3px 0}
+  .notes code{font-family:var(--mono);font-size:12.5px;background:var(--fill);padding:1px 6px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="ribbon"><b>设计稿 R1 · 数据库大盘（每个数据库节点的专属页）</b><span>数字全部取自 og5 真实存档（2026-09-05/06）</span><span>零按钮 · 只有「深挖 →」「查看报告 →」文字链</span><span style="margin-left:auto">确认后开始重构 ui-node-monitor</span></div>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><i></i>opendb <em>HARNESS</em></div>
+    <div class="newbtn">⊕ 新会话</div>
+    <div class="sec">工作区 <span style="margin-left:auto;font-weight:400">⌕</span></div>
+    <div class="row">◌ 会话 <span class="n">36</span></div>
+    <div class="row sub">核心账务库（openGauss 分布式）…</div>
+    <div class="row sub" style="color:var(--dim)">展开其余 24 个会话</div>
+    <div class="row">▤ 任务 <span class="n">5</span></div>
+    <div class="row sub">平台阈值配置</div><div class="row sub">og5-wdr-1922-1923</div><div class="row sub">og5-ddl-lab</div><div class="row sub">og5-capacity</div><div class="row sub">平台规则目录</div>
+    <div class="row">◫ 数据库 <span class="n">1</span></div>
+    <div class="row sub on"><span class="dot"></span>og5</div>
+    <div class="sec">知识库</div><div class="row sub">▥ 知识库大盘</div>
+    <div class="sec">资源</div><div class="row sub">⬡ k8s 集群状态</div><div class="row sub">▥ 模型用量</div>
+    <div class="row" style="margin-top:220px">⚙ 设置</div>
+  </aside>
+  <main class="main">
+    <div class="top"><b>数据库</b><span class="dim">agent：og-lab</span><a href="#">← 节点列表</a></div>
+    <div class="page">
+
+      <!-- 页头 + 综合结论 -->
+      <div class="head">
+        <div>
+          <h1><span class="st"></span>og5 <span style="font-size:14px;font-weight:400;color:var(--dim)">openGauss 5.0</span></h1>
+          <div class="meta"><b>192.168.128.1:5433</b>/postgres · 在线 · 采集 <b>1 分钟前</b> · 绑定智能体 <b>og-lab</b> · 已监控 <b>19 天</b></div>
+          <div class="lead">这一页回答一个问题：这个库现在怎么样、最近五类巡检各说了什么、哪里该去深挖。</div>
+        </div>
+        <div class="verdict">
+          <div class="lv"><i></i>注意</div>
+          <div class="why">五类巡检最近结论中最差的一档（体检 / SQL / WDR / 容量 = 注意）。<br>DDL 那条 <b>严重</b>已是 6 天前、发生在实验 schema，按时效降级显示，不进综合。</div>
+        </div>
+      </div>
+
+      <!-- 实时 KPI -->
+      <h2>现在 <span class="m">采集间隔 1 分钟 · 迷你曲线为 24 小时 · 左侧色条 = 阈值档位</span><span class="tabs"><span class="on">24 小时</span><span>7 天</span></span></h2>
+      <div class="kpis" id="kpis"></div>
+
+      <!-- OS 层 -->
+      <h2 style="margin-top:18px">主机（OS 层） <span class="m">数据库视角的 db.os.* 计数器差分 · 同样 24 小时迷你曲线</span></h2>
+      <div class="kpis" id="kpis-os"></div>
+
+      <!-- DB Time 构成 + 主机明细 -->
+      <div class="grid2" style="margin-top:14px">
+        <div class="card">
+          <div class="t">DB Time 构成 <span class="m">近 1 小时 · 来自 instance_time 计数器差分</span><a class="dig" href="#">在会话里深挖 →</a></div>
+          <div class="stack" id="dbtime"></div>
+          <div class="legend" id="dbtime-legend"></div>
+          <div class="rows" style="margin-top:14px">
+            <div class="r"><span>等待类型</span><div class="bar"><i style="width:94%;background:var(--c5)"></i></div><span class="v num">IO 事件 94%</span></div>
+            <div class="r"><span></span><div class="bar"><i style="width:6%;background:var(--c4)"></i></div><span class="v num">LWLock 6%</span></div>
+          </div>
+          <div class="lead" style="margin-top:10px">解读只做一句：执行 + CPU 占了九成，IO 等待远大于锁等待——是<b style="color:var(--ink);font-weight:500">算力型</b>负载，不是锁争用型。</div>
+        </div>
+        <div class="card">
+          <div class="t">主机资源明细 <span class="m">近 1 小时均值</span><a class="dig" href="#">在会话里深挖 →</a></div>
+          <div class="stack" id="cpu-stack" style="margin-top:14px"></div>
+          <div class="legend" id="cpu-legend"></div>
+          <div class="rows" style="margin-top:14px">
+            <div class="r"><span>负载 1 分钟</span><div class="bar"><i style="width:28%;background:var(--c1)"></i></div><span class="v num">5.1 / 18 核</span></div>
+            <div class="r"><span>物理内存</span><div class="bar"><i style="width:100%;background:var(--rest)"></i></div><span class="v num">64.8 GB</span></div>
+            <div class="r"><span>IO 等待占比</span><div class="bar"><i style="width:2%;background:var(--c3)"></i></div><span class="v num">0.15%</span></div>
+            <div class="r"><span>物理读 / 秒</span><div class="bar"><i style="width:1%;background:var(--c5)"></i></div><span class="v num">0.0 blk/s</span></div>
+          </div>
+          <div class="lead" style="margin-top:10px">未采集：已用内存、磁盘吞吐、网络流量——openGauss 的 <span class="mono" style="font-size:13px">dbe_perf.os_runtime</span> 不提供；已用内存拟改用 <span class="mono" style="font-size:13px">gs_total_memory_detail</span>（数据库进程内存 / 上限）。<a class="dig" href="#">补采集项 →</a></div>
+        </div>
+      </div>
+
+      <!-- 五项巡检 -->
+      <h2>五类巡检最近结论 <span class="m">数字来自采集存档，叙述来自模型报告；过期结论灰显</span></h2>
+      <div class="five">
+        <div class="kcard" style="--c:var(--notice)"><div class="hd"><div class="n">健康体检</div><div class="lv">注意 <small>08-29 09:07</small></div></div>
+          <div class="bd"><b>缓存命中率 96.2%</b> 落在关注档（阶梯 &lt;99% 关注 → &lt;95% 告警）；其余 8 项正常。<div class="kv"><span>命中率 <b>96.2%</b></span><span>库 <b>3</b></span><span>正常项 <b>8/9</b></span></div></div>
+          <div class="foot"><span class="chip grey">手动</span><a class="dig" href="#">查看报告 →</a></div></div>
+        <div class="kcard" style="--c:var(--warn)"><div class="hd"><div class="n">SQL 审核</div><div class="lv">告警 <small>08-29 03:05</small></div></div>
+          <div class="bd">监控轮询 SQL 占总耗时 <b>47.3%</b>；3 条 <b>query_dop=1</b> 强制串行大聚合占耗时 41.6%、IO 90.5%。<div class="kv"><span>Top SQL <b>5</b></span><span>规则命中 <b>20</b></span><span>可改写 <b>1</b></span></div></div>
+          <div class="foot"><span class="chip grey">每小时</span><span class="chip warn">逾期 7 天</span><a class="dig" href="#">查看报告 →</a></div></div>
+        <div class="kcard" style="--c:var(--warn)"><div class="hd"><div class="n">WDR 窗口</div><div class="lv">告警 <small>08-29 09:07</small></div></div>
+          <div class="bd">08:30–08:33 窗口 <b>AAS 24.66</b>，为最近 24 窗口最重（中位 0.2 的 123 倍）；三条串行大聚合占 DB Time 81%，WALFlushWait 抬头。<div class="kv"><span>AAS <b>24.66</b></span><span>Top SQL <b>10</b></span><span>快照 <b>192</b></span></div></div>
+          <div class="foot"><span class="chip grey">每小时</span><span class="chip warn">逾期 7 天</span><a class="dig" href="#">查看报告 →</a></div></div>
+        <div class="kcard" style="--c:var(--stale)"><div class="hd"><div class="n">DDL 变更</div><div class="lv" style="color:var(--stale)">严重<span class="chip stale" style="font-size:11.5px">已过期 6 天</span> <small>08-31 03:04</small></div></div>
+          <div class="bd">omm 超级用户 1 秒内连续 <b>3 条 DROP SCHEMA CASCADE</b>（实验 schema）。最新事件：09-03 新增 <b>cbst.acct_balance</b>，是否计划内未确认。<div class="kv"><span>规则命中 <b>2</b></span><span>近 7 天变更 <b>66</b> 对象</span></div></div>
+          <div class="foot"><span class="chip grey">手动</span><a class="dig" href="#">查看报告 →</a></div></div>
+        <div class="kcard" style="--c:var(--warn)"><div class="hd"><div class="n">容量与增长</div><div class="lv">告警 <small>09-05 18:00</small></div></div>
+          <div class="bd"><b>42.0 GB</b>，清理悬崖后净增 <b>−0.38 GB/天</b>（80h，medium）；九成在 gsbench_ts；<b>28 张大表从未 ANALYZE</b>。<div class="kv"><span>库大小 <b>42.0 GB</b></span><span>增速 <b>−0.38</b> GB/天</span><span>WDR 快照 <b>1.5 GB</b></span></div></div>
+          <div class="foot"><span class="chip grey">每日 02:00</span><span class="chip ok">按时</span><a class="dig" href="#">查看报告 →</a></div></div>
+      </div>
+
+      <!-- 存储与增长 + 变更时间轴 -->
+      <div class="grid2" style="margin-top:14px">
+        <div class="card">
+          <div class="t">存储与增长 <span class="m">容量采样 · 每日 02:00</span><a class="dig" href="#">在会话里深挖 →</a></div>
+          <svg id="growth" viewBox="0 0 560 150" style="width:100%;height:150px;display:block;margin-top:10px"></svg>
+          <div class="legend"><span><i style="background:var(--c1)"></i>库总大小（GB）</span><span style="color:var(--dim)">09-02 清理悬崖 −87 GB → 之后每日 −0.38 GB，不增长，无到阈值预测</span></div>
+          <div class="rows" style="margin-top:12px">
+            <div class="r"><span>postgres</span><div class="bar"><i style="width:100%;background:var(--c1)"></i></div><span class="v num">42.0 GB</span></div>
+            <div class="r"><span>opendb_test</span><div class="bar"><i style="width:1%;background:var(--c2)"></i></div><span class="v num">30 MB</span></div>
+            <div class="r"><span>omm</span><div class="bar"><i style="width:1%;background:var(--c3)"></i></div><span class="v num">12 MB</span></div>
+            <div class="r"><span style="color:var(--dim)">非表占用</span><div class="bar"><i style="width:3.5%;background:var(--c7)"></i></div><span class="v num">1.44 GB</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="t">变更时间轴 <span class="m">字典变更按批次聚合 · 近 7 天</span><a class="dig" href="#">在会话里深挖 →</a></div>
+          <div class="tl">
+            <div class="e" style="--c:var(--warn)"><div class="when">09-03 01:47</div><div class="pt"><i></i></div><div class="what"><b>+2 对象</b> · cbst.acct_balance 表 + 主键<span class="s">omm 直接创建并写入 50 行 · 事故响应判定：非破坏性、是否计划内未确认 → <a class="dig" href="#">看事故响应 →</a></span></div></div>
+            <div class="e" style="--c:var(--c1)"><div class="when">08-31 09:10</div><div class="pt"><i></i></div><div class="what"><b>+64 对象</b> · 新库 gsbench_e2e_20260831_10g 装载<span class="s">45 表 · 19 索引 · 同一秒内完成 → 折叠显示，点开看清单</span></div></div>
+            <div class="e" style="--c:var(--crit)"><div class="when">08-31 03:02</div><div class="pt"><i></i></div><div class="what"><b>−3 schema</b> · DROP SCHEMA CASCADE ×3<span class="s">omm · 1 秒内 · gsbench_e2e_20260801_100g 等 · DDL 审计判定严重（实验库）</span></div></div>
+          </div>
+          <div class="lead" style="margin-top:6px">原来那张几十行的原始表不再直接铺开——同一批次折叠成一条，异常批次带上判定与去处。</div>
+        </div>
+      </div>
+
+      <!-- 定时任务 -->
+      <h2>本节点的定时任务 <span class="m">来自任务表 · 逾期 = 按 cron 应触发而未触发</span></h2>
+      <div class="card" style="padding-top:8px">
+        <table>
+          <thead><tr><th>任务</th><th>类型</th><th>计划</th><th>最近一次</th><th>结论</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td>og5-capacity<div class="s">容量与增长 · topN 20 · 增长窗口 7 天</div></td><td>capacity</td><td class="mono" style="font-size:13px">0 2 * * *</td><td class="num">09-05 18:00</td><td><span class="chip warn">告警</span></td><td><span class="chip ok">按时</span></td></tr>
+            <tr><td>og5-wdr-hourly<div class="s">WDR 窗口 · topN 10</div></td><td>wdr</td><td class="mono" style="font-size:13px">45 * * * *</td><td class="num">08-29 02:48</td><td><span class="chip warn">告警</span></td><td><span class="chip warn">逾期 7 天</span></td></tr>
+            <tr><td>og5慢SQL Top3跟踪<div class="s">SQL 审核 · 跟踪 3 条指定 SQL</div></td><td>sqlreview</td><td class="mono" style="font-size:13px">0 * * * *</td><td class="num">08-29 03:00</td><td><span class="chip warn">告警</span></td><td><span class="chip warn">逾期 7 天</span></td></tr>
+            <tr><td>og5慢SQL优化<div class="s">SQL 审核 · 优化建议</div></td><td>sqlreview</td><td class="mono" style="font-size:13px">0 18 * * *</td><td class="num">08-27 10:00</td><td><span class="chip warn">告警</span></td><td><span class="chip warn">逾期 9 天</span></td></tr>
+            <tr><td>og5健康检查</td><td>health</td><td class="s">手动</td><td class="num">08-25 03:35</td><td><span class="chip crit">严重</span><span class="s"> 两条 6 天未结束的超长事务</span></td><td><span class="chip grey">手动</span></td></tr>
+            <tr><td>og5-ddl-lab</td><td>ddl</td><td class="s">手动</td><td class="num">08-31 03:04</td><td><span class="chip crit">严重</span></td><td><span class="chip grey">手动</span></td></tr>
+            <tr><td>og5-wdr-1922-1923</td><td>wdr</td><td class="s">手动 · 快照 1922→1923</td><td class="num">08-29 08:39</td><td><span class="chip warn">告警</span></td><td><span class="chip grey">手动</span></td></tr>
+            <tr style="color:var(--dim)"><td>og5慢SQL Top5报表 / 双榜报表</td><td>sqlreview / prompt</td><td class="mono" style="font-size:13px">*/10 * * * *</td><td class="num">08-27</td><td><span class="chip grey">告警</span></td><td><span class="chip grey">已停用</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 知识与记忆 -->
+      <h2>关于这个库，平台记住了什么 <span class="m">记忆 = 平台自身经历；知识 = 导入的规范/案例</span></h2>
+      <div class="kn">
+        <div class="k"><div class="v num">845</div><div class="d">条记忆提及 og5（任务报告沉淀为主）</div><a class="dig" href="#">问问「og5 最近有什么反复出现的问题」→</a></div>
+        <div class="k"><div class="v num">3</div><div class="d">份知识文档适用（备份规程 · 慢 SQL 方案 · 锁等待处置规范）</div><a class="dig" href="#">把 og5 的运维规范导入知识库 →</a></div>
+        <div class="k"><div class="v num">2</div><div class="d">条确定性关系图谱涉及本库（锁等待 → 处置）</div><a class="dig" href="#">在会话里深挖 →</a></div>
+      </div>
+
+      <!-- 设计说明 -->
+      <div class="notes">
+        <h3>设计说明（给确认用，实现时不出现）</h3>
+        <ol>
+          <li><b>信息架构</b>：页头（身份 + 综合结论）→ 现在（8 项数据库 KPI + 4 项 OS 层：CPU 忙 / 负载 / 内存 / IO 等待，阈值着色，24h 迷你曲线）→ DB Time 构成 / 主机资源明细 → 五类巡检最近结论（每类一卡：级别 · 一句话 · 2–3 个关键数 · 计划/逾期 · 查看报告）→ 存储与增长 / 变更时间轴 → 本节点定时任务 → 关于这个库平台记住了什么。</li>
+          <li><b>确定性直读</b>：所有数字来自 <code>opendb_metrics</code>（37 条序列，1 分钟）、<code>opendb_task_collects</code>（五类存档）、<code>opendb_health_collects</code>、<code>opendb_capacity_samples</code>、<code>dsh_tasks / dsh_task_runs / dsh_task_reports</code>、字典变更；模型报告只贡献"一句话"。TPS/QPS/命中率由计数器差分得到，不再展示累计原值。</li>
+          <li><b>综合结论算法</b>：取五类"最近结论"中最差档；超过各自时效窗口（cron 周期 ×2，手动任务 7 天）的结论灰显并不进综合，避免 6 天前的实验库 DDL 把整页染红。</li>
+          <li><b>逾期</b>：按 cron 应触发而未触发的任务显式标出（现在 og5 有 4 个每小时/每日任务停在 08-29，这是真数据暴露的问题，另行处理）。</li>
+          <li><b>变更时间轴</b>：字典变更按"同一秒 / 同一 schema"折叠成批次，异常批次带 DDL 审计或事故响应的判定与链接；不再铺几十行原始表。</li>
+          <li><b>零按钮</b>：整页只有「在会话里深挖 →」「查看报告 →」两种文字链（沿用 task-health 的 DigLink，带"开会话中… / 失败，重试"三态）与页内文字 tab（24 小时 / 7 天）。</li>
+          <li><b>样式</b>：dsh 原版 token（主蓝 #4176E6、灰阶 chrome、语义色只上数据、卡片 12px 圆角 + 双层浅影）；内容区字号体系（16 正文 / 18–24 区块题 / 13.5 meta / 13 mono）；图表全部 chart-kit 自绘 SVG，不引第三方。</li>
+          <li><b>空态与降级</b>：某类巡检从未跑过 → 该卡显示「还没跑过 · 在会话里说一句就能建」；采集缺项（如已用内存）→ 明说"未采集"并给补采集链接，不留假 0。</li>
+          <li><b>OS 层补采集（重构时一并做）</b>：现有 <code>db.os.*</code> 只有 CPU 时间片 / 负载 / 核数 / 物理内存总量 / IO 等待时间。新增 <code>db.mem.process_used_bytes</code> 与 <code>db.mem.max_process_bytes</code>（来源 <code>gs_total_memory_detail</code>），内存卡位才有真曲线；磁盘吞吐与网络流量 openGauss 视图不提供，不做假数。CPU 忙 % = (user+sys+iowait) 时间片差分 / (总时间片差分)。</li>
+          <li><b>实现落点</b>：重构 <code>ui-node-monitor</code> 客户端 + 扩 <code>ui-opendb</code> 的 <code>nodes/detail</code>（新增 rates / dbTime / os / verdicts / capacity / tasks / timeline / knowledge 分区，一次 RPC 出全页）；行为测试 <code>scripts/browser/node-panel-check.mjs</code>。</li>
+        </ol>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+// ── 迷你曲线（合成 24h 形态，量级取自 og5 真实区间）──
+const spark=(vals,color,h=44,w=300)=>{const min=Math.min(...vals),max=Math.max(...vals),span=(max-min)||1;const px=i=>i/(vals.length-1)*(w-6)+3,py=v=>h-6-((v-min)/span)*(h-16)+3;const pts=vals.map((v,i)=>`${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');const id='g'+Math.random().toString(36).slice(2,8);return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".18"/><stop offset="1" stop-color="${color}" stop-opacity=".02"/></linearGradient></defs><line x1="3" y1="${h-3}" x2="${w-3}" y2="${h-3}" stroke="rgba(0,0,0,.08)"/><polygon points="3,${h-3} ${pts} ${w-3},${h-3}" fill="url(#${id})"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="${px(vals.length-1)}" cy="${py(vals[vals.length-1])}" r="2.6" fill="${color}"/></svg>`};
+const wave=(base,amp,n=48,seed=1)=>Array.from({length:n},(_,i)=>base+amp*Math.sin(i/5+seed)+amp*.4*Math.sin(i/1.7+seed*3)+(i>36&&i<41?amp*1.6:0));
+const kpis=[
+  {l:'活跃会话',v:'5',u:'',d:'24h 区间 4–8',c:'#4176E6',s:wave(5.2,.8,48,1),lvl:''},
+  {l:'等待锁',v:'0',u:'',d:'24h 无锁等待',c:'#C9862D',s:Array(48).fill(0).map((_,i)=>i===22?1:0),lvl:''},
+  {l:'连接使用率',v:'1.2',u:'%',d:'12 / 1000 · 阈值 80%',c:'#3FA552',s:wave(1.2,.15,48,2),lvl:''},
+  {l:'每秒事务',v:'2.3',u:'TPS',d:'提交 2.3 · 回滚 0（回滚率 0%）',c:'#4176E6',s:wave(2.4,1.1,48,3),lvl:''},
+  {l:'每秒语句',v:'0.17',u:'QPS',d:'近 1 分钟 · 24h 峰值 41',c:'#4176E6',s:wave(1.5,1.4,48,4),lvl:''},
+  {l:'平均语句耗时',v:'4.9',u:'ms',d:'elapse_us / calls · 24h 峰值 116 ms',c:'#8E6BD6',s:wave(6,3,48,5),lvl:''},
+  {l:'缓存命中率',v:'96.2',u:'%',d:'阈值：<99% 关注 · <95% 告警',c:'#C9862D',s:wave(96.3,.6,48,6),lvl:'notice'},
+  {l:'物理读 / 秒',v:'0.0',u:'blk/s',d:'逻辑读 23 blk/s',c:'#2AA6B3',s:wave(.2,.2,48,7).map(v=>Math.max(0,v)),lvl:''},
+];
+document.getElementById('kpis').innerHTML=kpis.map(k=>`<div class="kpi ${k.lvl}"><div class="l">${k.l}${k.lvl?'<span class="chip notice">关注</span>':''}</div><div class="v num">${k.v}<small>${k.u}</small></div>${spark(k.s,k.c)}<div class="d">${k.d}</div></div>`).join('');
+// ── OS 层曲线（CPU / 负载 / 内存 / IO）──
+const osk=[
+  {l:'CPU 忙',v:'4.1',u:'%',d:'用户 2.9 · 系统 1.2 · 24h 峰值 31%（08:30 大聚合窗口）',c:'#4176E6',s:wave(4.5,2.2,48,8).map((v,i)=>i>=36&&i<41?v+24:v),lvl:''},
+  {l:'负载 / 核数',v:'5.1',u:'/ 18 核',d:'28% · 24h 峰值 7.9 · 阈值：> 核数 关注 · > 2×核数 告警',c:'#3FA552',s:wave(5.1,1.2,48,9),lvl:''},
+  {l:'内存（数据库进程）',v:'—',u:'',d:'待补采集：gs_total_memory_detail 的 process_used / max_process_memory；物理内存 64.8 GB',c:'#ADB2B8',s:null,lvl:'',todo:true},
+  {l:'IO 等待',v:'0.15',u:'%',d:'物理读 0.0 blk/s · 逻辑读 23 blk/s · 24h 峰值 2.1%',c:'#C9862D',s:wave(.2,.12,48,10).map((v,i)=>Math.max(0,i>=36&&i<41?v+1.8:v)),lvl:''},
+];
+document.getElementById('kpis-os').innerHTML=osk.map(k=>`<div class="kpi ${k.lvl}"><div class="l">${k.l}${k.todo?'<span class="chip grey">待补采集</span>':''}</div><div class="v num">${k.v}<small>${k.u}</small></div>${k.s?spark(k.s,k.c):'<svg viewBox="0 0 300 44" preserveAspectRatio="none"><line x1="3" y1="41" x2="297" y2="41" stroke="rgba(0,0,0,.08)"/><polyline points="3,30 60,26 120,28 180,24 240,27 297,25" fill="none" stroke="#ADB2B8" stroke-width="1.4" stroke-dasharray="4 4"/></svg>'}<div class="d">${k.d}</div></div>`).join('');
+// ── CPU 时间分解（user / sys / iowait / idle）──
+const cpu=[['用户',2.9,'var(--c1)'],['系统',1.2,'var(--c4)'],['IO 等待',0.15,'var(--c3)'],['空闲',95.75,'var(--rest)']];
+document.getElementById('cpu-stack').innerHTML=cpu.map(p=>`<div style="width:${p[1]}%;background:${p[2]}" title="${p[0]} ${p[1]}%"></div>`).join('');
+document.getElementById('cpu-legend').innerHTML=cpu.map(p=>`<span><i style="background:${p[2]}"></i>${p[0]} <b class="num" style="font-weight:600;color:var(--ink)">${p[1]}%</b></span>`).join('');
+// ── DB Time 构成 ──
+const parts=[['执行（含 CPU 77%）',86.1,'var(--c1)'],['计划',3.6,'var(--c4)'],['PL/SQL',3.6,'var(--c5)'],['网络发送',1.4,'var(--c2)'],['解析',1.3,'var(--c3)'],['其他（改写 / IO）',0.5,'var(--c7)']];
+const tot=parts.reduce((s,p)=>s+p[1],0);
+document.getElementById('dbtime').innerHTML=parts.map(p=>`<div style="width:${(p[1]/tot*100).toFixed(1)}%;background:${p[2]}" title="${p[0]} ${p[1]}%"></div>`).join('');
+document.getElementById('dbtime-legend').innerHTML=parts.map(p=>`<span><i style="background:${p[2]}"></i>${p[0]} <b class="num" style="font-weight:600;color:var(--ink)">${(p[1]/tot*100).toFixed(1)}%</b></span>`).join('');
+// ── 增长折线（14 天，含 09-02 清理悬崖）──
+(()=>{const d=[['08-26',2229],['08-27',3821],['08-28',2707],['08-29',478],['08-30',478],['08-31',252],['09-01',58],['09-02',129.5],['09-03',42.08],['09-04',42.09],['09-05',42.09],['09-06',42.1]];
+const svg=document.getElementById('growth');const W=560,H=150,L=44,R=12,T=10,B=26;const max=Math.max(...d.map(x=>x[1]));const ys=v=>T+(1-Math.log10(v+1)/Math.log10(max+1))*(H-T-B);const xs=i=>L+i/(d.length-1)*(W-L-R);
+let s=`<line x1="${L}" y1="${H-B}" x2="${W-R}" y2="${H-B}" stroke="rgba(0,0,0,.12)"/>`;
+[10,100,1000].forEach(g=>{s+=`<line x1="${L}" y1="${ys(g)}" x2="${W-R}" y2="${ys(g)}" stroke="rgba(0,0,0,.06)" stroke-dasharray="3 4"/><text x="${L-6}" y="${ys(g)+4}" font-size="11" fill="#81858C" text-anchor="end">${g}</text>`});
+const pts=d.map((x,i)=>`${xs(i)},${ys(x[1])}`).join(' ');
+s+=`<polygon points="${xs(0)},${H-B} ${pts} ${xs(d.length-1)},${H-B}" fill="rgba(65,118,230,.08)"/><polyline points="${pts}" fill="none" stroke="#4176E6" stroke-width="2" stroke-linejoin="round"/>`;
+d.forEach((x,i)=>{ if(i%2===1||i===d.length-1) s+=`<text x="${xs(i)}" y="${H-8}" font-size="11" fill="#81858C" text-anchor="middle">${x[0]}</text>`; });
+s+=`<circle cx="${xs(7)}" cy="${ys(129.5)}" r="4" fill="#fff" stroke="#E07A1F" stroke-width="2"/><text x="${xs(7)+8}" y="${ys(129.5)-6}" font-size="11.5" fill="#E07A1F">清理悬崖</text>`;
+s+=`<circle cx="${xs(d.length-1)}" cy="${ys(42.1)}" r="3.5" fill="#4176E6"/><text x="${xs(d.length-1)-6}" y="${ys(42.1)-8}" font-size="12" font-weight="600" fill="#0F1115" text-anchor="end">42.1 GB</text>`;
+s+=`<text x="${L-6}" y="${T+6}" font-size="10.5" fill="#ADB2B8" text-anchor="end">对数轴</text>`;
+svg.innerHTML=s;})();
+</script>
+</body>
+</html>

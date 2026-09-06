@@ -166,6 +166,8 @@ export function apply(ctx: any): void {
     const w = window as any;
     w.__opendbHarness__ = w.__opendbHarness__ ?? {};
     w.__opendbHarness__.openSession = (id: string) => { setState({ view: 'chat' }); ctx.sessions.open(id); };
+    // 2026-09-06 数据库大盘：五类判决卡「查看报告 →」/ 任务表行点击 → 直接跳到该任务的专属面板
+    w.__opendbHarness__.openTask = (taskId: string) => { setState({ view: 'tasks', selectedTaskId: taskId }); };
   } catch { /* 桥不可用时面板退回 ctx.sessions.open */ }
 
   // 2026-08-28 user 报障：在任务报表页点侧栏顶部「新会话」没反应——那个按钮是官方侧栏的，它在聊天区起草新会话，

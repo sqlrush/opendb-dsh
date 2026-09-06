@@ -43,6 +43,14 @@ export const OPENGAUSS_DIALECT: Dialect = {
       sql: "SELECT 'db.wait_by_type.' || lower(type) AS metric, sum(total_wait_time)::float8 AS value "
         + "FROM dbe_perf.wait_events WHERE total_wait_time > 0 AND upper(type) <> 'STATUS' GROUP BY type",
     },
+    // 2026-09-06 数据库大盘重构：数据库进程内存已用/上限——dbe_perf.os_runtime 只有物理内存总量，没有已用。
+    // gs_total_memory_detail 单位 MB，入库统一换算成字节；采集器对单条查询失败已容错，此视图不可用不影响其余指标。
+    {
+      key: 'mem_detail',
+      title: '数据库进程内存',
+      sql: "SELECT 'db.mem.' || lower(memorytype) AS metric, (memorymbytes::float8 * 1048576) AS value FROM gs_total_memory_detail "
+        + "WHERE memorytype IN ('max_process_memory','process_used_memory','max_dynamic_memory','dynamic_used_memory')",
+    },
     // QPS 原料：statement 的累计调用数与耗时，差分即得 QPS 与平均延迟。
     {
       key: 'stmt_totals',

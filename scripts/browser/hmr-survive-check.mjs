@@ -42,12 +42,14 @@ await home();
 // 立刻恢复的话一秒内又变回原 rev，客户端根本不重载，检查就白跑（首版脚本踩过）。
 const HOST_POD = 'HP=$(kubectl -n opendb-dsh get pod -l app=opendb-dsh-host -o name | head -1 | sed "s#pod/##")';
 const CP = 'kubectl -n opendb-dsh cp packages/ui-harness/lib/client.js $HP:/app/packages/ui-harness/lib/client.js -c host';
+// 变体写到 /tmp 再 cp 进 pod，**绝不改本地构建产物**：首版是"追加→cp→再恢复"，kubectl 中途失败（2026-09-06 API 抖动）
+// 就把标记行永久留在 lib/client.js 里，之后每次热更都带着它上线。
+const VARIANT = '/tmp/ui-harness.client.variant.js';
 const before = reloads.length;
 execSync([
-  'cp packages/ui-harness/lib/client.js /tmp/ui-harness.client.js.bak',
-  `printf '\\n// hmr-survive-check %s\\n' "$(date +%s)" >> packages/ui-harness/lib/client.js`,
-  HOST_POD, CP,
-  'cp /tmp/ui-harness.client.js.bak packages/ui-harness/lib/client.js',
+  `cp packages/ui-harness/lib/client.js ${VARIANT}`,
+  `printf '\\n// hmr-survive-check %s\\n' "$(date +%s)" >> ${VARIANT}`,
+  HOST_POD, `kubectl -n opendb-dsh cp ${VARIANT} $HP:/app/packages/ui-harness/lib/client.js -c host`,
 ].join(' && '), { stdio: 'ignore', shell: '/bin/bash' });
 console.log('已热更 ui-harness（变体留在 pod 里），等 30s 让客户端重载模块…');
 await sleep(30000);

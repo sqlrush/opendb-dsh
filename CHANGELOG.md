@@ -7,6 +7,26 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+- **数据库大盘（每个节点的专属页）重构（user 2026-09-06 批准设计稿 `docs/prototypes/node-r1.html`）**：原页面只有 5 个小数字 + 3 条迷你曲线 +
+  几十行字典变更原始表。新页八段：页头（身份 + **综合结论**：五类巡检最近结论取最差档，过期结论灰显不进综合——时效 = cron 周期 ×2 / 手动 7 天）
+  → 现在（8 项 KPI：活跃会话 / 等待锁 / 连接使用率 / TPS / QPS / 平均语句耗时 / 缓存命中率 / 物理读，阈值着色 + 24h/7d 迷你曲线）
+  → 主机 OS 层（CPU 忙 / 每核负载 / 数据库进程内存 / IO 等待占比）→ DB Time 构成（instance_time 差分）+ 主机资源明细 → 五类巡检判决卡
+  （级别 · 一句话 · 关键数 · cron/逾期 · 深挖 / 查看报告）→ 存储与增长（容量采样按天，>20 倍跨度自动对数轴）+ 变更时间轴（字典变更按分钟×schema 折叠成批次，
+  schema 级删除=严重、含删除=告警）→ 本节点定时任务（按 cron 判逾期）→ 关于这个库平台记住了什么（记忆 / 知识 / 图谱）。
+  零按钮：只有 DigLink 三态文字链与「查看报告 →」（新增 ui-harness 桥 `openTask`）。
+  数据：`ui-opendb` 新端点 `nodes/dashboard` 一次出全页（装配 `node-dashboard.ts`，计数器一律差分成速率，纯函数单测 7 组）；
+  采集器新增 `db.mem.process_used_memory / max_process_memory`（`gs_total_memory_detail`），并把单条指标查询失败改为跳过不拖累整轮；
+  未采集项（磁盘吞吐 / 网络）明说"未采集"，不留假 0。验收 `scripts/browser/node-panel-check.mjs` 进 rollout 门禁。
+- **`rollout.sh` 增加磁盘压力预检（2026-09-06 事故）**：OrbStack 各 VM 共用 mac 数据盘，kubelet 默认 `imagefs.available<15%`（826G 视图 ≈124G）
+  就给全部节点打 `disk-pressure` 污点——这次滚动构建完的新 Pod 与 postgres 全部 Pending 四小时、旧 Pod 被驱逐。现在任一节点带污点或
+  mac 数据盘可用 < 130G（`OPENDB_MIN_FREE_G`）就拒绝滚动，不再先构建再发现调度不了；复盘与两条恢复路径见 CLUSTER.md。
+  同日再加固：kubectl 统一走 `k()`（按字面量地址 + `--tls-server-name=k8s-cp` 连 API、20s 请求硬超时、连接错误换地址重试），
+  `rollout status` 改短轮询不用长 watch，就绪判定只看活着的 Pod（驱逐留下的 Completed 尸体不算），连不上 API 时明说而不是记 0 个失败；
+  并定下**必须在活着的 ssh 会话前台跑**（nohup 脱离会话后 kubectl 连不上 OrbStack VM 网段，一晚六轮假阴性）。
+  验收脚本两处修正：`node-panel-check` 的 KPI 数字判定不再依赖不存在的 `<main>`、截图拉到内容全高；`hmr-survive-check` 的热更变体
+  写 /tmp 再 cp，不再改本地 `lib/client.js`（kubectl 中途失败曾把标记行永久留在产物里）。
+
 ### Fixed
 - **开着的页签在 ui-harness 热更/滚动后任务页退回历史列表、资源页空白（"报告变成历史列表"第四种成因，2026-09-05 user 报障）**：
   dsh 客户端检测到插件文件变化会重新执行 ui-harness 模块，模块级 `Map` 注册表重建为空，而各任务/资源插件的 client.js 没变、

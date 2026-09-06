@@ -1733,6 +1733,10 @@ importers:
         version: 18.3.1
 
   packages/ui-node-monitor:
+    dependencies:
+      '@opendb-dsh/chart-kit':
+        specifier: workspace:*
+        version: link:../chart-kit
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1
@@ -1758,6 +1762,9 @@ importers:
       '@opendb-dsh/registry':
         specifier: workspace:*
         version: link:../registry
+      '@opendb-dsh/tasks':
+        specifier: workspace:*
+        version: link:../tasks
       '@opendb-dsh/tool-chart':
         specifier: workspace:*
         version: link:../tool-chart

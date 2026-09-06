@@ -105,10 +105,16 @@ export default class CollectorService extends Service {
     const queries = this.db.dialect(node.engine).metrics ?? [];
     let written = 0;
     for (const q of queries) {
-      const r = await this.db.query(node, q.sql, { maxRows: 2000 });
-      const points = rowsToPoints(node.id, r.rows, at);
-      await this.metrics.record(points);
-      written += points.length;
+      // 单条查询失败只丢这一组指标（2026-09-06：新增 gs_total_memory_detail 等可选视图，某版本/某权限下可能不存在，
+      // 不能让一条失败把同轮其余 30 多条指标一起拖没）。
+      try {
+        const r = await this.db.query(node, q.sql, { maxRows: 2000 });
+        const points = rowsToPoints(node.id, r.rows, at);
+        await this.metrics.record(points);
+        written += points.length;
+      } catch (cause) {
+        process.stderr.write(`[collector] ${node.name ?? node.id} 指标组 ${q.key} 采集失败，跳过：${String((cause as Error).message ?? cause).slice(0, 200)}\n`);
+      }
     }
     return written;
   }

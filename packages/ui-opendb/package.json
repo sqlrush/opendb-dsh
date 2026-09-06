@@ -24,6 +24,7 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "@opendb-dsh/agent-loop-dispatch": "workspace:*",
     "@opendb-dsh/registry": "workspace:*",
+    "@opendb-dsh/tasks": "workspace:*",
     "@opendb-dsh/tool-chart": "workspace:*"
   },
   "devDependencies": {

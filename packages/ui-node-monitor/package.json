@@ -1,7 +1,8 @@
 {
   "name": "@opendb-dsh/ui-node-monitor",
   "version": "0.0.1",
-  "description": "Node monitor detail panel (client-only): stat cards + 24h sparklines + dict change stream; registers into ui-harness via window bridge",
+  "description": "Database dashboard per node (client-only): verdict, KPI/OS sparklines, DB time, five inspection verdicts, storage, change timeline, tasks, knowledge; registers into ui-harness via window bridge",
+  "dependencies": { "@opendb-dsh/chart-kit": "workspace:*" },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

@@ -1,6 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { openRows, projectQueue, queueFrameItems } from '@opendb-dsh/agent-loop-dispatch';
 import { resolveMetric, compute, toAsc, downsample, stats } from '@opendb-dsh/tool-chart';
+import { buildNodeDashboard } from './node-dashboard.ts';
 
 export const name = 'ui-opendb';
 export const inject = ['connection', 'webServer', 'opendbRegistry', 'opendbTasks', 'opendbMetrics', 'opendbDictionary', 'opendbThresholds'];
@@ -165,6 +166,14 @@ export function apply(ctx: Context): void {
           return { ok: true, value: { sessions } };
         }
         // ── W5.5：节点监控详情（最新指标 + 24h 降采样趋势 + 字典变更）────
+        case 'nodes/dashboard': {
+          // 2026-09-06 数据库大盘重构：一次 RPC 出全页（设计稿 docs/prototypes/node-r1.html），装配见 node-dashboard.ts
+          if (typeof payload?.nodeId !== 'string') return bad('nodeId required');
+          const hours = payload?.hours === 168 ? 168 : 24;
+          const dash = await buildNodeDashboard({ pool: tasks.pool, registry, metrics: anyCtx.opendbMetrics }, payload.nodeId, hours);
+          if (dash === undefined) return bad(`node ${payload.nodeId} not found`);
+          return { ok: true, value: dash };
+        }
         case 'nodes/detail': {
           if (typeof payload?.nodeId !== 'string') return bad('nodeId required');
           const nodes = await registry.listNodes();
