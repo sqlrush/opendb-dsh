@@ -65,6 +65,10 @@ if [ "$bad" != "0" ]; then
 fi
 if curl -s -m 3 127.0.0.1:9333/json/version >/dev/null; then
   echo "  浏览器验收（无头 Chrome）："; node scripts/browser/task-panel-check.mjs 2>&1 | grep -v WATCHDOG | sed 's/^/    /' || fail=1
+  # 2026-09-06 「大盘报表又没了」两次报障后加的两道门：
+  #   ① 页面在后端抖动窗口里加载缺插件 → 必须自愈重载（selfheal-check）；② 开着的页签扛住 ui-harness 热更（hmr-survive-check）
+  echo "  自愈验收（缺插件自动重载）："; node scripts/browser/selfheal-check.mjs 2>&1 | grep -v WATCHDOG | sed 's/^/    /' || fail=1
+  echo "  热更存活验收（注册表不丢）："; node scripts/browser/hmr-survive-check.mjs 2>&1 | grep -v WATCHDOG | sed 's/^/    /' || fail=1
 else
   note "无头 Chrome 9333 不在，跳过浏览器验收（见 CLUSTER.md 重拉命令）"
 fi

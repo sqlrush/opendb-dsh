@@ -66,6 +66,9 @@
   任一项失败即非零退出。「报告变成历史列表」同一症状出过四次（注册竞态 ×2、滚动窗口 ×1、**ui-harness 热重载清空注册表 ×1**
   ——2026-09-05：开着的页签坏、新开页面好，rollout 验收抓不到；注册表已挂 window，改 state.ts 注册逻辑后必须跑
   `scripts/browser/hmr-survive-check.mjs`），验收脚本就是为它立的。**热更/滚动 ui-harness 后要提醒 user 刷新开着的页签**。
+  第五种成因（2026-09-06，k8s 重启后）：页面在后端抖动窗口里加载/重连时插件 client.js 拉不到，dsh client-modules **不重试**，
+  注册表永久缺项——已由 `ui-harness/self-heal.ts` 自愈（缺面板且后端恢复 → 整页重载一次），门禁 `scripts/browser/selfheal-check.mjs`。
+  以后任何"面板/资源项消失"的报障，先看 console 里 `[opendb-harness] 面板缺失` 日志，再看 `window.__opendbHarness__.__registries`。
 - **新建插件包三处缺一不可**：`packages/<pkg>` 本体、`bundle-host/bundle-runtime` 的 cordis.patch.yml 插入行、
   **`profiles/host|runtime/package.json` 的 workspace 依赖**。dsh 从 `/var/lib/dsh/profiles/<profile>/` 解析插件，
   漏第三处 = 镜像能建、pod 启动 `ERR_MODULE_NOT_FOUND` 崩循环（2026-08-24 thresholds 三包实证；

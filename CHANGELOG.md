@@ -13,6 +13,12 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
   不会重新注册；新开页面一切正常，所以此前 rollout 验收（总是新开页面）抓不到。修法：注册表挂到 `window.__opendbHarness__.__registries`，
   模块重来时复用同一份（`state.ts registries()`）。新增回归脚本 `scripts/browser/hmr-survive-check.mjs`（真的热更一次再看同一页签），
   修前 FAIL（defaultView=true / 资源页 421 字符）、修后 PASS。
+- **面板自愈（2026-09-06，user k8s 重启后第二次报障「大盘报表又没了」）**：页面在后端抖动窗口里加载或重连时（滚动更新 / k8s 重启 /
+  Host 崩溃重启），个别插件 client.js 拉不到，dsh client-modules **不会重试**（实测：阻断 task-capacity/ui-cluster 再解除，40s 内不恢复），
+  注册表永久缺项——任务页空白、侧栏「资源」项消失，直到人工刷新；此前的注册表修复覆盖不到这一路。新增 `ui-harness/self-heal.ts`：
+  按本页启动清单（`window.__DSH_BOOT__.entries`）算应有面板提供方，与注册表比对，缺了且后端已恢复就整页重载一次（加载后 20s/60s/150s、
+  页签重新可见、网络恢复时核对；5 分钟内最多重载一次防循环）。验收 `scripts/browser/selfheal-check.mjs`（阻断插件加载→解除→
+  必须自愈重载且注册表齐全）与 `hmr-survive-check.mjs` 一并进入 `rollout.sh` 门禁。
 
 ### Removed
 - **去掉会话输入框上的 dsh 原生「权限预设」下拉（Read Only / Full Access / Workspace Write / Custom；user 2026-09-05 交付冲刺定）**：

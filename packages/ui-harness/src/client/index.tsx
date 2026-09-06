@@ -11,6 +11,7 @@ import { Component, type ReactNode } from 'react';
 import { makeSidebar } from './sidebar.tsx';
 import { makeOverlay } from './overlay.tsx';
 import { startQueueSync, currentSessionId } from './queue-sync.ts';
+import { startSelfHeal } from './self-heal.ts';
 import { getState, setState } from './state.ts';
 
 /** 构建期由 build-client.mjs 从根 package.json 注入（esbuild define）；类型检查时只需声明 */
@@ -197,6 +198,12 @@ export function apply(ctx: any): void {
     const stop = startQueueSync(ctx, call);
     if (typeof ctx.effect === 'function') ctx.effect(() => stop, 'harness.queueSync');
   } catch { /* 无排队展示也不能挡住整个 UI */ }
+
+  // 面板自愈（见 self-heal.ts）：页面在后端抖动窗口里加载/重连导致插件没拉到时，自动整页重载一次
+  try {
+    const stop = startSelfHeal();
+    if (typeof ctx.effect === 'function') ctx.effect(() => stop, 'harness.selfHeal');
+  } catch { /* 自愈失效不影响启动 */ }
 
   takeOverBranding();
 }

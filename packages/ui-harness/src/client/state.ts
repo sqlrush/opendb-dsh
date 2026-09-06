@@ -80,6 +80,10 @@ export function registerTaskPanel(typeKey: string, component: TaskPanelComponent
 export function getTaskPanel(typeKey: string): TaskPanelComponent | undefined {
   return taskPanels.get(typeKey);
 }
+/** 已注册的任务面板类型键（自愈核对 / 诊断用）。 */
+export function listTaskPanels(): string[] {
+  return [...taskPanels.keys()];
+}
 
 /**
  * 跨 client 插件桥：任务类型插件的 client 半边经 window 注册面板。
