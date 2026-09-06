@@ -7,6 +7,13 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+- **开着的页签在 ui-harness 热更/滚动后任务页退回历史列表、资源页空白（"报告变成历史列表"第四种成因，2026-09-05 user 报障）**：
+  dsh 客户端检测到插件文件变化会重新执行 ui-harness 模块，模块级 `Map` 注册表重建为空，而各任务/资源插件的 client.js 没变、
+  不会重新注册；新开页面一切正常，所以此前 rollout 验收（总是新开页面）抓不到。修法：注册表挂到 `window.__opendbHarness__.__registries`，
+  模块重来时复用同一份（`state.ts registries()`）。新增回归脚本 `scripts/browser/hmr-survive-check.mjs`（真的热更一次再看同一页签），
+  修前 FAIL（defaultView=true / 资源页 421 字符）、修后 PASS。
+
 ### Removed
 - **去掉会话输入框上的 dsh 原生「权限预设」下拉（Read Only / Full Access / Workspace Write / Custom；user 2026-09-05 交付冲刺定）**：
   该预设只控制**文件沙箱模式 + shell 工具审批策略**，而 opendb-harness 的 Runtime 是零本地执行（tool-bash/fs/编辑器/沙箱/permission

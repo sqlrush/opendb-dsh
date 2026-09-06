@@ -47,7 +47,29 @@ export function subscribe(fn: () => void): () => void {
 // runId 是可选契约：面板可据它定位到指定那次运行的报告（''/缺省 = 最新）。
 // 老面板不读这个字段也不受影响——多传一个 prop 而已。
 export type TaskPanelComponent = (props: { task: any; runId?: string; call: (endpoint: string, payload?: unknown) => Promise<any> }) => any;
-const taskPanels = new Map<string, TaskPanelComponent>();
+
+/**
+ * 注册表宿主：挂在 window.__opendbHarness__ 上，不做模块级变量（2026-09-05 事故，"报告变成历史列表"第四种成因）：
+ * ui-harness 热更/滚动后，dsh 客户端会重新执行本模块——模块级 Map 重建为空，而各任务/资源插件的 client.js 没变、
+ * 不会重新注册 → 开着的页签任务页退回默认视图、资源页空白，新开页面却一切正常。挂在 window 上，模块重来时接着用同一份。
+ * 复现/回归：scripts/browser/hmr-survive-check.mjs。
+ */
+type Registries = {
+  task: Map<string, TaskPanelComponent>;
+  resource: Map<string, ResourcePanelComponent>;
+  knowledge: Map<string, KnowledgePanelComponent>;
+  node: { panel?: NodePanelComponent };
+};
+function registries(): Registries {
+  const host: Record<string, unknown> = typeof window === 'undefined' ? {} : (window.__opendbHarness__ ??= {});
+  const existing = host.__registries as Registries | undefined;
+  if (existing !== undefined) return existing;
+  const fresh: Registries = { task: new Map(), resource: new Map(), knowledge: new Map(), node: {} };
+  host.__registries = fresh;
+  return fresh;
+}
+const REG = registries();
+const taskPanels = REG.task;
 
 export function registerTaskPanel(typeKey: string, component: TaskPanelComponent): () => void {
   taskPanels.set(typeKey, component);
@@ -91,7 +113,7 @@ export const RESOURCE_ITEMS: { key: string; label: string }[] = [
   { key: 'cluster', label: 'k8s 集群状态' },
   { key: 'usage', label: '模型用量' },
 ];
-const resourcePanels = new Map<string, ResourcePanelComponent>();
+const resourcePanels = REG.resource;
 export function registerResourcePanel(panel: ResourcePanelComponent, key = 'usage'): () => void {
   resourcePanels.set(key, panel);
   for (const fn of listeners) fn();
@@ -114,7 +136,7 @@ export type KnowledgePanelComponent = () => any;
 export const KNOWLEDGE_ITEMS: { key: string; label: string }[] = [
   { key: 'dashboard', label: '知识库大盘' },
 ];
-const knowledgePanels = new Map<string, KnowledgePanelComponent>();
+const knowledgePanels = REG.knowledge;
 export function registerKnowledgePanel(panel: KnowledgePanelComponent, key = 'dashboard'): () => void {
   knowledgePanels.set(key, panel);
   for (const fn of listeners) fn();
@@ -127,13 +149,12 @@ export function listKnowledgePanels(): { key: string; label: string }[] {
 
 /** 节点监控详情面板（ui-node-monitor 插件注册；W6 拆包——ui-harness 内置实现降级备用）。 */
 export type NodePanelComponent = (props: { nodeId: string }) => any;
-let nodePanel: NodePanelComponent | undefined;
 export function registerNodePanel(panel: NodePanelComponent): () => void {
-  nodePanel = panel;
+  REG.node.panel = panel;
   for (const fn of listeners) fn();
-  return () => { nodePanel = undefined; };
+  return () => { REG.node.panel = undefined; };
 }
-export function getNodePanel(): NodePanelComponent | undefined { return nodePanel; }
+export function getNodePanel(): NodePanelComponent | undefined { return REG.node.panel; }
 
 // ── 建桥 + 兑现排队（放在三个 register 都定义完之后）───────────────────────────
 // 先到的插件可能已经建了个只有 __pending 的占位对象，这里合并它并把队列一次性兑现。
