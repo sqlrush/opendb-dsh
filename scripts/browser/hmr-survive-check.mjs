@@ -28,12 +28,15 @@ for (let i = 0; i < 3; i += 1) {
   await sleep(800); if (!n) break;
 }
 const clickSide = (name) => p.evaluate((n) => { const el = [...document.querySelectorAll('div,span,a')].find((x) => (x.textContent || '').trim() === n && x.getBoundingClientRect().x < 320 && x.getBoundingClientRect().width > 0); if (!el) return false; el.click(); return true; }, name);
-const taskState = async () => { await clickSide(TASK); await sleep(4000); return p.evaluate(() => { const t = document.body.innerText; return { defaultView: /当前是默认视图|面板插件包没加载上|没有注册出/.test(t), len: t.length }; }); };
+// 判据 = 面板专属标题出现 + 不是默认视图，不看字数：字数随数据变（2026-09-17 一次采集没存档，容量页只剩摘要 811 字，门禁误报）。
+// 这道门测的是"注册表在热更后没丢"，与报告内容无关。换 TASK 时同步换 PANEL_MARK（该面板无论有无数据都会渲染的标题）。
+const PANEL_MARK = new RegExp(process.env.PANEL_MARK ?? '容量态势');
+const taskState = async () => { await clickSide(TASK); await sleep(4000); return p.evaluate((mark) => { const t = document.body.innerText; return { defaultView: /当前是默认视图|面板插件包没加载上|没有注册出/.test(t), marked: new RegExp(mark).test(t), len: t.length }; }, PANEL_MARK.source); };
 const usageState = async () => { await clickSide('模型用量'); await sleep(4000); return p.evaluate(() => ({ len: document.body.innerText.length })); };
 const home = async () => { await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === '新会话'); el?.click(); }); await sleep(1500); };
 
 const t0 = await taskState();
-check(`热更前 ${TASK} 是专属面板`, !t0.defaultView && t0.len > 1000, `len=${t0.len}`);
+check(`热更前 ${TASK} 是专属面板`, !t0.defaultView && t0.marked, `标题=${t0.marked} len=${t0.len}`);
 const u0 = await usageState();
 check('热更前「模型用量」有内容', u0.len > 1200, `len=${u0.len}`);
 await home();
@@ -56,7 +59,7 @@ await sleep(30000);
 check('客户端确实重新加载了 ui-harness 模块', reloads.length > before, `reloads=${reloads.length - before}`);
 
 const t1 = await taskState();
-check(`热更后同一页签 ${TASK} 仍是专属面板`, !t1.defaultView && t1.len > 1000, `len=${t1.len} defaultView=${t1.defaultView}`);
+check(`热更后同一页签 ${TASK} 仍是专属面板`, !t1.defaultView && t1.marked, `标题=${t1.marked} len=${t1.len} defaultView=${t1.defaultView}`);
 const u1 = await usageState();
 check('热更后同一页签「模型用量」仍有内容', u1.len > 1200, `len=${u1.len}`);
 check('console/page 零错误', errs.length === 0, errs.slice(0, 2).join(' | '));

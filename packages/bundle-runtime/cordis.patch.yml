@@ -168,13 +168,25 @@
 - id: agent-default-model
   config:
     # 2026-08-29 user：DeepSeek 余额用完，换 Kimi K3 为默认（与 bundle-host 同形）
-    provider: kimi
-    model: k3
+    # 2026-09-17 user：默认改为智谱 GLM-5.3（与 bundle-host 同形）
+    provider: glm
+    model: glm-5.3
 # ── 本机推理：mac 宿主 Ollama + Qwen3.8-27B（user 2026-08-24：仅作为可选模型）──
 # Runtime 才是真正发起模型调用的一侧，路由必须在这里也声明一份（与 bundle-host 保持同形）。
 - id: llm-pi-ai
   config:
     providers:
+      # ── 智谱 GLM-5.3（GLM 编程套餐入口，OpenAI 兼容；key 的额度只在 coding 入口可用，实测依据见 bundle-host 同处注释，两边必须同形）──
+      glm:
+        displayName: 智谱 GLM
+        api: openai-completions
+        baseURL: !!js process.env.OPENDB_GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/coding/paas/v4'
+        apiKeyEnv: OPENDB_GLM_API_KEY
+        models:
+          - id: glm-5.3
+            name: GLM-5.3
+            contextWindow: 131072
+            maxTokens: 32768
       # ── Kimi K3（Kimi Code API，OpenAI 兼容，实测支持 function calling，返回 reasoning_content；maxTokens 给足）──
       kimi:
         displayName: Kimi K3

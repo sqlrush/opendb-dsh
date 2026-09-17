@@ -68,6 +68,13 @@ postgres://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@{{ .Relea
 - name: OPENDB_KIMI_BASE_URL
   value: {{ .Values.llm.kimiBaseUrl | quote }}
 {{- end }}
+{{- /* 智谱 GLM-5.3（2026-09-17 起默认）：key 同放 llm.existingSecret（键 OPENDB_GLM_API_KEY，optional：没配也不拦启动） */}}
+- name: OPENDB_GLM_API_KEY
+  valueFrom: { secretKeyRef: { name: {{ .Values.llm.existingSecret }}, key: OPENDB_GLM_API_KEY, optional: true } }
+{{- if .Values.llm.glmBaseUrl }}
+- name: OPENDB_GLM_BASE_URL
+  value: {{ .Values.llm.glmBaseUrl | quote }}
+{{- end }}
 - name: DSH_TELEMETRY_DISABLED
   value: "1"
 - name: DSH_PERMISSION_MODE

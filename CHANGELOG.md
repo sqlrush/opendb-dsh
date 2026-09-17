@@ -8,6 +8,13 @@ opendb-harness（仓库 opendb-dsh）的版本记录。格式遵循 [Keep a Chan
 ## [Unreleased]
 
 ### Changed
+- **默认模型切到智谱 GLM-5.3（user 2026-09-17）**：`llm-pi-ai` 新增 `glm` 路由（GLM 编程套餐入口 `https://open.bigmodel.cn/api/coding/paas/v4`，
+  OpenAI 兼容，可由 `OPENDB_GLM_BASE_URL` / values `llm.glmBaseUrl` 覆盖），bundle-host / bundle-runtime 的 `agent-default-model` 改为 `glm/glm-5.3`；
+  key 经 Secret `opendb-dsh-llm` 的 `OPENDB_GLM_API_KEY` 注入（chart commonEnv，optional）。实测：`/models` 列出 glm-5.3，
+  非流式与流式 + function calling 均可用（Runtime Pod 内直连），返回 reasoning_content。`contextWindow` 取 131072 保守值、`maxTokens` 32768。
+  **入口必须是 coding**：该 key 是编程套餐 key，通用入口 `/api/paas/v4` 对任何模型都 429 code 1113「余额不足或无可用资源包」——
+  首轮直调通用入口成功是零星试用余额、几次测试即耗尽，首次滚动后平台冒烟当场 429 才暴露，随即改入口重滚。
+  Kimi K3 与 DeepSeek 路由保留，输入框右下角选择器里仍可切回。
 - **数据库大盘（每个节点的专属页）重构（user 2026-09-06 批准设计稿 `docs/prototypes/node-r1.html`）**：原页面只有 5 个小数字 + 3 条迷你曲线 +
   几十行字典变更原始表。新页八段：页头（身份 + **综合结论**：五类巡检最近结论取最差档，过期结论灰显不进综合——时效 = cron 周期 ×2 / 手动 7 天）
   → 现在（8 项 KPI：活跃会话 / 等待锁 / 连接使用率 / TPS / QPS / 平均语句耗时 / 缓存命中率 / 物理读，阈值着色 + 24h/7d 迷你曲线）

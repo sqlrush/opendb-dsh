@@ -5,8 +5,9 @@ image:
   pullPolicy: Always            # dev iteration re-pushes the same tag; pin by git sha in real environments
 
 llm:
-  existingSecret: opendb-dsh-llm  # must contain DEEPSEEK_API_KEY (create with deploy/k8s/p0/secret.example.yaml); OPENDB_KIMI_API_KEY optional (Kimi K3, 2026-08-29)
+  existingSecret: opendb-dsh-llm  # must contain DEEPSEEK_API_KEY (create with deploy/k8s/p0/secret.example.yaml); OPENDB_KIMI_API_KEY / OPENDB_GLM_API_KEY optional
   kimiBaseUrl: https://api.kimi.com/coding/v1   # Kimi Code API（OpenAI 兼容，模型 k3 / k3-256k）
+  glmBaseUrl: https://open.bigmodel.cn/api/coding/paas/v4   # 智谱 GLM 编程套餐入口（OpenAI 兼容，默认模型 glm-5.3，2026-09-17）；当前 key 是编程套餐 key，通用入口 /api/paas/v4 会 429「余额不足」
   deepseekBaseUrl: ""             # optional DEEPSEEK_BASE_URL
 
 postgres:

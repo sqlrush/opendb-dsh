@@ -55,7 +55,8 @@ check('齐全后再核对返回 ok（不会重复重载）', second === 'ok' || 
 await p.evaluate(() => { const el = [...document.querySelectorAll('div,span,a')].find((x) => (x.textContent || '').trim() === 'og5-capacity' && x.getBoundingClientRect().x < 320 && x.getBoundingClientRect().width > 0); el?.click(); });
 await sleep(4000);
 const t = await p.evaluate(() => document.body.innerText);
-check('重载后 og5-capacity 是专属面板', !/当前是默认视图|面板插件包没加载上|没有注册出/.test(t) && t.length > 1000, `len=${t.length}`);
+// 判据 = 容量面板专属标题「容量态势」+ 不是默认视图；不看字数（随数据变，2026-09-17 无存档那次只剩 811 字而误报）
+check('重载后 og5-capacity 是专属面板', !/当前是默认视图|面板插件包没加载上|没有注册出/.test(t) && /容量态势/.test(t), `len=${t.length}`);
 check('重载后侧栏有「k8s 集群状态」', await p.evaluate(() => [...document.querySelectorAll('span')].some((x) => (x.textContent || '').trim() === 'k8s 集群状态')));
 check('重载后 console/page 零错误', errsAfterReload.length === 0, errsAfterReload.slice(0, 2).join(' | '));
 const ok = checks.every(Boolean);
